@@ -40,10 +40,30 @@ final class ProjectCacheStoreTests: XCTestCase {
         XCTAssertEqual(try store.loadProjects(), [.sampleLaravel])
     }
 
+    func testInMemoryProjectCacheStoreExposesMutableErrors() throws {
+        let store = InMemoryProjectCacheStore(projects: [.sampleWordPress])
+
+        store.loadError = ProjectCacheStoreTestError.load
+        store.saveError = ProjectCacheStoreTestError.save
+
+        XCTAssertThrowsError(try store.loadProjects()) { error in
+            XCTAssertEqual(error as? ProjectCacheStoreTestError, .load)
+        }
+        XCTAssertThrowsError(try store.saveProjects([.sampleLaravel])) { error in
+            XCTAssertEqual(error as? ProjectCacheStoreTestError, .save)
+        }
+        XCTAssertEqual(store.projects, [.sampleWordPress])
+    }
+
     private func temporaryDirectory() throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("DDEVUI-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }
+}
+
+private enum ProjectCacheStoreTestError: Error {
+    case load
+    case save
 }

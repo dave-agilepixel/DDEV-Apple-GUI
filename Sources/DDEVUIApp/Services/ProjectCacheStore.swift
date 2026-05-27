@@ -44,9 +44,8 @@ public struct FileProjectCacheStore: ProjectCacheStoring {
 public final class InMemoryProjectCacheStore: ProjectCacheStoring, @unchecked Sendable {
     private let lock = NSLock()
     private var storedProjects: [DDEVProject]
-
-    public var loadError: Error?
-    public var saveError: Error?
+    private var storedLoadError: Error?
+    private var storedSaveError: Error?
 
     public var projects: [DDEVProject] {
         get {
@@ -61,16 +60,42 @@ public final class InMemoryProjectCacheStore: ProjectCacheStoring, @unchecked Se
         }
     }
 
+    public var loadError: Error? {
+        get {
+            lock.withLock {
+                storedLoadError
+            }
+        }
+        set {
+            lock.withLock {
+                storedLoadError = newValue
+            }
+        }
+    }
+
+    public var saveError: Error? {
+        get {
+            lock.withLock {
+                storedSaveError
+            }
+        }
+        set {
+            lock.withLock {
+                storedSaveError = newValue
+            }
+        }
+    }
+
     public init(projects: [DDEVProject] = [], loadError: Error? = nil, saveError: Error? = nil) {
         self.storedProjects = projects
-        self.loadError = loadError
-        self.saveError = saveError
+        self.storedLoadError = loadError
+        self.storedSaveError = saveError
     }
 
     public func loadProjects() throws -> [DDEVProject] {
         try lock.withLock {
-            if let loadError {
-                throw loadError
+            if let storedLoadError {
+                throw storedLoadError
             }
 
             return storedProjects
@@ -79,8 +104,8 @@ public final class InMemoryProjectCacheStore: ProjectCacheStoring, @unchecked Se
 
     public func saveProjects(_ projects: [DDEVProject]) throws {
         try lock.withLock {
-            if let saveError {
-                throw saveError
+            if let storedSaveError {
+                throw storedSaveError
             }
 
             storedProjects = projects
