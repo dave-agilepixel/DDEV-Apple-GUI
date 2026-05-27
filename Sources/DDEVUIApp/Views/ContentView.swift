@@ -6,7 +6,7 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView {
-            List(selection: $viewModel.selectedSidebarItem) {
+            List(selection: sidebarSelection) {
                 Section("Library") {
                     ForEach(ProjectSidebarItem.allCases) { item in
                         SidebarRow(item: item, count: count(for: item))
@@ -64,6 +64,17 @@ struct ContentView: View {
         case .running: viewModel.projects.filter { $0.status == .running }.count
         case .wordpress: viewModel.projects.filter { $0.isWordPress }.count
         case .settings: nil
+        }
+    }
+
+    private var sidebarSelection: Binding<ProjectSidebarItem> {
+        Binding {
+            viewModel.selectedSidebarItem
+        } set: { newSelection in
+            Task { @MainActor in
+                guard viewModel.selectedSidebarItem != newSelection else { return }
+                viewModel.selectedSidebarItem = newSelection
+            }
         }
     }
 
