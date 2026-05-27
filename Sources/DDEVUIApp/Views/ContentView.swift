@@ -149,29 +149,37 @@ private struct SettingsView: View {
                 }
             }
 
-            Section("PHP Presets") {
-                FlowChips(items: viewModel.supportedPHPVersions.map { "PHP \($0)" })
+            Section("Defaults") {
+                Picker("Open projects in", selection: Binding(
+                    get: { viewModel.effectiveDefaultEditor },
+                    set: { viewModel.setDefaultEditor($0) }
+                )) {
+                    ForEach(viewModel.availableEditors) { editor in
+                        Text(editor.displayName).tag(editor)
+                    }
+                }
+
+                if viewModel.effectiveDefaultDatabaseTool != nil {
+                    Picker("Open databases in", selection: Binding(
+                        get: { viewModel.effectiveDefaultDatabaseTool ?? viewModel.availableDatabaseTools[0] },
+                        set: { viewModel.setDefaultDatabaseTool($0) }
+                    )) {
+                        ForEach(viewModel.availableDatabaseTools) { tool in
+                            Text(tool.displayName).tag(tool)
+                        }
+                    }
+                } else {
+                    LabeledContent("Open databases in") {
+                        Text("No supported database apps installed")
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
         }
         .formStyle(.grouped)
         .navigationTitle("Settings")
-    }
-}
-
-private struct FlowChips: View {
-    let items: [String]
-
-    var body: some View {
-        HStack(spacing: 6) {
-            ForEach(items, id: \.self) { item in
-                Text(item)
-                    .font(.caption.monospacedDigit())
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(
-                        Capsule().fill(.quaternary)
-                    )
-            }
+        .onAppear {
+            viewModel.refreshInstalledApps()
         }
     }
 }
