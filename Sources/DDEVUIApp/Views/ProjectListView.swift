@@ -26,11 +26,11 @@ struct ProjectListView: View {
                     description: Text(emptyDescription)
                 )
             } else {
-                List(selection: $viewModel.selectedProject) {
+                List(selection: $viewModel.selectedProjectID) {
                     Section {
                         ForEach(viewModel.filteredProjects) { project in
                             ProjectRow(project: project)
-                                .tag(project)
+                                .tag(project.id)
                                 .listRowSeparator(.visible)
                         }
                     } header: {

@@ -344,12 +344,12 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
 
     func start(projectName: String) async throws -> CommandResult {
         record("start:\(projectName)")
-        return .success()
+        return commandResult(arguments: ["start", projectName])
     }
 
     func stop(projectName: String) async throws -> CommandResult {
         record("stop:\(projectName)")
-        return .success()
+        return commandResult(arguments: ["stop", projectName])
     }
 
     func restart(projectName: String) async throws -> CommandResult {
@@ -359,47 +359,50 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
 
     func unlink(projectName: String) async throws -> CommandResult {
         record("unlink:\(projectName)")
-        return .success()
+        return commandResult(arguments: ["stop", "--unlist", projectName])
     }
 
     func deleteDDEVData(projectName: String) async throws -> CommandResult {
         record("delete:\(projectName)")
-        return .success()
+        return commandResult(arguments: ["delete", projectName])
     }
 
     func startProject(in appRoot: String) async throws -> CommandResult {
         record("start-folder:\(appRoot)")
-        return .success()
+        return commandResult(arguments: ["start"], workingDirectory: appRoot)
     }
 
     func configureProject(in appRoot: String, name: String, type: DDEVProjectType, docroot: String) async throws -> CommandResult {
         record("config:\(appRoot):\(name):\(type.rawValue):\(docroot)")
-        return .success()
+        return commandResult(
+            arguments: ["config", "--project-name=\(name)", "--project-type=\(type.rawValue)", "--docroot=\(docroot)"],
+            workingDirectory: appRoot
+        )
     }
 
     func launchDatabaseTool(_ tool: DDEVDatabaseTool, in appRoot: String) async throws -> CommandResult {
         record("db:\(tool.rawValue):\(appRoot)")
-        return .success()
+        return commandResult(arguments: [tool.rawValue], workingDirectory: appRoot)
     }
 
     func updateWordPressCore(in appRoot: String) async throws -> CommandResult {
         record("wp-core:\(appRoot)")
-        return .success()
+        return commandResult(arguments: ["wp", "core", "update"], workingDirectory: appRoot)
     }
 
     func updateWordPressPlugins(in appRoot: String) async throws -> CommandResult {
         record("wp-plugins:\(appRoot)")
-        return .success()
+        return commandResult(arguments: ["wp", "plugin", "update", "--all"], workingDirectory: appRoot)
     }
 
     func updateWordPressThemes(in appRoot: String) async throws -> CommandResult {
         record("wp-themes:\(appRoot)")
-        return .success()
+        return commandResult(arguments: ["wp", "theme", "update", "--all"], workingDirectory: appRoot)
     }
 
     func setPHPVersion(_ version: String, in appRoot: String) async throws -> CommandResult {
         record("php:\(version):\(appRoot)")
-        return commandResult(arguments: ["config", "--php-version=\(version)"])
+        return commandResult(arguments: ["config", "--php-version=\(version)"], workingDirectory: appRoot)
     }
 
     func importDatabase(_ options: DDEVDatabaseImportOptions, in appRoot: String) async throws -> CommandResult {
@@ -407,12 +410,82 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
         if let importError {
             throw importError
         }
-        return .success()
+        return commandResult(arguments: ["import-db"], workingDirectory: appRoot)
     }
 
     func exportDatabase(_ options: DDEVDatabaseExportOptions, in appRoot: String) async throws -> CommandResult {
         record("export:\(appRoot):\(options.outputPath):\(options.database):\(options.compression.rawValue)")
-        return .success()
+        return commandResult(arguments: ["export-db"], workingDirectory: appRoot)
+    }
+
+    func importFiles(_ options: DDEVFileImportOptions, in appRoot: String) async throws -> CommandResult {
+        record("import-files:\(appRoot):\(options.sourcePath)")
+        return commandResult(arguments: ["import-files"], workingDirectory: appRoot)
+    }
+
+    func createSnapshot(name: String?, in appRoot: String) async throws -> CommandResult {
+        record("snapshot:\(appRoot):\(name ?? "")")
+        return commandResult(arguments: ["snapshot"], workingDirectory: appRoot)
+    }
+
+    func listSnapshots(in appRoot: String) async throws -> CommandResult {
+        record("snapshot-list:\(appRoot)")
+        return commandResult(arguments: ["snapshot", "--list"], workingDirectory: appRoot)
+    }
+
+    func restoreSnapshot(named snapshotName: String, in appRoot: String) async throws -> CommandResult {
+        record("snapshot-restore:\(appRoot):\(snapshotName)")
+        return commandResult(arguments: ["snapshot", "restore", snapshotName], workingDirectory: appRoot)
+    }
+
+    func logs(projectName: String, service: String, tail: Int, includeTimestamps: Bool, in appRoot: String) async throws -> CommandResult {
+        record("logs:\(appRoot):\(projectName):\(service):\(tail):\(includeTimestamps)")
+        return commandResult(arguments: ["logs", projectName], workingDirectory: appRoot)
+    }
+
+    func listInstalledAddOns(in appRoot: String) async throws -> CommandResult {
+        record("addon-list:\(appRoot)")
+        return commandResult(arguments: ["add-on", "list", "--installed"], workingDirectory: appRoot)
+    }
+
+    func searchAddOns(query: String, in appRoot: String) async throws -> CommandResult {
+        record("addon-search:\(appRoot):\(query)")
+        return commandResult(arguments: ["add-on", "search", query], workingDirectory: appRoot)
+    }
+
+    func getAddOn(_ repository: String, in appRoot: String) async throws -> CommandResult {
+        record("addon-get:\(appRoot):\(repository)")
+        return commandResult(arguments: ["add-on", "get", repository], workingDirectory: appRoot)
+    }
+
+    func removeAddOn(named name: String, in appRoot: String) async throws -> CommandResult {
+        record("addon-remove:\(appRoot):\(name)")
+        return commandResult(arguments: ["add-on", "remove", name], workingDirectory: appRoot)
+    }
+
+    func config(flags: [String], in appRoot: String) async throws -> CommandResult {
+        record("config-flags:\(appRoot):\(flags.joined(separator: ","))")
+        return commandResult(arguments: ["config"] + flags, workingDirectory: appRoot)
+    }
+
+    func utilityDiagnose(in appRoot: String) async throws -> CommandResult {
+        record("diagnose:\(appRoot)")
+        return commandResult(arguments: ["utility", "diagnose"], workingDirectory: appRoot)
+    }
+
+    func utilityConfigYAML(omitKeys: [String], in appRoot: String) async throws -> CommandResult {
+        record("configyaml:\(appRoot):\(omitKeys.joined(separator: ","))")
+        return commandResult(arguments: ["utility", "configyaml"], workingDirectory: appRoot)
+    }
+
+    func mutagen(_ command: DDEVMutagenCommand, in appRoot: String) async throws -> CommandResult {
+        record("mutagen:\(appRoot):\(command.rawValue)")
+        return commandResult(arguments: ["mutagen", command.rawValue], workingDirectory: appRoot)
+    }
+
+    func xhgui(_ command: DDEVXHGuiCommand, in appRoot: String) async throws -> CommandResult {
+        record("xhgui:\(appRoot):\(command.rawValue)")
+        return commandResult(arguments: ["xhgui", command.rawValue], workingDirectory: appRoot)
     }
 
     private func record(_ command: String) {
@@ -421,12 +494,12 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
         }
     }
 
-    private func commandResult(arguments: [String]) -> CommandResult {
+    private func commandResult(arguments: [String], workingDirectory: String? = nil) -> CommandResult {
         let now = Date()
         return CommandResult(
             executable: "ddev",
             arguments: arguments,
-            workingDirectory: nil,
+            workingDirectory: workingDirectory,
             exitCode: 0,
             stdout: "",
             stderr: "",

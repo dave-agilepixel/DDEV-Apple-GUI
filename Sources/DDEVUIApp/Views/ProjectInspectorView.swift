@@ -17,6 +17,7 @@ struct ProjectInspectorView: View {
                         header(project)
                         primaryActionBar(project)
                         environment(project)
+                        DatabaseOperationsView(project: project, viewModel: viewModel)
                         quickLinks(project)
                         if viewModel.canRunWordPressActions(for: project) {
                             wordpressSection
@@ -88,6 +89,11 @@ struct ProjectInspectorView: View {
         .sheet(isPresented: $showSourceDeleteSheet) {
             if let project = viewModel.selectedProject {
                 SourceFolderDeleteSheet(project: project, viewModel: viewModel)
+            }
+        }
+        .onChange(of: viewModel.commandOutputExpansionRequest) { _, requestCount in
+            if requestCount > 0 {
+                outputExpanded = true
             }
         }
     }
@@ -322,12 +328,13 @@ struct ProjectInspectorView: View {
             DisclosureGroup(isExpanded: $outputExpanded) {
                 CommandOutputView(
                     result: viewModel.lastCommandResult,
+                    history: viewModel.commandHistory,
                     errorMessage: viewModel.lastErrorMessage
                 )
                 .padding(.top, 8)
             } label: {
                 HStack(spacing: 10) {
-                    Text("Last Command")
+                    Text(viewModel.commandHistory.count > 1 ? "Command History" : "Last Command")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.secondary)
                         .textCase(.uppercase)

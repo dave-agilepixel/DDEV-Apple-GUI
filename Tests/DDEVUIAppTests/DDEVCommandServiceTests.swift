@@ -108,6 +108,258 @@ final class DDEVCommandServiceTests: XCTestCase {
             CommandSpec(executable: "ddev", arguments: ["config", "--php-version=8.3"], workingDirectory: "/Users/dave/site")
         ])
     }
+
+    func testDefaultDatabaseImportRunsInProjectDirectory() async throws {
+        let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
+        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
+
+        _ = try await service.importDatabase(
+            DDEVDatabaseImportOptions(filePath: "/Users/dave/Downloads/db.sql.gz"),
+            in: "/Users/dave/site"
+        )
+
+        XCTAssertEqual(runner.commands, [
+            CommandSpec(
+                executable: "ddev",
+                arguments: ["import-db", "--file=/Users/dave/Downloads/db.sql.gz", "--database=db"],
+                workingDirectory: "/Users/dave/site"
+            )
+        ])
+    }
+
+    func testNamedDatabaseImportIncludesArchiveOptionsAndNoDrop() async throws {
+        let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
+        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
+
+        _ = try await service.importDatabase(
+            DDEVDatabaseImportOptions(
+                filePath: "/Users/dave/Downloads/archive.tar.gz",
+                database: "legacy",
+                extractPath: "dump/database.sql",
+                dropExistingDatabase: false
+            ),
+            in: "/Users/dave/site"
+        )
+
+        XCTAssertEqual(runner.commands, [
+            CommandSpec(
+                executable: "ddev",
+                arguments: [
+                    "import-db",
+                    "--file=/Users/dave/Downloads/archive.tar.gz",
+                    "--database=legacy",
+                    "--extract-path=dump/database.sql",
+                    "--no-drop"
+                ],
+                workingDirectory: "/Users/dave/site"
+            )
+        ])
+    }
+
+    func testDatabaseExportCompressionOptionsRunInProjectDirectory() async throws {
+        let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
+        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
+
+        _ = try await service.exportDatabase(
+            DDEVDatabaseExportOptions(outputPath: "/Users/dave/Backups/db.sql.gz"),
+            in: "/Users/dave/site"
+        )
+        _ = try await service.exportDatabase(
+            DDEVDatabaseExportOptions(outputPath: "/Users/dave/Backups/db.sql", compression: .none),
+            in: "/Users/dave/site"
+        )
+        _ = try await service.exportDatabase(
+            DDEVDatabaseExportOptions(outputPath: "/Users/dave/Backups/db.sql.bz2", compression: .bzip2),
+            in: "/Users/dave/site"
+        )
+        _ = try await service.exportDatabase(
+            DDEVDatabaseExportOptions(outputPath: "/Users/dave/Backups/db.sql.xz", database: "legacy", compression: .xz),
+            in: "/Users/dave/site"
+        )
+
+        XCTAssertEqual(runner.commands, [
+            CommandSpec(
+                executable: "ddev",
+                arguments: ["export-db", "--file=/Users/dave/Backups/db.sql.gz", "--database=db", "--gzip"],
+                workingDirectory: "/Users/dave/site"
+            ),
+            CommandSpec(
+                executable: "ddev",
+                arguments: ["export-db", "--file=/Users/dave/Backups/db.sql", "--database=db", "--gzip=false"],
+                workingDirectory: "/Users/dave/site"
+            ),
+            CommandSpec(
+                executable: "ddev",
+                arguments: ["export-db", "--file=/Users/dave/Backups/db.sql.bz2", "--database=db", "--bzip2"],
+                workingDirectory: "/Users/dave/site"
+            ),
+            CommandSpec(
+                executable: "ddev",
+                arguments: ["export-db", "--file=/Users/dave/Backups/db.sql.xz", "--database=legacy", "--xz"],
+                workingDirectory: "/Users/dave/site"
+            )
+        ])
+    }
+
+    func testFileImportOptionsRunInProjectDirectory() async throws {
+        let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
+        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
+
+        _ = try await service.importFiles(
+            DDEVFileImportOptions(sourcePath: "/Users/dave/Downloads/files.tar.gz"),
+            in: "/Users/dave/site"
+        )
+        _ = try await service.importFiles(
+            DDEVFileImportOptions(
+                sourcePath: "/Users/dave/Downloads/files.zip",
+                targetPath: "web/sites/default/files",
+                extractPath: "public"
+            ),
+            in: "/Users/dave/site"
+        )
+
+        XCTAssertEqual(runner.commands, [
+            CommandSpec(
+                executable: "ddev",
+                arguments: ["import-files", "--source=/Users/dave/Downloads/files.tar.gz"],
+                workingDirectory: "/Users/dave/site"
+            ),
+            CommandSpec(
+                executable: "ddev",
+                arguments: [
+                    "import-files",
+                    "--source=/Users/dave/Downloads/files.zip",
+                    "--target=web/sites/default/files",
+                    "--extract-path=public"
+                ],
+                workingDirectory: "/Users/dave/site"
+            )
+        ])
+    }
+
+    func testSnapshotCommandsRunInProjectDirectory() async throws {
+        let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
+        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
+
+        _ = try await service.createSnapshot(in: "/Users/dave/site")
+        _ = try await service.createSnapshot(name: "before-upgrade", in: "/Users/dave/site")
+        _ = try await service.listSnapshots(in: "/Users/dave/site")
+        _ = try await service.restoreSnapshot(named: "before-upgrade", in: "/Users/dave/site")
+
+        XCTAssertEqual(runner.commands, [
+            CommandSpec(executable: "ddev", arguments: ["snapshot"], workingDirectory: "/Users/dave/site"),
+            CommandSpec(executable: "ddev", arguments: ["snapshot", "--name=before-upgrade"], workingDirectory: "/Users/dave/site"),
+            CommandSpec(executable: "ddev", arguments: ["snapshot", "--list"], workingDirectory: "/Users/dave/site"),
+            CommandSpec(executable: "ddev", arguments: ["snapshot", "restore", "before-upgrade"], workingDirectory: "/Users/dave/site")
+        ])
+    }
+
+    func testLogsCommandRunsInProjectDirectory() async throws {
+        let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
+        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
+
+        _ = try await service.logs(projectName: "aqua-pura", service: "web", tail: 100, includeTimestamps: false, in: "/Users/dave/site")
+        _ = try await service.logs(projectName: "aqua-pura", service: "db", tail: 50, includeTimestamps: true, in: "/Users/dave/site")
+
+        XCTAssertEqual(runner.commands, [
+            CommandSpec(
+                executable: "ddev",
+                arguments: ["logs", "aqua-pura", "--service=web", "--tail=100"],
+                workingDirectory: "/Users/dave/site"
+            ),
+            CommandSpec(
+                executable: "ddev",
+                arguments: ["logs", "aqua-pura", "--service=db", "--tail=50", "--time"],
+                workingDirectory: "/Users/dave/site"
+            )
+        ])
+    }
+
+    func testAddOnCommandsRunInProjectDirectory() async throws {
+        let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
+        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
+
+        _ = try await service.listInstalledAddOns(in: "/Users/dave/site")
+        _ = try await service.searchAddOns(query: "redis", in: "/Users/dave/site")
+        _ = try await service.getAddOn("ddev/ddev-redis", in: "/Users/dave/site")
+        _ = try await service.removeAddOn(named: "redis", in: "/Users/dave/site")
+
+        XCTAssertEqual(runner.commands, [
+            CommandSpec(executable: "ddev", arguments: ["add-on", "list", "--installed"], workingDirectory: "/Users/dave/site"),
+            CommandSpec(executable: "ddev", arguments: ["add-on", "search", "redis"], workingDirectory: "/Users/dave/site"),
+            CommandSpec(executable: "ddev", arguments: ["add-on", "get", "ddev/ddev-redis"], workingDirectory: "/Users/dave/site"),
+            CommandSpec(executable: "ddev", arguments: ["add-on", "remove", "redis"], workingDirectory: "/Users/dave/site")
+        ])
+    }
+
+    func testConfigCommandAcceptsValidatedFlagsInProjectDirectory() async throws {
+        let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
+        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
+
+        _ = try await service.config(
+            flags: ["--nodejs-version=24", "--webserver-type=apache-fpm", "--performance-mode=mutagen"],
+            in: "/Users/dave/site"
+        )
+
+        XCTAssertEqual(runner.commands, [
+            CommandSpec(
+                executable: "ddev",
+                arguments: ["config", "--nodejs-version=24", "--webserver-type=apache-fpm", "--performance-mode=mutagen"],
+                workingDirectory: "/Users/dave/site"
+            )
+        ])
+    }
+
+    func testUtilityCommandsRunInProjectDirectory() async throws {
+        let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
+        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
+
+        _ = try await service.utilityDiagnose(in: "/Users/dave/site")
+        _ = try await service.utilityConfigYAML(omitKeys: ["web_environment"], in: "/Users/dave/site")
+
+        XCTAssertEqual(runner.commands, [
+            CommandSpec(executable: "ddev", arguments: ["utility", "diagnose"], workingDirectory: "/Users/dave/site"),
+            CommandSpec(
+                executable: "ddev",
+                arguments: ["utility", "configyaml", "--full-yaml", "--omit-keys=web_environment"],
+                workingDirectory: "/Users/dave/site"
+            )
+        ])
+    }
+
+    func testMutagenCommandsRunInProjectDirectory() async throws {
+        let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
+        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
+
+        _ = try await service.mutagen(.status, in: "/Users/dave/site")
+        _ = try await service.mutagen(.sync, in: "/Users/dave/site")
+        _ = try await service.mutagen(.reset, in: "/Users/dave/site")
+        _ = try await service.mutagen(.logs, in: "/Users/dave/site")
+
+        XCTAssertEqual(runner.commands, [
+            CommandSpec(executable: "ddev", arguments: ["mutagen", "status"], workingDirectory: "/Users/dave/site"),
+            CommandSpec(executable: "ddev", arguments: ["mutagen", "sync"], workingDirectory: "/Users/dave/site"),
+            CommandSpec(executable: "ddev", arguments: ["mutagen", "reset"], workingDirectory: "/Users/dave/site"),
+            CommandSpec(executable: "ddev", arguments: ["mutagen", "logs"], workingDirectory: "/Users/dave/site")
+        ])
+    }
+
+    func testXHGuiCommandsRunInProjectDirectory() async throws {
+        let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
+        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
+
+        _ = try await service.xhgui(.on, in: "/Users/dave/site")
+        _ = try await service.xhgui(.off, in: "/Users/dave/site")
+        _ = try await service.xhgui(.launch, in: "/Users/dave/site")
+        _ = try await service.xhgui(.status, in: "/Users/dave/site")
+
+        XCTAssertEqual(runner.commands, [
+            CommandSpec(executable: "ddev", arguments: ["xhgui", "on"], workingDirectory: "/Users/dave/site"),
+            CommandSpec(executable: "ddev", arguments: ["xhgui", "off"], workingDirectory: "/Users/dave/site"),
+            CommandSpec(executable: "ddev", arguments: ["xhgui", "launch"], workingDirectory: "/Users/dave/site"),
+            CommandSpec(executable: "ddev", arguments: ["xhgui", "status"], workingDirectory: "/Users/dave/site")
+        ])
+    }
 }
 
 private final class RecordingCommandRunner: CommandRunning, @unchecked Sendable {
