@@ -2,16 +2,23 @@ import AppKit
 import Foundation
 
 public enum EditorChoice: String, CaseIterable, Codable, Identifiable, Sendable {
-    case cursor = "Cursor"
-    case visualStudioCode = "Visual Studio Code"
-    case finder = "Finder"
+    case cursor = "cursor"
+    case visualStudioCode = "visual-studio-code"
+    case finder = "finder"
 
     public var id: String {
         rawValue
     }
 
     public var displayName: String {
-        rawValue
+        switch self {
+        case .cursor:
+            "Cursor"
+        case .visualStudioCode:
+            "Visual Studio Code"
+        case .finder:
+            "Finder"
+        }
     }
 
     public var bundleIdentifier: String? {

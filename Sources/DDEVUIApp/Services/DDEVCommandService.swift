@@ -264,7 +264,7 @@ public enum DDEVDatabaseTool: String, CaseIterable, Codable, Identifiable, Senda
         case .tablePlus:
             "com.tinyapp.TablePlus"
         case .querious:
-            "com.araeliumgroup.Querious"
+            "com.araeliumgroup.querious"
         case .dbeaver:
             "org.jkiss.dbeaver.core.product"
         }

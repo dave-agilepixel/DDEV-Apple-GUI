@@ -28,6 +28,12 @@ final class AppPreferencesTests: XCTestCase {
         XCTAssertEqual(AppDefaults.effectiveDatabaseTool(saved: .tablePlus, installedDatabaseTools: [.querious]), .querious)
     }
 
+    func testPreferencesUseStablePersistedRawValues() {
+        XCTAssertEqual(EditorChoice.cursor.rawValue, "cursor")
+        XCTAssertEqual(EditorChoice.visualStudioCode.rawValue, "visual-studio-code")
+        XCTAssertEqual(EditorChoice.finder.rawValue, "finder")
+    }
+
     func testUserDefaultsPreferencesStorePersistsAndClearsValues() {
         let suiteName = "DDEVUI-AppPreferencesTests-\(UUID().uuidString)"
         let userDefaults = UserDefaults(suiteName: suiteName)!
@@ -36,10 +42,14 @@ final class AppPreferencesTests: XCTestCase {
 
         store.saveDefaultEditor(.cursor)
         store.saveDefaultDatabaseTool(.tablePlus)
+        XCTAssertEqual(userDefaults.string(forKey: "defaultEditor"), "cursor")
+        XCTAssertEqual(userDefaults.string(forKey: "defaultDatabaseTool"), "tableplus")
         XCTAssertEqual(store.loadPreferences(), AppPreferences(defaultEditor: .cursor, defaultDatabaseTool: .tablePlus))
 
         store.saveDefaultEditor(nil)
         store.saveDefaultDatabaseTool(nil)
+        XCTAssertNil(userDefaults.string(forKey: "defaultEditor"))
+        XCTAssertNil(userDefaults.string(forKey: "defaultDatabaseTool"))
         XCTAssertEqual(store.loadPreferences(), AppPreferences())
     }
 }
