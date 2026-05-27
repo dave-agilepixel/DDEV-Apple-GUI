@@ -25,6 +25,30 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.filteredProjects, [.sampleWordPress])
     }
 
+    func testSidebarFiltersProjectsBySection() {
+        let viewModel = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: []))
+        viewModel.projects = [.sampleWordPress, .sampleLaravel]
+
+        viewModel.selectedSidebarItem = .projects
+        XCTAssertEqual(viewModel.filteredProjects, [.sampleWordPress, .sampleLaravel])
+
+        viewModel.selectedSidebarItem = .running
+        XCTAssertEqual(viewModel.filteredProjects, [.sampleWordPress])
+
+        viewModel.selectedSidebarItem = .wordpress
+        XCTAssertEqual(viewModel.filteredProjects, [.sampleWordPress])
+    }
+
+    func testRefreshAddsPHPVersionsFromProjectDetails() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress], phpVersions: ["aqua-pura": "8.4"])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+
+        await viewModel.refresh()
+
+        XCTAssertEqual(viewModel.projects.first?.phpVersion, "8.4")
+        XCTAssertEqual(service.commands, ["list", "describe:aqua-pura"])
+    }
+
     func testWordPressActionsOnlyAvailableForWordPressProjects() {
         let viewModel = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: []))
 
@@ -40,7 +64,7 @@ final class ProjectDashboardViewModelTests: XCTestCase {
 
         await viewModel.startSelectedProject()
 
-        XCTAssertEqual(service.commands, ["start:aqua-pura", "list"])
+        XCTAssertEqual(service.commands, ["start:aqua-pura", "list", "describe:aqua-pura"])
         XCTAssertEqual(viewModel.lastCommandResult?.succeeded, true)
     }
 
@@ -51,7 +75,11 @@ final class ProjectDashboardViewModelTests: XCTestCase {
 
         await viewModel.launchDatabaseTool(.tablePlus)
 
-        XCTAssertEqual(service.commands, ["db:tableplus:/Users/dave/Development/agilepixel/aqua-pura", "list"])
+        XCTAssertEqual(service.commands, [
+            "db:tableplus:/Users/dave/Development/agilepixel/aqua-pura",
+            "list",
+            "describe:aqua-pura"
+        ])
     }
 
     func testWordPressPresetActionsUseSelectedProjectFolder() async {
@@ -66,10 +94,13 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertEqual(service.commands, [
             "wp-core:/Users/dave/Development/agilepixel/aqua-pura",
             "list",
+            "describe:aqua-pura",
             "wp-plugins:/Users/dave/Development/agilepixel/aqua-pura",
             "list",
+            "describe:aqua-pura",
             "wp-themes:/Users/dave/Development/agilepixel/aqua-pura",
-            "list"
+            "list",
+            "describe:aqua-pura"
         ])
     }
 
@@ -80,7 +111,7 @@ final class ProjectDashboardViewModelTests: XCTestCase {
 
         await viewModel.deleteSelectedDDEVData()
 
-        XCTAssertEqual(service.commands, ["delete:aqua-pura", "list"])
+        XCTAssertEqual(service.commands, ["delete:aqua-pura", "list", "describe:aqua-pura"])
     }
 
     func testConfigureProjectRunsDDEVConfigForFolder() async {
@@ -96,24 +127,60 @@ final class ProjectDashboardViewModelTests: XCTestCase {
 
         XCTAssertEqual(service.commands, ["config:/Users/dave/new-site:new-site:wordpress:web", "list"])
     }
+
+    func testSetPHPVersionUsesSelectedProjectFolder() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress], phpVersions: ["aqua-pura": "8.3"])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.setPHPVersionForSelectedProject("8.3")
+
+        XCTAssertEqual(service.commands, [
+            "php:8.3:/Users/dave/Development/agilepixel/aqua-pura",
+            "restart:aqua-pura",
+            "list",
+            "describe:aqua-pura"
+        ])
+    }
+
+    func testSetPHPVersionDoesNotRestartPausedProject() async {
+        let service = FakeDDEVService(projects: [.sampleLaravel], phpVersions: ["agilebugs": "8.2"])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleLaravel
+
+        await viewModel.setPHPVersionForSelectedProject("8.2")
+
+        XCTAssertEqual(service.commands, [
+            "php:8.2:/Users/dave/Development/agilepixel/agilebugs",
+            "list",
+            "describe:agilebugs"
+        ])
+    }
 }
 
 private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
     private let lock = NSLock()
     private let loadedProjects: [DDEVProject]
+    private let phpVersions: [String: String]
     private var recordedCommands: [String] = []
 
     var commands: [String] {
         lock.withLock { recordedCommands }
     }
 
-    init(projects: [DDEVProject]) {
+    init(projects: [DDEVProject], phpVersions: [String: String] = [:]) {
         self.loadedProjects = projects
+        self.phpVersions = phpVersions
     }
 
     func listProjects() async throws -> [DDEVProject] {
         record("list")
         return loadedProjects
+    }
+
+    func describe(projectName: String) async throws -> DDEVProjectDetails {
+        record("describe:\(projectName)")
+        return DDEVProjectDetails(phpVersion: phpVersions[projectName])
     }
 
     func start(projectName: String) async throws -> CommandResult {
@@ -171,6 +238,11 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
         return .success()
     }
 
+    func setPHPVersion(_ version: String, in appRoot: String) async throws -> CommandResult {
+        record("php:\(version):\(appRoot)")
+        return .success()
+    }
+
     private func record(_ command: String) {
         lock.withLock {
             recordedCommands.append(command)
@@ -195,7 +267,8 @@ extension DDEVProject {
         xhguiURL: nil,
         xhguiHTTPSURL: nil,
         mutagenEnabled: true,
-        mutagenStatus: "ok"
+        mutagenStatus: "ok",
+        phpVersion: nil
     )
 
     static let sampleLaravel = DDEVProject(
@@ -214,6 +287,7 @@ extension DDEVProject {
         xhguiURL: nil,
         xhguiHTTPSURL: nil,
         mutagenEnabled: true,
-        mutagenStatus: "ok"
+        mutagenStatus: "ok",
+        phpVersion: nil
     )
 }

@@ -14,6 +14,7 @@ struct ProjectInspectorView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
                         header(project)
+                        environment(project)
                         lifecycleActions
                         dailyTools(project)
                         if viewModel.canRunWordPressActions(for: project) {
@@ -60,6 +61,24 @@ struct ProjectInspectorView: View {
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
+        }
+    }
+
+    private func environment(_ project: DDEVProject) -> some View {
+        actionSection("Environment") {
+            LabeledContent("PHP") {
+                Text(project.phpVersion ?? "Unknown")
+                    .monospacedDigit()
+            }
+
+            Menu("Change PHP") {
+                ForEach(viewModel.supportedPHPVersions, id: \.self) { version in
+                    Button("PHP \(version)") {
+                        Task { await viewModel.setPHPVersionForSelectedProject(version) }
+                    }
+                    .disabled(project.phpVersion == version)
+                }
+            }
         }
     }
 

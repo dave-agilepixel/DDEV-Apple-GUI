@@ -36,7 +36,23 @@ final class DDEVProjectDecodingTests: XCTestCase {
         XCTAssertEqual(projects[0].status, .running)
         XCTAssertEqual(projects[0].projectType, .wordpress)
         XCTAssertEqual(projects[0].primaryURL?.absoluteString, "https://aqua-pura.ddev.site")
+        XCTAssertNil(projects[0].phpVersion)
         XCTAssertTrue(projects[0].isWordPress)
+    }
+
+    func testDecodesPHPVersionFromDDEVDescribePayload() throws {
+        let data = """
+        {
+          "raw": {
+            "name": "aqua-pura",
+            "php_version": "8.4"
+          }
+        }
+        """.data(using: .utf8)!
+
+        let details = try DDEVProjectDetails.decodeDescribePayload(data)
+
+        XCTAssertEqual(details.phpVersion, "8.4")
     }
 
     func testNonWordPressProjectIsNotWordPress() {
@@ -56,7 +72,8 @@ final class DDEVProjectDecodingTests: XCTestCase {
             xhguiURL: nil,
             xhguiHTTPSURL: nil,
             mutagenEnabled: true,
-            mutagenStatus: "ok"
+            mutagenStatus: "ok",
+            phpVersion: nil
         )
 
         XCTAssertFalse(project.isWordPress)

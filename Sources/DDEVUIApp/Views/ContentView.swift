@@ -6,15 +6,19 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView {
-            List {
-                Label("Projects", systemImage: "shippingbox")
-                Label("Running", systemImage: "play.circle")
-                Label("WordPress", systemImage: "w.circle")
-                Label("Settings", systemImage: "gearshape")
+            List(selection: $viewModel.selectedSidebarItem) {
+                ForEach(ProjectSidebarItem.allCases) { item in
+                    Label(item.title, systemImage: item.systemImage)
+                        .tag(item)
+                }
             }
             .navigationTitle("DDEVUI")
         } content: {
-            ProjectListView(viewModel: viewModel)
+            if viewModel.selectedSidebarItem == .settings {
+                SettingsView(viewModel: viewModel)
+            } else {
+                ProjectListView(viewModel: viewModel)
+            }
         } detail: {
             ProjectInspectorView(viewModel: viewModel)
         }
@@ -67,6 +71,31 @@ private struct FolderToConfigure: Identifiable {
 
 #Preview {
     ContentView()
+}
+
+private struct SettingsView: View {
+    @ObservedObject var viewModel: ProjectDashboardViewModel
+
+    var body: some View {
+        Form {
+            Section("DDEV") {
+                LabeledContent("Projects") {
+                    Text("\(viewModel.projects.count)")
+                }
+                LabeledContent("Running") {
+                    Text("\(viewModel.projects.filter { $0.status == .running }.count)")
+                }
+                LabeledContent("WordPress") {
+                    Text("\(viewModel.projects.filter { $0.isWordPress }.count)")
+                }
+                LabeledContent("PHP presets") {
+                    Text(viewModel.supportedPHPVersions.joined(separator: ", "))
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .navigationTitle("Settings")
+    }
 }
 
 private struct AddProjectSheet: View {

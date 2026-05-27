@@ -19,6 +19,7 @@ public struct DDEVProject: Equatable, Hashable, Identifiable, Sendable {
     public let xhguiHTTPSURL: URL?
     public let mutagenEnabled: Bool
     public let mutagenStatus: String?
+    public let phpVersion: String?
 
     public init(
         name: String,
@@ -36,7 +37,8 @@ public struct DDEVProject: Equatable, Hashable, Identifiable, Sendable {
         xhguiURL: URL?,
         xhguiHTTPSURL: URL?,
         mutagenEnabled: Bool,
-        mutagenStatus: String?
+        mutagenStatus: String?,
+        phpVersion: String? = nil
     ) {
         self.name = name
         self.appRoot = appRoot
@@ -54,6 +56,7 @@ public struct DDEVProject: Equatable, Hashable, Identifiable, Sendable {
         self.xhguiHTTPSURL = xhguiHTTPSURL
         self.mutagenEnabled = mutagenEnabled
         self.mutagenStatus = mutagenStatus
+        self.phpVersion = phpVersion
     }
 
     public var isWordPress: Bool {
@@ -99,8 +102,44 @@ extension DDEVProject {
             xhguiURL: URL(string: raw.xhguiURL),
             xhguiHTTPSURL: URL(string: raw.xhguiHTTPSURL),
             mutagenEnabled: raw.mutagenEnabled,
-            mutagenStatus: raw.mutagenStatus
+            mutagenStatus: raw.mutagenStatus,
+            phpVersion: raw.phpVersion
         )
+    }
+
+    public func applying(details: DDEVProjectDetails) -> DDEVProject {
+        DDEVProject(
+            name: name,
+            appRoot: appRoot,
+            shortRoot: shortRoot,
+            status: status,
+            statusDescription: statusDescription,
+            projectType: projectType,
+            docroot: docroot,
+            primaryURL: primaryURL,
+            httpURL: httpURL,
+            httpsURL: httpsURL,
+            mailpitURL: mailpitURL,
+            mailpitHTTPSURL: mailpitHTTPSURL,
+            xhguiURL: xhguiURL,
+            xhguiHTTPSURL: xhguiHTTPSURL,
+            mutagenEnabled: mutagenEnabled,
+            mutagenStatus: mutagenStatus,
+            phpVersion: details.phpVersion
+        )
+    }
+}
+
+public struct DDEVProjectDetails: Equatable, Sendable {
+    public let phpVersion: String?
+
+    public init(phpVersion: String?) {
+        self.phpVersion = phpVersion
+    }
+
+    public static func decodeDescribePayload(_ data: Data) throws -> DDEVProjectDetails {
+        let payload = try JSONDecoder().decode(DDEVDescribePayload.self, from: data)
+        return DDEVProjectDetails(phpVersion: payload.raw.phpVersion)
     }
 }
 
@@ -125,6 +164,7 @@ private struct RawDDEVProject: Decodable {
     let xhguiHTTPSURL: String
     let mutagenEnabled: Bool
     let mutagenStatus: String?
+    let phpVersion: String?
 
     private enum CodingKeys: String, CodingKey {
         case name
@@ -143,5 +183,18 @@ private struct RawDDEVProject: Decodable {
         case xhguiHTTPSURL = "xhgui_https_url"
         case mutagenEnabled = "mutagen_enabled"
         case mutagenStatus = "mutagen_status"
+        case phpVersion = "php_version"
+    }
+}
+
+private struct DDEVDescribePayload: Decodable {
+    let raw: RawDDEVProjectDetails
+}
+
+private struct RawDDEVProjectDetails: Decodable {
+    let phpVersion: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case phpVersion = "php_version"
     }
 }

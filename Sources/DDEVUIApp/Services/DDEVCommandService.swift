@@ -17,6 +17,11 @@ public final class DDEVCommandService: Sendable {
         return try DDEVProject.decodeListPayload(Data(result.stdout.utf8))
     }
 
+    public func describe(projectName: String) async throws -> DDEVProjectDetails {
+        let result = try await runDDEV(["describe", projectName, "-j"])
+        return try DDEVProjectDetails.decodeDescribePayload(Data(result.stdout.utf8))
+    }
+
     @discardableResult
     public func start(projectName: String) async throws -> CommandResult {
         try await runDDEV(["start", projectName])
@@ -58,6 +63,11 @@ public final class DDEVCommandService: Sendable {
             ["config", "--project-name=\(name)", "--project-type=\(type.rawValue)", "--docroot=\(docroot)"],
             workingDirectory: appRoot
         )
+    }
+
+    @discardableResult
+    public func setPHPVersion(_ version: String, in appRoot: String) async throws -> CommandResult {
+        try await runDDEV(["config", "--php-version=\(version)"], workingDirectory: appRoot)
     }
 
     @discardableResult

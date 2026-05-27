@@ -13,6 +13,18 @@ final class DDEVCommandServiceTests: XCTestCase {
         ])
     }
 
+    func testDescribeProjectRunsDDEVDescribeJSON() async throws {
+        let runner = RecordingCommandRunner(result: .success(CommandResult.success(stdout: #"{"raw":{"php_version":"8.4"}}"#)))
+        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
+
+        let details = try await service.describe(projectName: "aqua-pura")
+
+        XCTAssertEqual(details.phpVersion, "8.4")
+        XCTAssertEqual(runner.commands, [
+            CommandSpec(executable: "ddev", arguments: ["describe", "aqua-pura", "-j"], workingDirectory: nil)
+        ])
+    }
+
     func testLifecycleCommandsUseProjectName() async throws {
         let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
         let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
@@ -83,6 +95,17 @@ final class DDEVCommandServiceTests: XCTestCase {
                 arguments: ["config", "--project-name=new-site", "--project-type=wordpress", "--docroot=web"],
                 workingDirectory: "/Users/dave/new-site"
             )
+        ])
+    }
+
+    func testPHPVersionCommandRunsInProjectDirectory() async throws {
+        let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
+        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
+
+        _ = try await service.setPHPVersion("8.3", in: "/Users/dave/site")
+
+        XCTAssertEqual(runner.commands, [
+            CommandSpec(executable: "ddev", arguments: ["config", "--php-version=8.3"], workingDirectory: "/Users/dave/site")
         ])
     }
 }

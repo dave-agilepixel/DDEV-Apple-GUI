@@ -33,7 +33,7 @@ struct ProjectListView: View {
                 }
             }
         }
-        .navigationTitle("Projects")
+        .navigationTitle(viewModel.selectedSidebarItem.title)
     }
 }
 
@@ -53,6 +53,9 @@ private struct ProjectRow: View {
 
             HStack(spacing: 8) {
                 Text(project.projectType.rawValue)
+                if let phpVersion = project.phpVersion {
+                    Text("PHP \(phpVersion)")
+                }
                 Text(project.shortRoot)
                     .lineLimit(1)
             }
