@@ -5,6 +5,7 @@ struct SnapshotManagerView: View {
     @ObservedObject var viewModel: ProjectDashboardViewModel
 
     @State private var snapshotName = ""
+    @State private var lastSuggestedSnapshotName = ""
     @State private var selectedSnapshotID: DDEVSnapshot.ID?
     @State private var pendingConfirmation: SnapshotConfirmation?
 
@@ -35,7 +36,7 @@ struct SnapshotManagerView: View {
                 Button {
                     Task {
                         await viewModel.createSnapshotForSelectedProject(name: snapshotName)
-                        snapshotName = ""
+                        updateSuggestedSnapshotName(force: true)
                     }
                 } label: {
                     Label("Create", systemImage: "plus")
@@ -74,6 +75,7 @@ struct SnapshotManagerView: View {
             }
         }
         .task(id: project.id) {
+            updateSuggestedSnapshotName()
             await viewModel.loadSnapshotsForSelectedProject()
         }
         .confirmationDialog(confirmationTitle, isPresented: confirmationBinding, presenting: pendingConfirmation) { confirmation in
@@ -166,6 +168,18 @@ struct SnapshotManagerView: View {
 
     private var confirmationTitle: String {
         pendingConfirmation?.title ?? "Confirm Snapshot Action"
+    }
+
+    private func updateSuggestedSnapshotName(force: Bool = false) {
+        let shouldUseSuggestion = force
+            || snapshotName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || snapshotName == lastSuggestedSnapshotName
+
+        guard shouldUseSuggestion else { return }
+
+        let suggestedName = DDEVSnapshot.suggestedName(projectName: project.name)
+        snapshotName = suggestedName
+        lastSuggestedSnapshotName = suggestedName
     }
 }
 

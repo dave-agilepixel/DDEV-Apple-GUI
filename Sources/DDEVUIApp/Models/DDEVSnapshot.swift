@@ -21,6 +21,17 @@ public struct DDEVSnapshot: Equatable, Identifiable, Sendable {
         }
     }
 
+    public static func suggestedName(projectName: String, date: Date = Date(), timeZone: TimeZone = .current) -> String {
+        let projectSegment = sanitizedNameSegment(from: projectName)
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = timeZone
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+
+        return "\(projectSegment)-\(formatter.string(from: date))"
+    }
+
     public static func parseListOutput(_ output: String) -> [DDEVSnapshot] {
         output
             .split(whereSeparator: \.isNewline)
@@ -67,6 +78,18 @@ public struct DDEVSnapshot: Equatable, Identifiable, Sendable {
         }
 
         return DDEVSnapshot(name: baseName, databaseSuffix: nil)
+    }
+
+    private static func sanitizedNameSegment(from projectName: String) -> String {
+        let allowedCharacters = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
+        let normalized = String(projectName.lowercased().unicodeScalars.map { scalar in
+            allowedCharacters.contains(scalar) ? Character(scalar) : "-"
+        })
+        let collapsed = normalized
+            .split(separator: "-", omittingEmptySubsequences: true)
+            .joined(separator: "-")
+
+        return collapsed.isEmpty ? "snapshot" : collapsed
     }
 }
 

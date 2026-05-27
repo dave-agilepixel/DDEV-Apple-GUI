@@ -32,4 +32,17 @@ final class DDEVSnapshotParsingTests: XCTestCase {
         )
         XCTAssertEqual(DDEVSnapshot(name: "plain-name", databaseSuffix: nil).displayLabel, "plain-name")
     }
+
+    func testSuggestedNameUsesSanitizedProjectNameAndTimestamp() throws {
+        let date = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-05-27T21:48:12Z"))
+
+        XCTAssertEqual(
+            DDEVSnapshot.suggestedName(
+                projectName: "Client Site / Woo",
+                date: date,
+                timeZone: TimeZone(secondsFromGMT: 0)!
+            ),
+            "client-site-woo-20260527-214812"
+        )
+    }
 }
