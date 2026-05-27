@@ -2,9 +2,14 @@ import Foundation
 
 public final class DDEVCommandService: Sendable {
     private let commandRunner: CommandRunning
+    private let ddevExecutable: String
 
-    public init(commandRunner: CommandRunning = ProcessCommandRunner()) {
+    public init(
+        commandRunner: CommandRunning = ProcessCommandRunner(),
+        ddevExecutable: String = DDEVExecutableResolver().resolve()
+    ) {
         self.commandRunner = commandRunner
+        self.ddevExecutable = ddevExecutable
     }
 
     public func listProjects() async throws -> [DDEVProject] {
@@ -76,7 +81,7 @@ public final class DDEVCommandService: Sendable {
     }
 
     private func runDDEV(_ arguments: [String], workingDirectory: String? = nil) async throws -> CommandResult {
-        try await commandRunner.run(CommandSpec(executable: "ddev", arguments: arguments, workingDirectory: workingDirectory))
+        try await commandRunner.run(CommandSpec(executable: ddevExecutable, arguments: arguments, workingDirectory: workingDirectory))
     }
 }
 

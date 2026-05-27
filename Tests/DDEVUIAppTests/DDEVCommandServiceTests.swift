@@ -4,18 +4,18 @@ import XCTest
 final class DDEVCommandServiceTests: XCTestCase {
     func testListProjectsRunsDDEVListJSON() async throws {
         let runner = RecordingCommandRunner(result: .success(CommandResult.success(stdout: #"{"raw":[]}"#)))
-        let service = DDEVCommandService(commandRunner: runner)
+        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "/opt/homebrew/bin/ddev")
 
         _ = try await service.listProjects()
 
         XCTAssertEqual(runner.commands, [
-            CommandSpec(executable: "ddev", arguments: ["list", "-j"], workingDirectory: nil)
+            CommandSpec(executable: "/opt/homebrew/bin/ddev", arguments: ["list", "-j"], workingDirectory: nil)
         ])
     }
 
     func testLifecycleCommandsUseProjectName() async throws {
         let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
-        let service = DDEVCommandService(commandRunner: runner)
+        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
 
         _ = try await service.start(projectName: "aqua-pura")
         _ = try await service.stop(projectName: "aqua-pura")
@@ -34,7 +34,7 @@ final class DDEVCommandServiceTests: XCTestCase {
 
     func testDatabaseToolCommandsRunInProjectDirectory() async throws {
         let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
-        let service = DDEVCommandService(commandRunner: runner)
+        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
 
         _ = try await service.launchDatabaseTool(.tablePlus, in: "/Users/dave/site")
         _ = try await service.launchDatabaseTool(.sequelAce, in: "/Users/dave/site")
@@ -51,7 +51,7 @@ final class DDEVCommandServiceTests: XCTestCase {
 
     func testWordPressPresetCommandsRunInProjectDirectory() async throws {
         let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
-        let service = DDEVCommandService(commandRunner: runner)
+        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
 
         _ = try await service.updateWordPressCore(in: "/Users/dave/site")
         _ = try await service.updateWordPressPlugins(in: "/Users/dave/site")
@@ -66,7 +66,7 @@ final class DDEVCommandServiceTests: XCTestCase {
 
     func testAddFolderCommandsUseSelectedFolderAsWorkingDirectory() async throws {
         let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
-        let service = DDEVCommandService(commandRunner: runner)
+        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
 
         _ = try await service.startProject(in: "/Users/dave/new-site")
         _ = try await service.configureProject(

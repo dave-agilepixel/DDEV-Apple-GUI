@@ -9,10 +9,27 @@ struct ProjectListView: View {
                 .textFieldStyle(.roundedBorder)
                 .padding()
 
-            List(selection: $viewModel.selectedProject) {
-                ForEach(viewModel.filteredProjects) { project in
-                    ProjectRow(project: project)
-                        .tag(project)
+            if let errorMessage = viewModel.lastErrorMessage, viewModel.projects.isEmpty {
+                ContentUnavailableView {
+                    Label("DDEV Projects Unavailable", systemImage: "exclamationmark.triangle")
+                } description: {
+                    Text(errorMessage)
+                        .textSelection(.enabled)
+                } actions: {
+                    Button("Refresh") {
+                        Task { await viewModel.refresh() }
+                    }
+                }
+                .padding()
+            } else if viewModel.filteredProjects.isEmpty {
+                ContentUnavailableView("No Projects", systemImage: "shippingbox")
+                    .padding()
+            } else {
+                List(selection: $viewModel.selectedProject) {
+                    ForEach(viewModel.filteredProjects) { project in
+                        ProjectRow(project: project)
+                            .tag(project)
+                    }
                 }
             }
         }

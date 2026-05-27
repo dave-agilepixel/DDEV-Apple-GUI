@@ -18,6 +18,7 @@
 		100000000000000000000109 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000009 /* ContentView.swift */; };
 		100000000000000000000110 /* ProjectInspectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000010 /* ProjectInspectorView.swift */; };
 		100000000000000000000111 /* ProjectListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000011 /* ProjectListView.swift */; };
+		100000000000000000000112 /* DDEVExecutableResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000012 /* DDEVExecutableResolver.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -32,6 +33,7 @@
 		100000000000000000000009 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		100000000000000000000010 /* ProjectInspectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectInspectorView.swift; sourceTree = "<group>"; };
 		100000000000000000000011 /* ProjectListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectListView.swift; sourceTree = "<group>"; };
+		100000000000000000000012 /* DDEVExecutableResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DDEVExecutableResolver.swift; sourceTree = "<group>"; };
 		100000000000000000000020 /* DDEVUI.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DDEVUI.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -88,6 +90,7 @@
 			children = (
 				100000000000000000000004 /* CommandRunning.swift */,
 				100000000000000000000005 /* DDEVCommandService.swift */,
+				100000000000000000000012 /* DDEVExecutableResolver.swift */,
 				100000000000000000000006 /* WorkspaceOpening.swift */,
 			);
 			path = Services;
@@ -199,6 +202,7 @@
 				100000000000000000000109 /* ContentView.swift in Sources */,
 				100000000000000000000110 /* ProjectInspectorView.swift in Sources */,
 				100000000000000000000111 /* ProjectListView.swift in Sources */,
+				100000000000000000000112 /* DDEVExecutableResolver.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

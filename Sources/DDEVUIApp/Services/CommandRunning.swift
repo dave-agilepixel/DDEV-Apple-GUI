@@ -28,6 +28,7 @@ public final class ProcessCommandRunner: CommandRunning, @unchecked Sendable {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         process.arguments = [spec.executable] + spec.arguments
+        process.environment = environmentForGUIApp()
         if let workingDirectory = spec.workingDirectory {
             process.currentDirectoryURL = URL(fileURLWithPath: workingDirectory)
         }
@@ -59,5 +60,13 @@ public final class ProcessCommandRunner: CommandRunning, @unchecked Sendable {
         }
 
         throw CommandRunnerError.nonZeroExit(result)
+    }
+
+    private func environmentForGUIApp() -> [String: String] {
+        var environment = ProcessInfo.processInfo.environment
+        let existingPath = environment["PATH", default: ""]
+        let standardPath = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+        environment["PATH"] = existingPath.isEmpty ? standardPath : "\(standardPath):\(existingPath)"
+        return environment
     }
 }
