@@ -7,6 +7,15 @@ struct IconSize {
 }
 
 let repoRoot = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+let requiredRootItems = [
+    "Package.swift",
+    "DDEVUI.xcodeproj"
+]
+
+guard requiredRootItems.allSatisfy({ FileManager.default.fileExists(atPath: repoRoot.appendingPathComponent($0).path) }) else {
+    fatalError("Run this script from the repository root.")
+}
+
 let outputDirectory = repoRoot
     .appendingPathComponent("Sources/DDEVUIApp/Resources/Assets.xcassets/AppIcon.appiconset", isDirectory: true)
 
