@@ -28,6 +28,22 @@ final class AppPreferencesTests: XCTestCase {
         XCTAssertEqual(AppDefaults.effectiveDatabaseTool(saved: .tablePlus, installedDatabaseTools: [.querious]), .querious)
     }
 
+    func testAppAvailabilityServiceFiltersInstalledAppsByBundleIdentifier() {
+        let service = StaticAppAvailabilityService(installedBundleIdentifiers: [
+            "com.tinyapp.TablePlus",
+            "com.todesktop.230313mzl4w4u92"
+        ])
+
+        XCTAssertEqual(service.installedEditors(), [.cursor])
+        XCTAssertEqual(service.installedDatabaseTools(), [.tablePlus])
+    }
+
+    func testStaticAvailabilityDoesNotReturnFinderAsInstalledEditor() {
+        let service = StaticAppAvailabilityService(installedBundleIdentifiers: [])
+
+        XCTAssertEqual(service.installedEditors(), [])
+    }
+
     func testPreferencesUseStablePersistedRawValues() {
         XCTAssertEqual(EditorChoice.cursor.rawValue, "cursor")
         XCTAssertEqual(EditorChoice.visualStudioCode.rawValue, "visual-studio-code")
