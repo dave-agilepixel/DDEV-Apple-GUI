@@ -1,6 +1,6 @@
 import Foundation
 
-public struct DDEVProject: Equatable, Hashable, Identifiable, Sendable {
+public struct DDEVProject: Codable, Equatable, Hashable, Identifiable, Sendable {
     public var id: String { name }
 
     public let name: String

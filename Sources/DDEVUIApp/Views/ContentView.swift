@@ -6,7 +6,7 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView {
-            List(selection: $viewModel.selectedSidebarItem) {
+            List(selection: sidebarSelection) {
                 Section("Library") {
                     ForEach(ProjectSidebarItem.allCases) { item in
                         SidebarRow(item: item, count: count(for: item))
@@ -29,7 +29,7 @@ struct ContentView: View {
                 .navigationSplitViewColumnWidth(min: 540, ideal: 720)
         }
         .task {
-            await viewModel.refresh()
+            await viewModel.loadCachedProjectsThenRefresh()
         }
         .toolbar {
             ToolbarItemGroup {
@@ -64,6 +64,17 @@ struct ContentView: View {
         case .running: viewModel.projects.filter { $0.status == .running }.count
         case .wordpress: viewModel.projects.filter { $0.isWordPress }.count
         case .settings: nil
+        }
+    }
+
+    private var sidebarSelection: Binding<ProjectSidebarItem> {
+        Binding {
+            viewModel.selectedSidebarItem
+        } set: { newSelection in
+            Task { @MainActor in
+                guard viewModel.selectedSidebarItem != newSelection else { return }
+                viewModel.selectedSidebarItem = newSelection
+            }
         }
     }
 
@@ -138,29 +149,37 @@ private struct SettingsView: View {
                 }
             }
 
-            Section("PHP Presets") {
-                FlowChips(items: viewModel.supportedPHPVersions.map { "PHP \($0)" })
+            Section("Defaults") {
+                Picker("Open projects in", selection: Binding(
+                    get: { viewModel.effectiveDefaultEditor },
+                    set: { viewModel.setDefaultEditor($0) }
+                )) {
+                    ForEach(viewModel.availableEditors) { editor in
+                        Text(editor.displayName).tag(editor)
+                    }
+                }
+
+                if viewModel.effectiveDefaultDatabaseTool != nil {
+                    Picker("Open databases in", selection: Binding<DDEVDatabaseTool?>(
+                        get: { viewModel.effectiveDefaultDatabaseTool },
+                        set: { viewModel.setDefaultDatabaseTool($0) }
+                    )) {
+                        ForEach(viewModel.availableDatabaseTools) { tool in
+                            Text(tool.displayName).tag(Optional(tool))
+                        }
+                    }
+                } else {
+                    LabeledContent("Open databases in") {
+                        Text("No supported database apps installed")
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
         }
         .formStyle(.grouped)
         .navigationTitle("Settings")
-    }
-}
-
-private struct FlowChips: View {
-    let items: [String]
-
-    var body: some View {
-        HStack(spacing: 6) {
-            ForEach(items, id: \.self) { item in
-                Text(item)
-                    .font(.caption.monospacedDigit())
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(
-                        Capsule().fill(.quaternary)
-                    )
-            }
+        .onAppear {
+            viewModel.refreshInstalledApps()
         }
     }
 }

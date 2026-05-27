@@ -10,6 +10,11 @@
 		100000000000000000000101 /* DDEVUIApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000001 /* DDEVUIApp.swift */; };
 		100000000000000000000102 /* CommandResult.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000002 /* CommandResult.swift */; };
 		100000000000000000000103 /* DDEVProject.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000003 /* DDEVProject.swift */; };
+		100000000000000000000113 /* DDEVDatabaseOperation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000013 /* DDEVDatabaseOperation.swift */; };
+		100000000000000000000119 /* DDEVSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000019 /* DDEVSnapshot.swift */; };
+		100000000000000000000123 /* DDEVLogRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000023 /* DDEVLogRequest.swift */; };
+		100000000000000000000116 /* AppPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000016 /* AppPreferences.swift */; };
+		100000000000000000000117 /* AppAvailabilityService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000017 /* AppAvailabilityService.swift */; };
 		100000000000000000000104 /* CommandRunning.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000004 /* CommandRunning.swift */; };
 		100000000000000000000105 /* DDEVCommandService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000005 /* DDEVCommandService.swift */; };
 		100000000000000000000106 /* WorkspaceOpening.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000006 /* WorkspaceOpening.swift */; };
@@ -19,12 +24,22 @@
 		100000000000000000000110 /* ProjectInspectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000010 /* ProjectInspectorView.swift */; };
 		100000000000000000000111 /* ProjectListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000011 /* ProjectListView.swift */; };
 		100000000000000000000112 /* DDEVExecutableResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000012 /* DDEVExecutableResolver.swift */; };
+		100000000000000000000114 /* DatabaseOperationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000014 /* DatabaseOperationsView.swift */; };
+		100000000000000000000115 /* ProjectCacheStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000015 /* ProjectCacheStore.swift */; };
+		100000000000000000000121 /* SnapshotManagerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000021 /* SnapshotManagerView.swift */; };
+		100000000000000000000124 /* LogsViewerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000024 /* LogsViewerView.swift */; };
+		100000000000000000000122 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000022 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		100000000000000000000001 /* DDEVUIApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DDEVUIApp.swift; sourceTree = "<group>"; };
 		100000000000000000000002 /* CommandResult.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandResult.swift; sourceTree = "<group>"; };
 		100000000000000000000003 /* DDEVProject.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DDEVProject.swift; sourceTree = "<group>"; };
+		100000000000000000000013 /* DDEVDatabaseOperation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DDEVDatabaseOperation.swift; sourceTree = "<group>"; };
+		100000000000000000000019 /* DDEVSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DDEVSnapshot.swift; sourceTree = "<group>"; };
+		100000000000000000000023 /* DDEVLogRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DDEVLogRequest.swift; sourceTree = "<group>"; };
+		100000000000000000000016 /* AppPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppPreferences.swift; sourceTree = "<group>"; };
+		100000000000000000000017 /* AppAvailabilityService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppAvailabilityService.swift; sourceTree = "<group>"; };
 		100000000000000000000004 /* CommandRunning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandRunning.swift; sourceTree = "<group>"; };
 		100000000000000000000005 /* DDEVCommandService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DDEVCommandService.swift; sourceTree = "<group>"; };
 		100000000000000000000006 /* WorkspaceOpening.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceOpening.swift; sourceTree = "<group>"; };
@@ -34,7 +49,12 @@
 		100000000000000000000010 /* ProjectInspectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectInspectorView.swift; sourceTree = "<group>"; };
 		100000000000000000000011 /* ProjectListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectListView.swift; sourceTree = "<group>"; };
 		100000000000000000000012 /* DDEVExecutableResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DDEVExecutableResolver.swift; sourceTree = "<group>"; };
+		100000000000000000000014 /* DatabaseOperationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DatabaseOperationsView.swift; sourceTree = "<group>"; };
+		100000000000000000000015 /* ProjectCacheStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectCacheStore.swift; sourceTree = "<group>"; };
+		100000000000000000000021 /* SnapshotManagerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotManagerView.swift; sourceTree = "<group>"; };
+		100000000000000000000024 /* LogsViewerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogsViewerView.swift; sourceTree = "<group>"; };
 		100000000000000000000020 /* DDEVUI.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DDEVUI.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		100000000000000000000022 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -69,6 +89,7 @@
 			children = (
 				100000000000000000000001 /* DDEVUIApp.swift */,
 				100000000000000000000303 /* Models */,
+				100000000000000000000307 /* Resources */,
 				100000000000000000000304 /* Services */,
 				100000000000000000000305 /* ViewModels */,
 				100000000000000000000306 /* Views */,
@@ -79,7 +100,11 @@
 		100000000000000000000303 /* Models */ = {
 			isa = PBXGroup;
 			children = (
+				100000000000000000000016 /* AppPreferences.swift */,
 				100000000000000000000002 /* CommandResult.swift */,
+				100000000000000000000013 /* DDEVDatabaseOperation.swift */,
+				100000000000000000000023 /* DDEVLogRequest.swift */,
+				100000000000000000000019 /* DDEVSnapshot.swift */,
 				100000000000000000000003 /* DDEVProject.swift */,
 			);
 			path = Models;
@@ -88,9 +113,11 @@
 		100000000000000000000304 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				100000000000000000000017 /* AppAvailabilityService.swift */,
 				100000000000000000000004 /* CommandRunning.swift */,
 				100000000000000000000005 /* DDEVCommandService.swift */,
 				100000000000000000000012 /* DDEVExecutableResolver.swift */,
+				100000000000000000000015 /* ProjectCacheStore.swift */,
 				100000000000000000000006 /* WorkspaceOpening.swift */,
 			);
 			path = Services;
@@ -109,10 +136,21 @@
 			children = (
 				100000000000000000000008 /* CommandOutputView.swift */,
 				100000000000000000000009 /* ContentView.swift */,
+				100000000000000000000014 /* DatabaseOperationsView.swift */,
+				100000000000000000000024 /* LogsViewerView.swift */,
 				100000000000000000000010 /* ProjectInspectorView.swift */,
 				100000000000000000000011 /* ProjectListView.swift */,
+				100000000000000000000021 /* SnapshotManagerView.swift */,
 			);
 			path = Views;
+			sourceTree = "<group>";
+		};
+		100000000000000000000307 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				100000000000000000000022 /* Assets.xcassets */,
+			);
+			path = Resources;
 			sourceTree = "<group>";
 		};
 		100000000000000000000310 /* Products */ = {
@@ -181,6 +219,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				100000000000000000000122 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -194,14 +233,23 @@
 				100000000000000000000101 /* DDEVUIApp.swift in Sources */,
 				100000000000000000000102 /* CommandResult.swift in Sources */,
 				100000000000000000000103 /* DDEVProject.swift in Sources */,
+				100000000000000000000113 /* DDEVDatabaseOperation.swift in Sources */,
+				100000000000000000000119 /* DDEVSnapshot.swift in Sources */,
+				100000000000000000000123 /* DDEVLogRequest.swift in Sources */,
+				100000000000000000000116 /* AppPreferences.swift in Sources */,
+				100000000000000000000117 /* AppAvailabilityService.swift in Sources */,
 				100000000000000000000104 /* CommandRunning.swift in Sources */,
 				100000000000000000000105 /* DDEVCommandService.swift in Sources */,
+				100000000000000000000115 /* ProjectCacheStore.swift in Sources */,
 				100000000000000000000106 /* WorkspaceOpening.swift in Sources */,
 				100000000000000000000107 /* ProjectDashboardViewModel.swift in Sources */,
 				100000000000000000000108 /* CommandOutputView.swift in Sources */,
 				100000000000000000000109 /* ContentView.swift in Sources */,
+				100000000000000000000114 /* DatabaseOperationsView.swift in Sources */,
+				100000000000000000000124 /* LogsViewerView.swift in Sources */,
 				100000000000000000000110 /* ProjectInspectorView.swift in Sources */,
 				100000000000000000000111 /* ProjectListView.swift in Sources */,
+				100000000000000000000121 /* SnapshotManagerView.swift in Sources */,
 				100000000000000000000112 /* DDEVExecutableResolver.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -328,7 +376,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ARCHS = "$(ARCHS_STANDARD)";
-				ASSETCATALOG_COMPILER_APPICON_NAME = "";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				AUTOMATION_APPLE_EVENTS = NO;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
@@ -374,7 +422,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ARCHS = "$(ARCHS_STANDARD)";
-				ASSETCATALOG_COMPILER_APPICON_NAME = "";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				AUTOMATION_APPLE_EVENTS = NO;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";

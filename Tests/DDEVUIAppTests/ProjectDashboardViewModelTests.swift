@@ -49,6 +49,55 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertEqual(service.commands, ["list", "describe:aqua-pura"])
     }
 
+    func testLoadCachedProjectsThenRefreshShowsFreshProjectsAndPersistsThem() async {
+        let service = FakeDDEVService(projects: [.sampleLaravel])
+        let cache = InMemoryProjectCacheStore(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service, projectCache: cache)
+
+        await viewModel.loadCachedProjectsThenRefresh()
+
+        XCTAssertEqual(viewModel.projects, [.sampleLaravel])
+        XCTAssertEqual(viewModel.selectedProject, .sampleLaravel)
+        XCTAssertEqual(service.commands, ["list", "describe:agilebugs"])
+        XCTAssertEqual(cache.projects, [.sampleLaravel])
+    }
+
+    func testBackgroundRefreshFailureKeepsCachedProjectsVisibleWithoutSurfacingError() async {
+        let service = FakeDDEVService(projects: [], listError: TestError.expected)
+        let cache = InMemoryProjectCacheStore(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service, projectCache: cache)
+
+        await viewModel.loadCachedProjectsThenRefresh()
+
+        XCTAssertEqual(viewModel.projects, [.sampleWordPress])
+        XCTAssertEqual(viewModel.selectedProject, .sampleWordPress)
+        XCTAssertNil(viewModel.lastErrorMessage)
+        XCTAssertFalse(viewModel.isRunningCommand)
+    }
+
+    func testInitialRefreshFailureSurfacesErrorWhenNoCacheExists() async {
+        let service = FakeDDEVService(projects: [], listError: TestError.expected)
+        let cache = InMemoryProjectCacheStore()
+        let viewModel = ProjectDashboardViewModel(ddevService: service, projectCache: cache)
+
+        await viewModel.loadCachedProjectsThenRefresh()
+
+        XCTAssertTrue(viewModel.projects.isEmpty)
+        XCTAssertNotNil(viewModel.lastErrorMessage)
+        XCTAssertFalse(viewModel.isRunningCommand)
+    }
+
+    func testRefreshPreservesSelectedProjectWhenCurrentSelectionIsFilteredOut() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress, .sampleLaravel])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleLaravel
+        viewModel.selectedSidebarItem = .running
+
+        await viewModel.refresh()
+
+        XCTAssertEqual(viewModel.selectedProject, .sampleLaravel)
+    }
+
     func testWordPressActionsOnlyAvailableForWordPressProjects() {
         let viewModel = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: []))
 
@@ -80,6 +129,69 @@ final class ProjectDashboardViewModelTests: XCTestCase {
             "list",
             "describe:aqua-pura"
         ])
+    }
+
+    func testViewModelExposesEffectiveDefaultEditor() {
+        let viewModel = ProjectDashboardViewModel(
+            ddevService: FakeDDEVService(projects: []),
+            preferencesStore: InMemoryAppPreferencesStore(),
+            appAvailability: StaticAppAvailabilityService(installedBundleIdentifiers: ["com.microsoft.VSCode"])
+        )
+
+        XCTAssertEqual(viewModel.availableEditors, [.visualStudioCode, .finder])
+        XCTAssertEqual(viewModel.effectiveDefaultEditor, .visualStudioCode)
+    }
+
+    func testViewModelLaunchesDefaultDatabaseTool() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(
+            ddevService: service,
+            preferencesStore: InMemoryAppPreferencesStore(),
+            appAvailability: StaticAppAvailabilityService(installedBundleIdentifiers: ["com.tinyapp.TablePlus"])
+        )
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.launchDefaultDatabaseTool()
+
+        XCTAssertEqual(service.commands, [
+            "db:tableplus:/Users/dave/Development/agilepixel/aqua-pura",
+            "list",
+            "describe:aqua-pura"
+        ])
+    }
+
+    func testViewModelDoesNotLaunchDatabaseWhenNoToolIsInstalled() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(
+            ddevService: service,
+            preferencesStore: InMemoryAppPreferencesStore(),
+            appAvailability: StaticAppAvailabilityService(installedBundleIdentifiers: [])
+        )
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.launchDefaultDatabaseTool()
+
+        XCTAssertEqual(service.commands, [])
+    }
+
+    func testDefaultAppSettersUpdateStateAndPersist() {
+        let preferencesStore = InMemoryAppPreferencesStore()
+        let viewModel = ProjectDashboardViewModel(
+            ddevService: FakeDDEVService(projects: []),
+            preferencesStore: preferencesStore,
+            appAvailability: StaticAppAvailabilityService(installedBundleIdentifiers: [
+                "com.microsoft.VSCode",
+                "com.tinyapp.TablePlus"
+            ])
+        )
+
+        viewModel.setDefaultEditor(.visualStudioCode)
+        viewModel.setDefaultDatabaseTool(.tablePlus)
+
+        XCTAssertEqual(viewModel.preferences, AppPreferences(defaultEditor: .visualStudioCode, defaultDatabaseTool: .tablePlus))
+        XCTAssertEqual(viewModel.effectiveDefaultEditor, .visualStudioCode)
+        XCTAssertEqual(viewModel.effectiveDefaultDatabaseTool, .tablePlus)
+        XCTAssertEqual(preferencesStore.preferences, AppPreferences(defaultEditor: .visualStudioCode, defaultDatabaseTool: .tablePlus))
     }
 
     func testWordPressPresetActionsUseSelectedProjectFolder() async {
@@ -143,6 +255,20 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         ])
     }
 
+    func testSetPHPVersionRecordsEachMutatingCommandInHistory() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress], phpVersions: ["aqua-pura": "8.3"])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.setPHPVersionForSelectedProject("8.3")
+
+        XCTAssertEqual(viewModel.commandHistory.map(\.result.arguments), [
+            ["config", "--php-version=8.3"],
+            ["restart", "aqua-pura"]
+        ])
+        XCTAssertEqual(viewModel.lastCommandResult?.arguments, ["restart", "aqua-pura"])
+    }
+
     func testSetPHPVersionDoesNotRestartPausedProject() async {
         let service = FakeDDEVService(projects: [.sampleLaravel], phpVersions: ["agilebugs": "8.2"])
         let viewModel = ProjectDashboardViewModel(ddevService: service)
@@ -156,25 +282,253 @@ final class ProjectDashboardViewModelTests: XCTestCase {
             "describe:agilebugs"
         ])
     }
+
+    func testImportDatabaseUsesSelectedProjectFolderAndRefreshes() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.importDatabase(
+            DDEVDatabaseImportOptions(
+                filePath: "/Users/dave/Downloads/db.sql.gz",
+                database: "legacy",
+                dropExistingDatabase: false
+            )
+        )
+
+        XCTAssertEqual(service.commands, [
+            "import:/Users/dave/Development/agilepixel/aqua-pura:/Users/dave/Downloads/db.sql.gz:legacy::false",
+            "list",
+            "describe:aqua-pura"
+        ])
+        XCTAssertEqual(viewModel.lastCommandResult?.succeeded, true)
+        XCTAssertEqual(viewModel.commandOutputExpansionRequest, 1)
+    }
+
+    func testExportDatabaseUsesSelectedProjectFolderWithoutRefreshing() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.exportDatabase(
+            DDEVDatabaseExportOptions(
+                outputPath: "/Users/dave/Backups/db.sql.xz",
+                database: "legacy",
+                compression: .xz
+            )
+        )
+
+        XCTAssertEqual(service.commands, [
+            "export:/Users/dave/Development/agilepixel/aqua-pura:/Users/dave/Backups/db.sql.xz:legacy:xz"
+        ])
+        XCTAssertEqual(viewModel.lastCommandResult?.succeeded, true)
+        XCTAssertEqual(viewModel.commandOutputExpansionRequest, 1)
+    }
+
+    func testFailedImportKeepsCommandOutputVisible() async {
+        let failure = CommandResult(
+            executable: "ddev",
+            arguments: ["import-db"],
+            workingDirectory: "/Users/dave/Development/agilepixel/aqua-pura",
+            exitCode: 1,
+            stdout: "Import started",
+            stderr: "Invalid dump",
+            startedAt: Date(),
+            finishedAt: Date(),
+            wasCancelled: false
+        )
+        let service = FakeDDEVService(projects: [.sampleWordPress], importError: CommandRunnerError.nonZeroExit(failure))
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.importDatabase(DDEVDatabaseImportOptions(filePath: "/Users/dave/Downloads/bad.sql"))
+
+        XCTAssertEqual(viewModel.lastCommandResult, failure)
+        XCTAssertEqual(viewModel.lastErrorMessage, "Command failed with exit code 1.")
+        XCTAssertEqual(viewModel.commandOutputExpansionRequest, 1)
+    }
+
+    func testEachCompletedCommandRequestsOutputExpansion() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.exportDatabase(DDEVDatabaseExportOptions(outputPath: "/Users/dave/Backups/first.sql.gz"))
+        await viewModel.exportDatabase(DDEVDatabaseExportOptions(outputPath: "/Users/dave/Backups/second.sql.gz"))
+
+        XCTAssertEqual(viewModel.commandOutputExpansionRequest, 2)
+    }
+
+    func testFailedImportIsRecordedInCommandHistory() async {
+        let failure = CommandResult(
+            executable: "ddev",
+            arguments: ["import-db"],
+            workingDirectory: "/Users/dave/Development/agilepixel/aqua-pura",
+            exitCode: 1,
+            stdout: "Import started",
+            stderr: "Invalid dump",
+            startedAt: Date(),
+            finishedAt: Date(),
+            wasCancelled: false
+        )
+        let service = FakeDDEVService(projects: [.sampleWordPress], importError: CommandRunnerError.nonZeroExit(failure))
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.importDatabase(DDEVDatabaseImportOptions(filePath: "/Users/dave/Downloads/bad.sql"))
+
+        XCTAssertEqual(viewModel.commandHistory.map(\.result), [failure])
+    }
+
+    func testLoadSnapshotsUsesSelectedProjectFolder() async {
+        let service = FakeDDEVService(
+            projects: [.sampleWordPress],
+            snapshotListOutput: "before-upgrade_mariadb_10.11.gz\n"
+        )
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.loadSnapshotsForSelectedProject()
+
+        XCTAssertEqual(service.commands, ["snapshot-list:/Users/dave/Development/agilepixel/aqua-pura"])
+        XCTAssertEqual(viewModel.snapshots, [
+            DDEVSnapshot(name: "before-upgrade", databaseSuffix: "mariadb 10.11")
+        ])
+    }
+
+    func testCreateSnapshotRefreshesSnapshotListAndRecordsCreateOutput() async {
+        let service = FakeDDEVService(
+            projects: [.sampleWordPress],
+            snapshotListOutput: "before-upgrade_mariadb_10.11.gz\n"
+        )
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.createSnapshotForSelectedProject(name: "before-upgrade")
+
+        XCTAssertEqual(service.commands, [
+            "snapshot:/Users/dave/Development/agilepixel/aqua-pura:before-upgrade",
+            "snapshot-list:/Users/dave/Development/agilepixel/aqua-pura"
+        ])
+        XCTAssertEqual(viewModel.lastCommandResult?.arguments, ["snapshot"])
+        XCTAssertEqual(viewModel.commandOutputExpansionRequest, 1)
+        XCTAssertEqual(viewModel.snapshots.count, 1)
+    }
+
+    func testRestoreSnapshotRefreshesProjectsAfterSuccessAndKeepsOutputVisible() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.restoreSnapshotForSelectedProject(named: "before-upgrade")
+
+        XCTAssertEqual(service.commands, [
+            "snapshot-restore:/Users/dave/Development/agilepixel/aqua-pura:before-upgrade",
+            "list",
+            "describe:aqua-pura"
+        ])
+        XCTAssertEqual(viewModel.lastCommandResult?.arguments, ["snapshot", "restore", "before-upgrade"])
+        XCTAssertEqual(viewModel.commandOutputExpansionRequest, 1)
+        XCTAssertEqual(viewModel.commandHistory.map(\.result.arguments), [["snapshot", "restore", "before-upgrade"]])
+    }
+
+    func testRestoreLatestSnapshotUsesExplicitServiceMethodAndRefreshes() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.restoreLatestSnapshotForSelectedProject()
+
+        XCTAssertEqual(service.commands, [
+            "snapshot-restore-latest:/Users/dave/Development/agilepixel/aqua-pura",
+            "list",
+            "describe:aqua-pura"
+        ])
+        XCTAssertEqual(viewModel.lastCommandResult?.arguments, ["snapshot", "restore", "--latest"])
+    }
+
+    func testCleanupSnapshotsUsesExplicitCleanupMethodAndRefreshesSnapshotList() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.cleanupSnapshotsForSelectedProject()
+
+        XCTAssertEqual(service.commands, [
+            "snapshot-cleanup:/Users/dave/Development/agilepixel/aqua-pura",
+            "snapshot-list:/Users/dave/Development/agilepixel/aqua-pura"
+        ])
+        XCTAssertEqual(viewModel.lastCommandResult?.arguments, ["snapshot", "--cleanup", "-y"])
+    }
+
+    func testCleanupSingleSnapshotUsesNamedCleanupMethod() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.cleanupSnapshotForSelectedProject(named: "before-upgrade")
+
+        XCTAssertEqual(service.commands, [
+            "snapshot-cleanup-one:/Users/dave/Development/agilepixel/aqua-pura:before-upgrade",
+            "snapshot-list:/Users/dave/Development/agilepixel/aqua-pura"
+        ])
+        XCTAssertEqual(viewModel.lastCommandResult?.arguments, ["snapshot", "--cleanup", "--name=before-upgrade", "-y"])
+    }
+
+    func testLoadLogsUsesSelectedProjectAndStoresOutputWithoutExpandingCommandPanel() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress], logsOutput: "web_1  | ready\n")
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.loadLogsForSelectedProject(
+            DDEVLogRequest(service: .db, tailCount: 250, includeTimestamps: true)
+        )
+
+        XCTAssertEqual(service.commands, [
+            "logs:/Users/dave/Development/agilepixel/aqua-pura:aqua-pura:db:250:true"
+        ])
+        XCTAssertEqual(viewModel.projectLogsResult?.stdout, "web_1  | ready\n")
+        XCTAssertEqual(viewModel.lastCommandResult?.arguments, ["logs", "aqua-pura"])
+        XCTAssertEqual(viewModel.commandHistory.map(\.result.arguments), [["logs", "aqua-pura"]])
+        XCTAssertEqual(viewModel.commandOutputExpansionRequest, 0)
+    }
 }
 
 private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
     private let lock = NSLock()
     private let loadedProjects: [DDEVProject]
     private let phpVersions: [String: String]
+    private let listError: Error?
+    private let importError: Error?
+    private let snapshotListOutput: String
+    private let logsOutput: String
     private var recordedCommands: [String] = []
 
     var commands: [String] {
         lock.withLock { recordedCommands }
     }
 
-    init(projects: [DDEVProject], phpVersions: [String: String] = [:]) {
+    init(
+        projects: [DDEVProject],
+        phpVersions: [String: String] = [:],
+        listError: Error? = nil,
+        importError: Error? = nil,
+        snapshotListOutput: String = "",
+        logsOutput: String = ""
+    ) {
         self.loadedProjects = projects
         self.phpVersions = phpVersions
+        self.listError = listError
+        self.importError = importError
+        self.snapshotListOutput = snapshotListOutput
+        self.logsOutput = logsOutput
     }
 
     func listProjects() async throws -> [DDEVProject] {
         record("list")
+        if let listError {
+            throw listError
+        }
         return loadedProjects
     }
 
@@ -185,67 +539,216 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
 
     func start(projectName: String) async throws -> CommandResult {
         record("start:\(projectName)")
-        return .success()
+        return commandResult(arguments: ["start", projectName])
     }
 
     func stop(projectName: String) async throws -> CommandResult {
         record("stop:\(projectName)")
-        return .success()
+        return commandResult(arguments: ["stop", projectName])
     }
 
     func restart(projectName: String) async throws -> CommandResult {
         record("restart:\(projectName)")
-        return .success()
+        return commandResult(arguments: ["restart", projectName])
     }
 
     func unlink(projectName: String) async throws -> CommandResult {
         record("unlink:\(projectName)")
-        return .success()
+        return commandResult(arguments: ["stop", "--unlist", projectName])
     }
 
     func deleteDDEVData(projectName: String) async throws -> CommandResult {
         record("delete:\(projectName)")
-        return .success()
+        return commandResult(arguments: ["delete", projectName])
     }
 
     func startProject(in appRoot: String) async throws -> CommandResult {
         record("start-folder:\(appRoot)")
-        return .success()
+        return commandResult(arguments: ["start"], workingDirectory: appRoot)
     }
 
     func configureProject(in appRoot: String, name: String, type: DDEVProjectType, docroot: String) async throws -> CommandResult {
         record("config:\(appRoot):\(name):\(type.rawValue):\(docroot)")
-        return .success()
+        return commandResult(
+            arguments: ["config", "--project-name=\(name)", "--project-type=\(type.rawValue)", "--docroot=\(docroot)"],
+            workingDirectory: appRoot
+        )
     }
 
     func launchDatabaseTool(_ tool: DDEVDatabaseTool, in appRoot: String) async throws -> CommandResult {
         record("db:\(tool.rawValue):\(appRoot)")
-        return .success()
+        return commandResult(arguments: [tool.rawValue], workingDirectory: appRoot)
     }
 
     func updateWordPressCore(in appRoot: String) async throws -> CommandResult {
         record("wp-core:\(appRoot)")
-        return .success()
+        return commandResult(arguments: ["wp", "core", "update"], workingDirectory: appRoot)
     }
 
     func updateWordPressPlugins(in appRoot: String) async throws -> CommandResult {
         record("wp-plugins:\(appRoot)")
-        return .success()
+        return commandResult(arguments: ["wp", "plugin", "update", "--all"], workingDirectory: appRoot)
     }
 
     func updateWordPressThemes(in appRoot: String) async throws -> CommandResult {
         record("wp-themes:\(appRoot)")
-        return .success()
+        return commandResult(arguments: ["wp", "theme", "update", "--all"], workingDirectory: appRoot)
     }
 
     func setPHPVersion(_ version: String, in appRoot: String) async throws -> CommandResult {
         record("php:\(version):\(appRoot)")
-        return .success()
+        return commandResult(arguments: ["config", "--php-version=\(version)"], workingDirectory: appRoot)
+    }
+
+    func importDatabase(_ options: DDEVDatabaseImportOptions, in appRoot: String) async throws -> CommandResult {
+        record("import:\(appRoot):\(options.filePath):\(options.database):\(options.extractPath ?? ""):\(options.dropExistingDatabase)")
+        if let importError {
+            throw importError
+        }
+        return commandResult(arguments: ["import-db"], workingDirectory: appRoot)
+    }
+
+    func exportDatabase(_ options: DDEVDatabaseExportOptions, in appRoot: String) async throws -> CommandResult {
+        record("export:\(appRoot):\(options.outputPath):\(options.database):\(options.compression.rawValue)")
+        return commandResult(arguments: ["export-db"], workingDirectory: appRoot)
+    }
+
+    func importFiles(_ options: DDEVFileImportOptions, in appRoot: String) async throws -> CommandResult {
+        record("import-files:\(appRoot):\(options.sourcePath)")
+        return commandResult(arguments: ["import-files"], workingDirectory: appRoot)
+    }
+
+    func createSnapshot(name: String?, in appRoot: String) async throws -> CommandResult {
+        record("snapshot:\(appRoot):\(name ?? "")")
+        return commandResult(arguments: ["snapshot"], workingDirectory: appRoot)
+    }
+
+    func listSnapshots(in appRoot: String) async throws -> CommandResult {
+        record("snapshot-list:\(appRoot)")
+        return commandResult(arguments: ["snapshot", "--list"], workingDirectory: appRoot, stdout: snapshotListOutput)
+    }
+
+    func restoreSnapshot(named snapshotName: String, in appRoot: String) async throws -> CommandResult {
+        record("snapshot-restore:\(appRoot):\(snapshotName)")
+        return commandResult(arguments: ["snapshot", "restore", snapshotName], workingDirectory: appRoot)
+    }
+
+    func restoreLatestSnapshot(in appRoot: String) async throws -> CommandResult {
+        record("snapshot-restore-latest:\(appRoot)")
+        return commandResult(arguments: ["snapshot", "restore", "--latest"], workingDirectory: appRoot)
+    }
+
+    func cleanupSnapshots(in appRoot: String) async throws -> CommandResult {
+        record("snapshot-cleanup:\(appRoot)")
+        return commandResult(arguments: ["snapshot", "--cleanup", "-y"], workingDirectory: appRoot)
+    }
+
+    func cleanupSnapshot(named snapshotName: String, in appRoot: String) async throws -> CommandResult {
+        record("snapshot-cleanup-one:\(appRoot):\(snapshotName)")
+        return commandResult(arguments: ["snapshot", "--cleanup", "--name=\(snapshotName)", "-y"], workingDirectory: appRoot)
+    }
+
+    func logs(projectName: String, service: String, tail: Int, includeTimestamps: Bool, in appRoot: String) async throws -> CommandResult {
+        record("logs:\(appRoot):\(projectName):\(service):\(tail):\(includeTimestamps)")
+        return commandResult(arguments: ["logs", projectName], workingDirectory: appRoot, stdout: logsOutput)
+    }
+
+    func listInstalledAddOns(in appRoot: String) async throws -> CommandResult {
+        record("addon-list:\(appRoot)")
+        return commandResult(arguments: ["add-on", "list", "--installed"], workingDirectory: appRoot)
+    }
+
+    func searchAddOns(query: String, in appRoot: String) async throws -> CommandResult {
+        record("addon-search:\(appRoot):\(query)")
+        return commandResult(arguments: ["add-on", "search", query], workingDirectory: appRoot)
+    }
+
+    func getAddOn(_ repository: String, in appRoot: String) async throws -> CommandResult {
+        record("addon-get:\(appRoot):\(repository)")
+        return commandResult(arguments: ["add-on", "get", repository], workingDirectory: appRoot)
+    }
+
+    func removeAddOn(named name: String, in appRoot: String) async throws -> CommandResult {
+        record("addon-remove:\(appRoot):\(name)")
+        return commandResult(arguments: ["add-on", "remove", name], workingDirectory: appRoot)
+    }
+
+    func config(flags: [String], in appRoot: String) async throws -> CommandResult {
+        record("config-flags:\(appRoot):\(flags.joined(separator: ","))")
+        return commandResult(arguments: ["config"] + flags, workingDirectory: appRoot)
+    }
+
+    func utilityDiagnose(in appRoot: String) async throws -> CommandResult {
+        record("diagnose:\(appRoot)")
+        return commandResult(arguments: ["utility", "diagnose"], workingDirectory: appRoot)
+    }
+
+    func utilityConfigYAML(omitKeys: [String], in appRoot: String) async throws -> CommandResult {
+        record("configyaml:\(appRoot):\(omitKeys.joined(separator: ","))")
+        return commandResult(arguments: ["utility", "configyaml"], workingDirectory: appRoot)
+    }
+
+    func mutagen(_ command: DDEVMutagenCommand, in appRoot: String) async throws -> CommandResult {
+        record("mutagen:\(appRoot):\(command.rawValue)")
+        return commandResult(arguments: ["mutagen", command.rawValue], workingDirectory: appRoot)
+    }
+
+    func xhgui(_ command: DDEVXHGuiCommand, in appRoot: String) async throws -> CommandResult {
+        record("xhgui:\(appRoot):\(command.rawValue)")
+        return commandResult(arguments: ["xhgui", command.rawValue], workingDirectory: appRoot)
     }
 
     private func record(_ command: String) {
         lock.withLock {
             recordedCommands.append(command)
+        }
+    }
+
+    private func commandResult(arguments: [String], workingDirectory: String? = nil, stdout: String = "") -> CommandResult {
+        let now = Date()
+        return CommandResult(
+            executable: "ddev",
+            arguments: arguments,
+            workingDirectory: workingDirectory,
+            exitCode: 0,
+            stdout: stdout,
+            stderr: "",
+            startedAt: now,
+            finishedAt: now,
+            wasCancelled: false
+        )
+    }
+}
+
+private enum TestError: Error {
+    case expected
+}
+
+private final class InMemoryAppPreferencesStore: AppPreferencesStoring, @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedPreferences: AppPreferences
+
+    var preferences: AppPreferences {
+        lock.withLock { storedPreferences }
+    }
+
+    init(preferences: AppPreferences = AppPreferences()) {
+        self.storedPreferences = preferences
+    }
+
+    func loadPreferences() -> AppPreferences {
+        preferences
+    }
+
+    func saveDefaultEditor(_ editor: EditorChoice?) {
+        lock.withLock {
+            storedPreferences.defaultEditor = editor
+        }
+    }
+
+    func saveDefaultDatabaseTool(_ databaseTool: DDEVDatabaseTool?) {
+        lock.withLock {
+            storedPreferences.defaultDatabaseTool = databaseTool
         }
     }
 }

@@ -55,6 +55,14 @@ final class DDEVProjectDecodingTests: XCTestCase {
         XCTAssertEqual(details.phpVersion, "8.4")
     }
 
+    func testProjectRoundTripsThroughJSONForCache() throws {
+        let encoded = try JSONEncoder().encode(DDEVProject.sampleWordPress)
+        let decoded = try JSONDecoder().decode(DDEVProject.self, from: encoded)
+
+        XCTAssertEqual(decoded, .sampleWordPress)
+        XCTAssertEqual(decoded.phpVersion, DDEVProject.sampleWordPress.phpVersion)
+    }
+
     func testNonWordPressProjectIsNotWordPress() {
         let project = DDEVProject(
             name: "agilebugs",

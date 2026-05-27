@@ -13,12 +13,39 @@ public protocol DDEVServicing: Sendable {
     func configureProject(in appRoot: String, name: String, type: DDEVProjectType, docroot: String) async throws -> CommandResult
     func setPHPVersion(_ version: String, in appRoot: String) async throws -> CommandResult
     func launchDatabaseTool(_ tool: DDEVDatabaseTool, in appRoot: String) async throws -> CommandResult
+    func importDatabase(_ options: DDEVDatabaseImportOptions, in appRoot: String) async throws -> CommandResult
+    func exportDatabase(_ options: DDEVDatabaseExportOptions, in appRoot: String) async throws -> CommandResult
+    func importFiles(_ options: DDEVFileImportOptions, in appRoot: String) async throws -> CommandResult
+    func createSnapshot(name: String?, in appRoot: String) async throws -> CommandResult
+    func listSnapshots(in appRoot: String) async throws -> CommandResult
+    func restoreSnapshot(named snapshotName: String, in appRoot: String) async throws -> CommandResult
+    func restoreLatestSnapshot(in appRoot: String) async throws -> CommandResult
+    func cleanupSnapshots(in appRoot: String) async throws -> CommandResult
+    func cleanupSnapshot(named snapshotName: String, in appRoot: String) async throws -> CommandResult
+    func logs(projectName: String, service: String, tail: Int, includeTimestamps: Bool, in appRoot: String) async throws -> CommandResult
+    func listInstalledAddOns(in appRoot: String) async throws -> CommandResult
+    func searchAddOns(query: String, in appRoot: String) async throws -> CommandResult
+    func getAddOn(_ repository: String, in appRoot: String) async throws -> CommandResult
+    func removeAddOn(named name: String, in appRoot: String) async throws -> CommandResult
+    func config(flags: [String], in appRoot: String) async throws -> CommandResult
+    func utilityDiagnose(in appRoot: String) async throws -> CommandResult
+    func utilityConfigYAML(omitKeys: [String], in appRoot: String) async throws -> CommandResult
+    func mutagen(_ command: DDEVMutagenCommand, in appRoot: String) async throws -> CommandResult
+    func xhgui(_ command: DDEVXHGuiCommand, in appRoot: String) async throws -> CommandResult
     func updateWordPressCore(in appRoot: String) async throws -> CommandResult
     func updateWordPressPlugins(in appRoot: String) async throws -> CommandResult
     func updateWordPressThemes(in appRoot: String) async throws -> CommandResult
 }
 
 extension DDEVCommandService: DDEVServicing {}
+
+public struct CommandHistoryEntry: Equatable, Sendable {
+    public let result: CommandResult
+
+    public init(result: CommandResult) {
+        self.result = result
+    }
+}
 
 public enum ProjectSidebarItem: String, CaseIterable, Identifiable, Sendable {
     case projects
@@ -58,24 +85,81 @@ public enum ProjectSidebarItem: String, CaseIterable, Identifiable, Sendable {
 @MainActor
 public final class ProjectDashboardViewModel: ObservableObject {
     @Published public var projects: [DDEVProject] = []
-    @Published public var selectedProject: DDEVProject?
+    @Published public var selectedProjectID: DDEVProject.ID?
     @Published public var selectedSidebarItem: ProjectSidebarItem = .projects
     @Published public var searchText = ""
     @Published public var isRunningCommand = false
     @Published public var lastCommandResult: CommandResult?
     @Published public var lastErrorMessage: String?
+    @Published public var commandOutputExpansionRequest = 0
+    @Published public var commandHistory: [CommandHistoryEntry] = []
+    @Published public var snapshots: [DDEVSnapshot] = []
+    @Published public var projectLogsResult: CommandResult?
+    @Published public var projectLogsErrorMessage: String?
+    @Published public private(set) var preferences: AppPreferences
+    @Published public private(set) var installedEditors: [EditorChoice]
+    @Published public private(set) var installedDatabaseTools: [DDEVDatabaseTool]
 
     public let supportedPHPVersions = ["8.4", "8.3", "8.2", "8.1", "8.0", "7.4"]
 
     private let ddevService: DDEVServicing
+    private let projectCache: ProjectCacheStoring
+    private let preferencesStore: AppPreferencesStoring
+    private let appAvailability: AppAvailabilityChecking
+    private var selectedProjectFallback: DDEVProject?
 
-    public init(ddevService: DDEVServicing = DDEVCommandService()) {
+    public init(
+        ddevService: DDEVServicing = DDEVCommandService(),
+        projectCache: ProjectCacheStoring = FileProjectCacheStore(),
+        preferencesStore: AppPreferencesStoring = UserDefaultsAppPreferencesStore(),
+        appAvailability: AppAvailabilityChecking = WorkspaceAppAvailabilityService()
+    ) {
         self.ddevService = ddevService
+        self.projectCache = projectCache
+        self.preferencesStore = preferencesStore
+        self.appAvailability = appAvailability
+        self.preferences = preferencesStore.loadPreferences()
+        self.installedEditors = appAvailability.installedEditors()
+        self.installedDatabaseTools = appAvailability.installedDatabaseTools()
+    }
+
+    public var selectedProject: DDEVProject? {
+        get {
+            guard let selectedProjectID else { return nil }
+            return projects.first { $0.id == selectedProjectID } ?? selectedProjectFallback
+        }
+        set {
+            selectedProjectID = newValue?.id
+            selectedProjectFallback = newValue
+        }
     }
 
     public var filteredProjects: [DDEVProject] {
+        filteredProjects(in: projects)
+    }
+
+    public var availableEditors: [EditorChoice] {
+        AppDefaults.availableEditors(installedEditors: installedEditors)
+    }
+
+    public var availableDatabaseTools: [DDEVDatabaseTool] {
+        installedDatabaseTools
+    }
+
+    public var effectiveDefaultEditor: EditorChoice {
+        AppDefaults.effectiveEditor(saved: preferences.defaultEditor, installedEditors: installedEditors)
+    }
+
+    public var effectiveDefaultDatabaseTool: DDEVDatabaseTool? {
+        AppDefaults.effectiveDatabaseTool(
+            saved: preferences.defaultDatabaseTool,
+            installedDatabaseTools: installedDatabaseTools
+        )
+    }
+
+    private func filteredProjects(in sourceProjects: [DDEVProject]) -> [DDEVProject] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let sectionProjects = projects.filter { project in
+        let sectionProjects = sourceProjects.filter { project in
             switch selectedSidebarItem {
             case .projects:
                 true
@@ -98,19 +182,35 @@ public final class ProjectDashboardViewModel: ObservableObject {
         }
     }
 
+    public func setDefaultEditor(_ editor: EditorChoice?) {
+        preferences.defaultEditor = editor
+        preferencesStore.saveDefaultEditor(editor)
+    }
+
+    public func setDefaultDatabaseTool(_ databaseTool: DDEVDatabaseTool?) {
+        preferences.defaultDatabaseTool = databaseTool
+        preferencesStore.saveDefaultDatabaseTool(databaseTool)
+    }
+
+    public func refreshInstalledApps() {
+        installedEditors = appAvailability.installedEditors()
+        installedDatabaseTools = appAvailability.installedDatabaseTools()
+    }
+
     public func refresh() async {
         await runAndCapture {
-            let loadedProjects = try await self.ddevService.listProjects()
-            let enrichedProjects = await self.enrichProjectsWithDetails(loadedProjects)
-            self.projects = enrichedProjects
-
-            if let selectedProject = self.selectedProject, enrichedProjects.contains(where: { $0.id == selectedProject.id }) {
-                self.selectedProject = enrichedProjects.first { $0.id == selectedProject.id }
-            } else {
-                self.selectedProject = self.filteredProjects.first ?? enrichedProjects.first
-            }
-
+            try await self.refreshProjectsFromDDEV()
             return nil
+        }
+    }
+
+    public func loadCachedProjectsThenRefresh() async {
+        let loadedCachedProjects = loadCachedProjects()
+
+        if loadedCachedProjects {
+            await refreshProjectsFromDDEVInBackground()
+        } else {
+            await refresh()
         }
     }
 
@@ -118,11 +218,11 @@ public final class ProjectDashboardViewModel: ObservableObject {
         guard let selectedProject else { return }
         await runAndCapture {
             let configResult = try await self.ddevService.setPHPVersion(version, in: selectedProject.appRoot)
-            self.lastCommandResult = configResult
+            self.recordCommandResult(configResult, requestsOutputExpansion: false)
 
             if selectedProject.status == .running {
                 let restartResult = try await self.ddevService.restart(projectName: selectedProject.name)
-                self.lastCommandResult = restartResult
+                self.recordCommandResult(restartResult, requestsOutputExpansion: false)
             }
 
             await self.refresh()
@@ -184,6 +284,116 @@ public final class ProjectDashboardViewModel: ObservableObject {
         }
     }
 
+    public func launchDefaultDatabaseTool() async {
+        guard let databaseTool = effectiveDefaultDatabaseTool else { return }
+        await launchDatabaseTool(databaseTool)
+    }
+
+    public func importDatabase(_ options: DDEVDatabaseImportOptions) async {
+        guard let selectedProject else { return }
+        await runMutation {
+            try await self.ddevService.importDatabase(options, in: selectedProject.appRoot)
+        }
+    }
+
+    public func exportDatabase(_ options: DDEVDatabaseExportOptions) async {
+        guard let selectedProject else { return }
+        await runAndCapture {
+            let result = try await self.ddevService.exportDatabase(options, in: selectedProject.appRoot)
+            self.recordCommandResult(result)
+            return result
+        }
+    }
+
+    public func loadSnapshotsForSelectedProject() async {
+        guard let selectedProject else { return }
+        await runAndCapture {
+            let result = try await self.ddevService.listSnapshots(in: selectedProject.appRoot)
+            self.snapshots = DDEVSnapshot.parseListOutput(result.stdout)
+            return nil
+        }
+    }
+
+    public func createSnapshotForSelectedProject(name: String?) async {
+        guard let selectedProject else { return }
+        await runAndCapture {
+            let result = try await self.ddevService.createSnapshot(name: name, in: selectedProject.appRoot)
+            self.recordCommandResult(result)
+            await self.refreshSnapshots(in: selectedProject.appRoot)
+            return result
+        }
+    }
+
+    public func restoreSnapshotForSelectedProject(named snapshotName: String) async {
+        guard let selectedProject else { return }
+        await runMutation {
+            try await self.ddevService.restoreSnapshot(named: snapshotName, in: selectedProject.appRoot)
+        }
+    }
+
+    public func restoreLatestSnapshotForSelectedProject() async {
+        guard let selectedProject else { return }
+        await runMutation {
+            try await self.ddevService.restoreLatestSnapshot(in: selectedProject.appRoot)
+        }
+    }
+
+    public func cleanupSnapshotsForSelectedProject() async {
+        guard let selectedProject else { return }
+        await runAndCapture {
+            let result = try await self.ddevService.cleanupSnapshots(in: selectedProject.appRoot)
+            self.recordCommandResult(result)
+            await self.refreshSnapshots(in: selectedProject.appRoot)
+            return result
+        }
+    }
+
+    public func cleanupSnapshotForSelectedProject(named snapshotName: String) async {
+        guard let selectedProject else { return }
+        await runAndCapture {
+            let result = try await self.ddevService.cleanupSnapshot(named: snapshotName, in: selectedProject.appRoot)
+            self.recordCommandResult(result)
+            await self.refreshSnapshots(in: selectedProject.appRoot)
+            return result
+        }
+    }
+
+    public func loadLogsForSelectedProject(_ request: DDEVLogRequest) async {
+        guard let selectedProject else { return }
+
+        isRunningCommand = true
+        lastErrorMessage = nil
+        projectLogsErrorMessage = nil
+        defer { isRunningCommand = false }
+
+        do {
+            let result = try await ddevService.logs(
+                projectName: selectedProject.name,
+                service: request.service.rawValue,
+                tail: request.tailCount,
+                includeTimestamps: request.includeTimestamps,
+                in: selectedProject.appRoot
+            )
+            projectLogsResult = result
+            recordCommandResult(result, requestsOutputExpansion: false)
+        } catch CommandRunnerError.nonZeroExit(let result) {
+            projectLogsResult = result
+            recordCommandResult(result, requestsOutputExpansion: false)
+            let message = "Command failed with exit code \(result.exitCode)."
+            lastErrorMessage = message
+            projectLogsErrorMessage = message
+        } catch {
+            let message = String(describing: error)
+            lastErrorMessage = message
+            projectLogsErrorMessage = message
+        }
+    }
+
+    public func clearProjectLogs() {
+        projectLogsResult = nil
+        projectLogsErrorMessage = nil
+    }
+
     public func updateWordPressCore() async {
         guard let selectedProject, selectedProject.isWordPress else { return }
         await runMutation {
@@ -229,7 +439,7 @@ public final class ProjectDashboardViewModel: ObservableObject {
     private func runMutation(_ operation: @escaping () async throws -> CommandResult) async {
         await runAndCapture {
             let result = try await operation()
-            self.lastCommandResult = result
+            self.recordCommandResult(result)
             await self.refresh()
             return result
         }
@@ -242,8 +452,65 @@ public final class ProjectDashboardViewModel: ObservableObject {
 
         do {
             _ = try await operation()
+        } catch CommandRunnerError.nonZeroExit(let result) {
+            recordCommandResult(result)
+            lastErrorMessage = "Command failed with exit code \(result.exitCode)."
         } catch {
             lastErrorMessage = String(describing: error)
+        }
+    }
+
+    private func recordCommandResult(_ result: CommandResult, requestsOutputExpansion: Bool = true) {
+        lastCommandResult = result
+        commandHistory.append(CommandHistoryEntry(result: result))
+
+        if requestsOutputExpansion {
+            commandOutputExpansionRequest += 1
+        }
+    }
+
+    private func refreshSnapshots(in appRoot: String) async {
+        do {
+            let result = try await ddevService.listSnapshots(in: appRoot)
+            snapshots = DDEVSnapshot.parseListOutput(result.stdout)
+        } catch {
+            lastErrorMessage = String(describing: error)
+        }
+    }
+
+    private func refreshProjectsFromDDEV() async throws {
+        let loadedProjects = try await ddevService.listProjects()
+        let enrichedProjects = await enrichProjectsWithDetails(loadedProjects)
+        applyProjects(enrichedProjects)
+        try? projectCache.saveProjects(enrichedProjects)
+    }
+
+    private func refreshProjectsFromDDEVInBackground() async {
+        do {
+            try await refreshProjectsFromDDEV()
+        } catch {
+            return
+        }
+    }
+
+    private func loadCachedProjects() -> Bool {
+        guard projects.isEmpty else { return false }
+        guard let cachedProjects = try? projectCache.loadProjects(), !cachedProjects.isEmpty else { return false }
+
+        applyProjects(cachedProjects)
+        return true
+    }
+
+    private func applyProjects(_ projects: [DDEVProject]) {
+        self.projects = projects
+
+        if let selectedProjectID,
+           let selectedProject = projects.first(where: { $0.id == selectedProjectID }) {
+            selectedProjectFallback = selectedProject
+        } else {
+            let fallbackProject = filteredProjects(in: projects).first ?? projects.first
+            selectedProjectID = fallbackProject?.id
+            selectedProjectFallback = fallbackProject
         }
     }
 

@@ -26,11 +26,11 @@ struct ProjectListView: View {
                     description: Text(emptyDescription)
                 )
             } else {
-                List(selection: $viewModel.selectedProject) {
+                List(selection: projectSelection) {
                     Section {
                         ForEach(viewModel.filteredProjects) { project in
                             ProjectRow(project: project)
-                                .tag(project)
+                                .tag(project.id)
                                 .listRowSeparator(.visible)
                         }
                     } header: {
@@ -49,6 +49,17 @@ struct ProjectListView: View {
         }
         .navigationTitle(viewModel.selectedSidebarItem.title)
         .searchable(text: $viewModel.searchText, placement: .toolbar, prompt: "Filter projects")
+    }
+
+    private var projectSelection: Binding<DDEVProject.ID?> {
+        Binding {
+            viewModel.selectedProjectID
+        } set: { newSelection in
+            Task { @MainActor in
+                guard viewModel.selectedProjectID != newSelection else { return }
+                viewModel.selectedProjectID = newSelection
+            }
+        }
     }
 
     private var emptyTitle: String {
