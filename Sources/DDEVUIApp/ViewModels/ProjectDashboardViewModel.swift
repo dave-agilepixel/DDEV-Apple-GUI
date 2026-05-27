@@ -90,19 +90,31 @@ public final class ProjectDashboardViewModel: ObservableObject {
     @Published public var lastErrorMessage: String?
     @Published public var commandOutputExpansionRequest = 0
     @Published public var commandHistory: [CommandHistoryEntry] = []
+    @Published public private(set) var preferences: AppPreferences
+    @Published public private(set) var installedEditors: [EditorChoice]
+    @Published public private(set) var installedDatabaseTools: [DDEVDatabaseTool]
 
     public let supportedPHPVersions = ["8.4", "8.3", "8.2", "8.1", "8.0", "7.4"]
 
     private let ddevService: DDEVServicing
     private let projectCache: ProjectCacheStoring
+    private let preferencesStore: AppPreferencesStoring
+    private let appAvailability: AppAvailabilityChecking
     private var selectedProjectFallback: DDEVProject?
 
     public init(
         ddevService: DDEVServicing = DDEVCommandService(),
-        projectCache: ProjectCacheStoring = FileProjectCacheStore()
+        projectCache: ProjectCacheStoring = FileProjectCacheStore(),
+        preferencesStore: AppPreferencesStoring = UserDefaultsAppPreferencesStore(),
+        appAvailability: AppAvailabilityChecking = WorkspaceAppAvailabilityService()
     ) {
         self.ddevService = ddevService
         self.projectCache = projectCache
+        self.preferencesStore = preferencesStore
+        self.appAvailability = appAvailability
+        self.preferences = preferencesStore.loadPreferences()
+        self.installedEditors = appAvailability.installedEditors()
+        self.installedDatabaseTools = appAvailability.installedDatabaseTools()
     }
 
     public var selectedProject: DDEVProject? {
@@ -118,6 +130,25 @@ public final class ProjectDashboardViewModel: ObservableObject {
 
     public var filteredProjects: [DDEVProject] {
         filteredProjects(in: projects)
+    }
+
+    public var availableEditors: [EditorChoice] {
+        AppDefaults.availableEditors(installedEditors: installedEditors)
+    }
+
+    public var availableDatabaseTools: [DDEVDatabaseTool] {
+        installedDatabaseTools
+    }
+
+    public var effectiveDefaultEditor: EditorChoice {
+        AppDefaults.effectiveEditor(saved: preferences.defaultEditor, installedEditors: installedEditors)
+    }
+
+    public var effectiveDefaultDatabaseTool: DDEVDatabaseTool? {
+        AppDefaults.effectiveDatabaseTool(
+            saved: preferences.defaultDatabaseTool,
+            installedDatabaseTools: installedDatabaseTools
+        )
     }
 
     private func filteredProjects(in sourceProjects: [DDEVProject]) -> [DDEVProject] {
@@ -143,6 +174,21 @@ public final class ProjectDashboardViewModel: ObservableObject {
                 || project.projectType.rawValue.localizedCaseInsensitiveContains(query)
                 || (project.phpVersion?.localizedCaseInsensitiveContains(query) ?? false)
         }
+    }
+
+    public func setDefaultEditor(_ editor: EditorChoice?) {
+        preferences.defaultEditor = editor
+        preferencesStore.saveDefaultEditor(editor)
+    }
+
+    public func setDefaultDatabaseTool(_ databaseTool: DDEVDatabaseTool?) {
+        preferences.defaultDatabaseTool = databaseTool
+        preferencesStore.saveDefaultDatabaseTool(databaseTool)
+    }
+
+    public func refreshInstalledApps() {
+        installedEditors = appAvailability.installedEditors()
+        installedDatabaseTools = appAvailability.installedDatabaseTools()
     }
 
     public func refresh() async {
@@ -229,6 +275,11 @@ public final class ProjectDashboardViewModel: ObservableObject {
         await runMutation {
             try await self.ddevService.launchDatabaseTool(tool, in: selectedProject.appRoot)
         }
+    }
+
+    public func launchDefaultDatabaseTool() async {
+        guard let databaseTool = effectiveDefaultDatabaseTool else { return }
+        await launchDatabaseTool(databaseTool)
     }
 
     public func importDatabase(_ options: DDEVDatabaseImportOptions) async {

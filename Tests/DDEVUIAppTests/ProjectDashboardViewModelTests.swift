@@ -118,6 +118,66 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         ])
     }
 
+    func testViewModelExposesEffectiveDefaultEditor() {
+        let viewModel = ProjectDashboardViewModel(
+            ddevService: FakeDDEVService(projects: []),
+            appAvailability: StaticAppAvailabilityService(installedBundleIdentifiers: ["com.microsoft.VSCode"])
+        )
+
+        XCTAssertEqual(viewModel.availableEditors, [.visualStudioCode, .finder])
+        XCTAssertEqual(viewModel.effectiveDefaultEditor, .visualStudioCode)
+    }
+
+    func testViewModelLaunchesDefaultDatabaseTool() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(
+            ddevService: service,
+            appAvailability: StaticAppAvailabilityService(installedBundleIdentifiers: ["com.tinyapp.TablePlus"])
+        )
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.launchDefaultDatabaseTool()
+
+        XCTAssertEqual(service.commands, [
+            "db:tableplus:/Users/dave/Development/agilepixel/aqua-pura",
+            "list",
+            "describe:aqua-pura"
+        ])
+    }
+
+    func testViewModelDoesNotLaunchDatabaseWhenNoToolIsInstalled() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(
+            ddevService: service,
+            appAvailability: StaticAppAvailabilityService(installedBundleIdentifiers: [])
+        )
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.launchDefaultDatabaseTool()
+
+        XCTAssertEqual(service.commands, [])
+    }
+
+    func testDefaultAppSettersUpdateStateAndPersist() {
+        let preferencesStore = InMemoryAppPreferencesStore()
+        let viewModel = ProjectDashboardViewModel(
+            ddevService: FakeDDEVService(projects: []),
+            preferencesStore: preferencesStore,
+            appAvailability: StaticAppAvailabilityService(installedBundleIdentifiers: [
+                "com.microsoft.VSCode",
+                "com.tinyapp.TablePlus"
+            ])
+        )
+
+        viewModel.setDefaultEditor(.visualStudioCode)
+        viewModel.setDefaultDatabaseTool(.tablePlus)
+
+        XCTAssertEqual(viewModel.preferences, AppPreferences(defaultEditor: .visualStudioCode, defaultDatabaseTool: .tablePlus))
+        XCTAssertEqual(viewModel.effectiveDefaultEditor, .visualStudioCode)
+        XCTAssertEqual(viewModel.effectiveDefaultDatabaseTool, .tablePlus)
+        XCTAssertEqual(preferencesStore.preferences, AppPreferences(defaultEditor: .visualStudioCode, defaultDatabaseTool: .tablePlus))
+    }
+
     func testWordPressPresetActionsUseSelectedProjectFolder() async {
         let service = FakeDDEVService(projects: [.sampleWordPress])
         let viewModel = ProjectDashboardViewModel(ddevService: service)
@@ -512,6 +572,35 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
 
 private enum TestError: Error {
     case expected
+}
+
+private final class InMemoryAppPreferencesStore: AppPreferencesStoring, @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedPreferences: AppPreferences
+
+    var preferences: AppPreferences {
+        lock.withLock { storedPreferences }
+    }
+
+    init(preferences: AppPreferences = AppPreferences()) {
+        self.storedPreferences = preferences
+    }
+
+    func loadPreferences() -> AppPreferences {
+        preferences
+    }
+
+    func saveDefaultEditor(_ editor: EditorChoice?) {
+        lock.withLock {
+            storedPreferences.defaultEditor = editor
+        }
+    }
+
+    func saveDefaultDatabaseTool(_ databaseTool: DDEVDatabaseTool?) {
+        lock.withLock {
+            storedPreferences.defaultDatabaseTool = databaseTool
+        }
+    }
 }
 
 extension DDEVProject {
