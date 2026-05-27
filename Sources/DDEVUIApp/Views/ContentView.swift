@@ -7,39 +7,63 @@ struct ContentView: View {
     var body: some View {
         NavigationSplitView {
             List(selection: $viewModel.selectedSidebarItem) {
-                ForEach(ProjectSidebarItem.allCases) { item in
-                    Label(item.title, systemImage: item.systemImage)
-                        .tag(item)
+                Section("Library") {
+                    ForEach(ProjectSidebarItem.allCases) { item in
+                        SidebarRow(item: item, count: count(for: item))
+                            .tag(item)
+                    }
                 }
             }
+            .listStyle(.sidebar)
             .navigationTitle("DDEVUI")
+            .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 240)
         } content: {
             if viewModel.selectedSidebarItem == .settings {
                 SettingsView(viewModel: viewModel)
             } else {
                 ProjectListView(viewModel: viewModel)
+                    .navigationSplitViewColumnWidth(min: 280, ideal: 320, max: 420)
             }
         } detail: {
             ProjectInspectorView(viewModel: viewModel)
+                .navigationSplitViewColumnWidth(min: 540, ideal: 720)
         }
         .task {
             await viewModel.refresh()
         }
         .toolbar {
-            Button {
-                addFolder()
-            } label: {
-                Label("Add Folder", systemImage: "folder.badge.plus")
-            }
+            ToolbarItemGroup {
+                Button {
+                    addFolder()
+                } label: {
+                    Label("Add Folder", systemImage: "folder.badge.plus")
+                }
+                .help("Register an existing folder as a DDEV project")
 
-            Button {
-                Task { await viewModel.refresh() }
-            } label: {
-                Label("Refresh", systemImage: "arrow.clockwise")
+                Button {
+                    Task { await viewModel.refresh() }
+                } label: {
+                    if viewModel.isRunningCommand {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Label("Refresh", systemImage: "arrow.clockwise")
+                    }
+                }
+                .help("Reload DDEV project list")
+                .disabled(viewModel.isRunningCommand)
             }
         }
         .sheet(item: $folderToConfigure) { folder in
             AddProjectSheet(folder: folder.url, viewModel: viewModel)
+        }
+    }
+
+    private func count(for item: ProjectSidebarItem) -> Int? {
+        switch item {
+        case .projects: viewModel.projects.count
+        case .running: viewModel.projects.filter { $0.status == .running }.count
+        case .wordpress: viewModel.projects.filter { $0.isWordPress }.count
+        case .settings: nil
         }
     }
 
@@ -64,6 +88,28 @@ struct ContentView: View {
     }
 }
 
+private struct SidebarRow: View {
+    let item: ProjectSidebarItem
+    let count: Int?
+
+    var body: some View {
+        HStack {
+            Label(item.title, systemImage: item.systemImage)
+            Spacer()
+            if let count, count > 0 {
+                Text("\(count)")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 1)
+                    .background(
+                        Capsule().fill(.quaternary.opacity(0.6))
+                    )
+            }
+        }
+    }
+}
+
 private struct FolderToConfigure: Identifiable {
     let url: URL
     var id: String { url.path }
@@ -78,23 +124,44 @@ private struct SettingsView: View {
 
     var body: some View {
         Form {
-            Section("DDEV") {
+            Section("Overview") {
                 LabeledContent("Projects") {
-                    Text("\(viewModel.projects.count)")
+                    Text("\(viewModel.projects.count)").monospacedDigit()
                 }
                 LabeledContent("Running") {
                     Text("\(viewModel.projects.filter { $0.status == .running }.count)")
+                        .monospacedDigit()
+                        .foregroundStyle(.green)
                 }
                 LabeledContent("WordPress") {
-                    Text("\(viewModel.projects.filter { $0.isWordPress }.count)")
+                    Text("\(viewModel.projects.filter { $0.isWordPress }.count)").monospacedDigit()
                 }
-                LabeledContent("PHP presets") {
-                    Text(viewModel.supportedPHPVersions.joined(separator: ", "))
-                }
+            }
+
+            Section("PHP Presets") {
+                FlowChips(items: viewModel.supportedPHPVersions.map { "PHP \($0)" })
             }
         }
         .formStyle(.grouped)
         .navigationTitle("Settings")
+    }
+}
+
+private struct FlowChips: View {
+    let items: [String]
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(items, id: \.self) { item in
+                Text(item)
+                    .font(.caption.monospacedDigit())
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(
+                        Capsule().fill(.quaternary)
+                    )
+            }
+        }
     }
 }
 
@@ -114,34 +181,45 @@ private struct AddProjectSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Configure DDEV Project")
-                .font(.title2.bold())
-
-            Text(folder.path)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .textSelection(.enabled)
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(spacing: 12) {
+                Image(systemName: "folder.badge.plus")
+                    .font(.largeTitle)
+                    .foregroundStyle(.tint)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Configure DDEV Project")
+                        .font(.title3.weight(.semibold))
+                    Text(folder.path)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
 
             Form {
-                TextField("Project name", text: $projectName)
+                Section {
+                    TextField("Project name", text: $projectName)
 
-                Picker("Project type", selection: $projectType) {
-                    Text("WordPress").tag(DDEVProjectType.wordpress)
-                    Text("WP Bedrock").tag(DDEVProjectType.wpBedrock)
-                    Text("Laravel").tag(DDEVProjectType.laravel)
-                    Text("Generic").tag(DDEVProjectType.generic)
+                    Picker("Project type", selection: $projectType) {
+                        Label("WordPress", systemImage: "w.square").tag(DDEVProjectType.wordpress)
+                        Label("WP Bedrock", systemImage: "w.square.fill").tag(DDEVProjectType.wpBedrock)
+                        Label("Laravel", systemImage: "l.square").tag(DDEVProjectType.laravel)
+                        Label("Generic", systemImage: "globe").tag(DDEVProjectType.generic)
+                    }
+
+                    TextField("Docroot", text: $docroot, prompt: Text("Leave blank for project root"))
                 }
-
-                TextField("Docroot", text: $docroot, prompt: Text("Leave blank for project root"))
             }
+            .formStyle(.grouped)
+            .frame(maxHeight: 200)
 
             HStack {
                 Spacer()
-                Button("Cancel") {
-                    dismiss()
-                }
-                Button("Configure") {
+                Button("Cancel") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button {
                     Task {
                         await viewModel.configureProject(
                             folder: folder.path,
@@ -151,12 +229,15 @@ private struct AddProjectSheet: View {
                         )
                         dismiss()
                     }
+                } label: {
+                    Label("Configure", systemImage: "checkmark")
                 }
+                .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
                 .disabled(projectName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
-        .padding()
-        .frame(width: 460)
+        .padding(24)
+        .frame(width: 520)
     }
 }

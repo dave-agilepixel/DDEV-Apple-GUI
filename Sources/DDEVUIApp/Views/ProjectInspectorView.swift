@@ -7,27 +7,66 @@ struct ProjectInspectorView: View {
     @State private var confirmUnlink = false
     @State private var confirmDeleteDDEVData = false
     @State private var showSourceDeleteSheet = false
+    @State private var outputExpanded = false
 
     var body: some View {
         Group {
             if let project = viewModel.selectedProject {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 20) {
+                    VStack(alignment: .leading, spacing: 24) {
                         header(project)
+                        primaryActionBar(project)
                         environment(project)
-                        lifecycleActions
-                        dailyTools(project)
+                        quickLinks(project)
                         if viewModel.canRunWordPressActions(for: project) {
-                            wordpressActions
+                            wordpressSection
                         }
-                        dangerActions
-                        CommandOutputView(result: viewModel.lastCommandResult, errorMessage: viewModel.lastErrorMessage)
+                        commandOutputSection
                     }
-                    .padding()
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 20)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .scrollContentBackground(.hidden)
+                .toolbar {
+                    ToolbarItem(placement: .primaryAction) {
+                        Menu {
+                            Button {
+                                if let url = project.primaryURL { workspaceOpener.openURL(url) }
+                            } label: {
+                                Label("Open Primary URL", systemImage: "safari")
+                            }
+                            .disabled(project.primaryURL == nil)
+
+                            Divider()
+
+                            Button(role: .destructive) {
+                                confirmUnlink = true
+                            } label: {
+                                Label("Unlink From DDEV…", systemImage: "link.badge.plus")
+                            }
+                            Button(role: .destructive) {
+                                confirmDeleteDDEVData = true
+                            } label: {
+                                Label("Delete DDEV Data…", systemImage: "internaldrive")
+                            }
+                            Button(role: .destructive) {
+                                showSourceDeleteSheet = true
+                            } label: {
+                                Label("Move Source To Trash…", systemImage: "trash")
+                            }
+                        } label: {
+                            Label("More", systemImage: "ellipsis.circle")
+                        }
+                        .disabled(viewModel.isRunningCommand)
+                    }
+                }
             } else {
-                ContentUnavailableView("No Project Selected", systemImage: "shippingbox")
+                ContentUnavailableView(
+                    "No Project Selected",
+                    systemImage: "shippingbox",
+                    description: Text("Pick a project from the list to manage it.")
+                )
             }
         }
         .confirmationDialog("Unlink this project from DDEV?", isPresented: $confirmUnlink) {
@@ -53,113 +92,454 @@ struct ProjectInspectorView: View {
         }
     }
 
+    // MARK: - Header
+
     private func header(_ project: DDEVProject) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(project.name)
-                .font(.largeTitle.bold())
-            Text(project.appRoot)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .textSelection(.enabled)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Text(project.name)
+                    .font(.largeTitle.bold())
+                    .lineLimit(1)
+
+                ProjectStatusBadge(status: project.status)
+            }
+
+            HStack(spacing: 14) {
+                Label(project.projectType.displayName, systemImage: project.projectType.symbol)
+                if let php = project.phpVersion {
+                    Label("PHP \(php)", systemImage: "swift")
+                        .labelStyle(.titleAndIcon)
+                }
+                if project.mutagenEnabled {
+                    Label("Mutagen", systemImage: "arrow.triangle.2.circlepath")
+                }
+            }
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .labelStyle(InspectorChipLabelStyle())
+
+            HStack(spacing: 6) {
+                Image(systemName: "folder")
+                    .foregroundStyle(.tertiary)
+                Text(project.appRoot)
+                    .font(.system(.callout, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
         }
     }
 
-    private func environment(_ project: DDEVProject) -> some View {
-        actionSection("Environment") {
-            LabeledContent("PHP") {
-                Text(project.phpVersion ?? "Unknown")
-                    .monospacedDigit()
+    // MARK: - Primary action bar (single glass element, not a card)
+
+    private func primaryActionBar(_ project: DDEVProject) -> some View {
+        let isRunning = project.status == .running
+
+        return HStack(spacing: 10) {
+            Button {
+                if let url = project.primaryURL { workspaceOpener.openURL(url) }
+            } label: {
+                Label("Open Site", systemImage: "safari")
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .disabled(!isRunning || project.primaryURL == nil)
+
+            if isRunning {
+                Button {
+                    Task { await viewModel.restartSelectedProject() }
+                } label: {
+                    Label("Restart", systemImage: "arrow.clockwise")
+                }
+                .controlSize(.large)
+
+                Button {
+                    Task { await viewModel.stopSelectedProject() }
+                } label: {
+                    Label("Stop", systemImage: "stop.fill")
+                }
+                .controlSize(.large)
+            } else {
+                Button {
+                    Task { await viewModel.startSelectedProject() }
+                } label: {
+                    Label("Start", systemImage: "play.fill")
+                }
+                .controlSize(.large)
             }
 
-            Menu("Change PHP") {
-                ForEach(viewModel.supportedPHPVersions, id: \.self) { version in
-                    Button("PHP \(version)") {
-                        Task { await viewModel.setPHPVersionForSelectedProject(version) }
-                    }
-                    .disabled(project.phpVersion == version)
-                }
+            Spacer(minLength: 0)
+
+            Menu {
+                Button("Cursor") { workspaceOpener.openFolder(project.appRoot, editor: .cursor) }
+                Button("VS Code") { workspaceOpener.openFolder(project.appRoot, editor: .visualStudioCode) }
+                Button("Finder") { workspaceOpener.openFolder(project.appRoot, editor: .finder) }
+            } label: {
+                Label("Open In", systemImage: "square.and.pencil")
             }
-        }
-    }
+            .controlSize(.large)
+            .menuStyle(.borderlessButton)
+            .fixedSize()
 
-    private var lifecycleActions: some View {
-        actionSection("Lifecycle") {
-            Button("Start") { Task { await viewModel.startSelectedProject() } }
-            Button("Stop") { Task { await viewModel.stopSelectedProject() } }
-            Button("Restart") { Task { await viewModel.restartSelectedProject() } }
-        }
-    }
-
-    private func dailyTools(_ project: DDEVProject) -> some View {
-        actionSection("Daily Tools") {
-            Button("Open Site") {
-                if let url = project.primaryURL {
-                    workspaceOpener.openURL(url)
-                }
-            }
-            .disabled(project.primaryURL == nil)
-
-            Menu("Open In") {
-                Button("Cursor") {
-                    workspaceOpener.openFolder(project.appRoot, editor: .cursor)
-                }
-                Button("VS Code") {
-                    workspaceOpener.openFolder(project.appRoot, editor: .visualStudioCode)
-                }
-                Button("Finder") {
-                    workspaceOpener.openFolder(project.appRoot, editor: .finder)
-                }
-            }
-
-            Menu("Database") {
+            Menu {
                 Button("Sequel Ace") { Task { await viewModel.launchDatabaseTool(.sequelAce) } }
                 Button("TablePlus") { Task { await viewModel.launchDatabaseTool(.tablePlus) } }
                 Button("Querious") { Task { await viewModel.launchDatabaseTool(.querious) } }
                 Button("DBeaver") { Task { await viewModel.launchDatabaseTool(.dbeaver) } }
+            } label: {
+                Label("Database", systemImage: "cylinder.split.1x2")
+            }
+            .controlSize(.large)
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .disabled(!isRunning)
+        }
+        .labelStyle(.titleAndIcon)
+        .buttonStyle(.bordered)
+        .disabled(viewModel.isRunningCommand)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .glassEffect(in: .rect(cornerRadius: 14))
+    }
+
+    // MARK: - Environment
+
+    private func environment(_ project: DDEVProject) -> some View {
+        InspectorSection("Environment") {
+            VStack(alignment: .leading, spacing: 8) {
+                metaRow("PHP version", trailing: {
+                    HStack(spacing: 6) {
+                        Text(project.phpVersion ?? "Unknown")
+                            .font(.system(.body, design: .monospaced))
+                        Menu {
+                            ForEach(viewModel.supportedPHPVersions, id: \.self) { version in
+                                Button("PHP \(version)") {
+                                    Task { await viewModel.setPHPVersionForSelectedProject(version) }
+                                }
+                                .disabled(project.phpVersion == version)
+                            }
+                        } label: {
+                            Text("Change")
+                        }
+                        .menuStyle(.borderlessButton)
+                        .fixedSize()
+                        .disabled(viewModel.isRunningCommand)
+                    }
+                })
+
+                metaRow("Project type", trailing: {
+                    Text(project.projectType.displayName)
+                        .foregroundStyle(.secondary)
+                })
+
+                if !project.docroot.isEmpty {
+                    metaRow("Docroot", trailing: {
+                        Text(project.docroot)
+                            .font(.system(.body, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    })
+                }
+
+                if let mutagen = project.mutagenStatus, project.mutagenEnabled {
+                    metaRow("Mutagen", trailing: {
+                        Text(mutagen)
+                            .foregroundStyle(.secondary)
+                    })
+                }
             }
         }
     }
 
-    private var wordpressActions: some View {
-        actionSection("WordPress") {
-            Button("Update Core") {
-                Task { await viewModel.updateWordPressCore() }
-            }
-            Button("Update Plugins") {
-                Task { await viewModel.updateWordPressPlugins() }
-            }
-            Button("Update Themes") {
-                Task { await viewModel.updateWordPressThemes() }
+    // MARK: - Quick links
+
+    @ViewBuilder
+    private func quickLinks(_ project: DDEVProject) -> some View {
+        let links: [(String, String, URL?)] = [
+            ("Primary", "safari", project.primaryURL),
+            ("HTTPS", "lock.shield", project.httpsURL),
+            ("HTTP", "globe", project.httpURL),
+            ("Mailpit", "envelope", project.mailpitHTTPSURL ?? project.mailpitURL),
+            ("XHGui", "chart.bar.xaxis", project.xhguiHTTPSURL ?? project.xhguiURL)
+        ]
+        let available = links.compactMap { item -> (String, String, URL)? in
+            guard let url = item.2 else { return nil }
+            return (item.0, item.1, url)
+        }
+
+        if !available.isEmpty {
+            InspectorSection("URLs") {
+                FlowHStack(spacing: 8) {
+                    ForEach(available, id: \.0) { item in
+                        Button {
+                            workspaceOpener.openURL(item.2)
+                        } label: {
+                            Label(item.0, systemImage: item.1)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                }
+                .disabled(project.status != .running)
             }
         }
     }
 
-    private var dangerActions: some View {
-        actionSection("Danger") {
-            Button("Unlink From List", role: .destructive) {
-                confirmUnlink = true
-            }
-            Button("Delete DDEV Data", role: .destructive) {
-                confirmDeleteDDEVData = true
-            }
-            Button("Delete Source Folder", role: .destructive) {
-                showSourceDeleteSheet = true
-            }
-        }
-    }
+    // MARK: - WordPress
 
-    private func actionSection<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title)
-                .font(.headline)
-            HStack {
-                content()
+    private var wordpressSection: some View {
+        InspectorSection("WordPress") {
+            HStack(spacing: 8) {
+                Button {
+                    Task { await viewModel.updateWordPressCore() }
+                } label: {
+                    Label("Update Core", systemImage: "shippingbox.and.arrow.backward")
+                }
+                Button {
+                    Task { await viewModel.updateWordPressPlugins() }
+                } label: {
+                    Label("Update Plugins", systemImage: "puzzlepiece.extension")
+                }
+                Button {
+                    Task { await viewModel.updateWordPressThemes() }
+                } label: {
+                    Label("Update Themes", systemImage: "paintpalette")
+                }
+                Spacer(minLength: 0)
             }
             .buttonStyle(.bordered)
+            .controlSize(.regular)
+            .labelStyle(.titleAndIcon)
             .disabled(viewModel.isRunningCommand)
         }
     }
+
+    // MARK: - Command output (disclosure)
+
+    @ViewBuilder
+    private var commandOutputSection: some View {
+        if viewModel.lastCommandResult != nil || viewModel.lastErrorMessage != nil || viewModel.isRunningCommand {
+            DisclosureGroup(isExpanded: $outputExpanded) {
+                CommandOutputView(
+                    result: viewModel.lastCommandResult,
+                    errorMessage: viewModel.lastErrorMessage
+                )
+                .padding(.top, 8)
+            } label: {
+                HStack(spacing: 10) {
+                    Text("Last Command")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                        .kerning(0.5)
+
+                    if viewModel.isRunningCommand {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else if viewModel.lastErrorMessage != nil {
+                        Image(systemName: "xmark.octagon.fill")
+                            .foregroundStyle(.red)
+                    } else if let result = viewModel.lastCommandResult {
+                        Image(systemName: result.succeeded ? "checkmark.circle.fill" : "xmark.octagon.fill")
+                            .foregroundStyle(result.succeeded ? .green : .red)
+                    }
+
+                    Spacer()
+                }
+            }
+        }
+    }
+
+    // MARK: - Small helpers
+
+    private func metaRow<Trailing: View>(_ label: String, @ViewBuilder trailing: () -> Trailing) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(label)
+                .foregroundStyle(.secondary)
+            Spacer()
+            trailing()
+        }
+        .font(.callout)
+    }
 }
+
+// MARK: - Section wrapper (header + dividing rule, NOT a card)
+
+private struct InspectorSection<Content: View>: View {
+    let title: String
+    let content: Content
+
+    init(_ title: String, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .kerning(0.5)
+                Spacer()
+            }
+            content
+        }
+    }
+}
+
+// MARK: - Status badge (dot + label, single inline element)
+
+struct ProjectStatusBadge: View {
+    let status: DDEVProjectStatus
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(color)
+                .frame(width: 8, height: 8)
+                .overlay(
+                    Circle()
+                        .stroke(color.opacity(0.35), lineWidth: 4)
+                        .blur(radius: 2)
+                        .opacity(status == .running ? 1 : 0)
+                )
+            Text(label)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var color: Color {
+        switch status {
+        case .running: .green
+        case .paused: .orange
+        case .stopped: .secondary
+        case .unknown: .yellow
+        }
+    }
+
+    private var label: String {
+        switch status {
+        case .running: "Running"
+        case .paused: "Paused"
+        case .stopped: "Stopped"
+        case .unknown: "Unknown"
+        }
+    }
+}
+
+// MARK: - DDEVProjectType visual helpers
+
+extension DDEVProjectType {
+    var displayName: String {
+        switch self {
+        case .wordpress: "WordPress"
+        case .wpBedrock: "WP Bedrock"
+        case .laravel: "Laravel"
+        case .generic: "Generic"
+        case .other: "Other"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .wordpress, .wpBedrock: "w.square"
+        case .laravel: "l.square"
+        case .generic: "globe"
+        case .other: "questionmark.square.dashed"
+        }
+    }
+}
+
+// MARK: - Chip-style label (icon + text, no background)
+
+private struct InspectorChipLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 5) {
+            configuration.icon
+                .foregroundStyle(.tertiary)
+            configuration.title
+        }
+    }
+}
+
+// MARK: - FlowHStack (wraps items to new lines on overflow)
+
+private struct FlowHStack<Content: View>: View {
+    let spacing: CGFloat
+    @ViewBuilder let content: () -> Content
+
+    init(spacing: CGFloat = 8, @ViewBuilder content: @escaping () -> Content) {
+        self.spacing = spacing
+        self.content = content
+    }
+
+    var body: some View {
+        // Simple horizontal scroll-free wrap using HStack with .layoutPriority.
+        // For short URL chip rows this works visually; a more elaborate flow layout
+        // isn't worth the complexity here.
+        WrappingHStack(spacing: spacing, content: content)
+    }
+}
+
+private struct WrappingHStack<Content: View>: View {
+    let spacing: CGFloat
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        FlowLayout(spacing: spacing) {
+            content()
+        }
+    }
+}
+
+private struct FlowLayout: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let maxWidth = proposal.width ?? .infinity
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var lineHeight: CGFloat = 0
+        var totalWidth: CGFloat = 0
+
+        for sub in subviews {
+            let size = sub.sizeThatFits(.unspecified)
+            if x + size.width > maxWidth, x > 0 {
+                y += lineHeight + spacing
+                x = 0
+                lineHeight = 0
+            }
+            x += size.width + spacing
+            lineHeight = max(lineHeight, size.height)
+            totalWidth = max(totalWidth, x - spacing)
+        }
+        return CGSize(width: totalWidth, height: y + lineHeight)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let maxWidth = bounds.width
+        var x: CGFloat = bounds.minX
+        var y: CGFloat = bounds.minY
+        var lineHeight: CGFloat = 0
+
+        for sub in subviews {
+            let size = sub.sizeThatFits(.unspecified)
+            if x + size.width > bounds.minX + maxWidth, x > bounds.minX {
+                y += lineHeight + spacing
+                x = bounds.minX
+                lineHeight = 0
+            }
+            sub.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+            x += size.width + spacing
+            lineHeight = max(lineHeight, size.height)
+        }
+    }
+}
+
+// MARK: - Source folder delete sheet
 
 private struct SourceFolderDeleteSheet: View {
     let project: DDEVProject
@@ -168,33 +548,55 @@ private struct SourceFolderDeleteSheet: View {
     @State private var confirmationText = ""
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Delete Source Folder")
-                .font(.title2.bold())
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(spacing: 12) {
+                Image(systemName: "trash.circle.fill")
+                    .font(.largeTitle)
+                    .foregroundStyle(.red)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Move Source Folder To Trash")
+                        .font(.title3.weight(.semibold))
+                    Text("Independent of DDEV data deletion.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+            }
 
-            Text("This moves the source folder to Trash. It is separate from DDEV data deletion.")
-                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Folder")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .kerning(0.5)
+                Text(project.appRoot)
+                    .font(.system(.callout, design: .monospaced))
+                    .textSelection(.enabled)
+                    .foregroundStyle(.secondary)
+            }
 
-            Text(project.appRoot)
-                .font(.caption)
-                .textSelection(.enabled)
-
-            TextField("Type \(project.name) to confirm", text: $confirmationText)
-                .textFieldStyle(.roundedBorder)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Type **\(project.name)** to confirm")
+                    .font(.callout)
+                TextField("", text: $confirmationText, prompt: Text(project.name))
+                    .textFieldStyle(.roundedBorder)
+            }
 
             HStack {
                 Spacer()
-                Button("Cancel") {
-                    dismiss()
-                }
-                Button("Move To Trash", role: .destructive) {
+                Button("Cancel") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button(role: .destructive) {
                     viewModel.moveSelectedProjectFolderToTrash()
                     dismiss()
+                } label: {
+                    Label("Move To Trash", systemImage: "trash")
                 }
+                .buttonStyle(.borderedProminent)
+                .tint(.red)
                 .disabled(confirmationText != project.name)
             }
         }
-        .padding()
-        .frame(width: 480)
+        .padding(24)
+        .frame(width: 500)
     }
 }
