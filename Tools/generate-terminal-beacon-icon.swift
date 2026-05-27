@@ -26,8 +26,24 @@ let sizes = [
 ]
 
 for size in sizes {
-    let image = NSImage(size: NSSize(width: size.pixels, height: size.pixels))
-    image.lockFocus()
+    guard let bitmap = NSBitmapImageRep(
+        bitmapDataPlanes: nil,
+        pixelsWide: Int(size.pixels),
+        pixelsHigh: Int(size.pixels),
+        bitsPerSample: 8,
+        samplesPerPixel: 4,
+        hasAlpha: true,
+        isPlanar: false,
+        colorSpaceName: .deviceRGB,
+        bitmapFormat: .alphaFirst,
+        bytesPerRow: 0,
+        bitsPerPixel: 0
+    ) else {
+        fatalError("Failed to create bitmap for \(size.filename)")
+    }
+
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
 
     let rect = NSRect(x: 0, y: 0, width: size.pixels, height: size.pixels)
     let scale = size.pixels / 1024
@@ -77,11 +93,9 @@ for size in sizes {
     activeDot.lineWidth = 14 * scale
     activeDot.stroke()
 
-    image.unlockFocus()
+    NSGraphicsContext.restoreGraphicsState()
 
     guard
-        let tiff = image.tiffRepresentation,
-        let bitmap = NSBitmapImageRep(data: tiff),
         let png = bitmap.representation(using: .png, properties: [:])
     else {
         fatalError("Failed to render \(size.filename)")
