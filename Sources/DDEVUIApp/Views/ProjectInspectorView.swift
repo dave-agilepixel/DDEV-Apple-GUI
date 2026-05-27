@@ -4,6 +4,9 @@ import SwiftUI
 struct ProjectInspectorView: View {
     @ObservedObject var viewModel: ProjectDashboardViewModel
     private let workspaceOpener = MacWorkspaceOpener()
+    @State private var confirmUnlink = false
+    @State private var confirmDeleteDDEVData = false
+    @State private var showSourceDeleteSheet = false
 
     var body: some View {
         Group {
@@ -24,6 +27,27 @@ struct ProjectInspectorView: View {
                 }
             } else {
                 ContentUnavailableView("No Project Selected", systemImage: "shippingbox")
+            }
+        }
+        .confirmationDialog("Unlink this project from DDEV?", isPresented: $confirmUnlink) {
+            Button("Unlink", role: .destructive) {
+                Task { await viewModel.unlinkSelectedProject() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes the project from the DDEV list but leaves files and database data alone.")
+        }
+        .confirmationDialog("Delete DDEV data?", isPresented: $confirmDeleteDDEVData) {
+            Button("Delete DDEV Data", role: .destructive) {
+                Task { await viewModel.deleteSelectedDDEVData() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes DDEV project data including database data. It does not delete the source folder.")
+        }
+        .sheet(isPresented: $showSourceDeleteSheet) {
+            if let project = viewModel.selectedProject {
+                SourceFolderDeleteSheet(project: project, viewModel: viewModel)
             }
         }
     }
@@ -94,10 +118,14 @@ struct ProjectInspectorView: View {
     private var dangerActions: some View {
         actionSection("Danger") {
             Button("Unlink From List", role: .destructive) {
-                Task { await viewModel.unlinkSelectedProject() }
+                confirmUnlink = true
             }
-            Button("Delete DDEV Data", role: .destructive) {}
-            Button("Delete Source Folder", role: .destructive) {}
+            Button("Delete DDEV Data", role: .destructive) {
+                confirmDeleteDDEVData = true
+            }
+            Button("Delete Source Folder", role: .destructive) {
+                showSourceDeleteSheet = true
+            }
         }
     }
 
@@ -111,5 +139,43 @@ struct ProjectInspectorView: View {
             .buttonStyle(.bordered)
             .disabled(viewModel.isRunningCommand)
         }
+    }
+}
+
+private struct SourceFolderDeleteSheet: View {
+    let project: DDEVProject
+    @ObservedObject var viewModel: ProjectDashboardViewModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var confirmationText = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Delete Source Folder")
+                .font(.title2.bold())
+
+            Text("This moves the source folder to Trash. It is separate from DDEV data deletion.")
+                .foregroundStyle(.secondary)
+
+            Text(project.appRoot)
+                .font(.caption)
+                .textSelection(.enabled)
+
+            TextField("Type \(project.name) to confirm", text: $confirmationText)
+                .textFieldStyle(.roundedBorder)
+
+            HStack {
+                Spacer()
+                Button("Cancel") {
+                    dismiss()
+                }
+                Button("Move To Trash", role: .destructive) {
+                    viewModel.moveSelectedProjectFolderToTrash()
+                    dismiss()
+                }
+                .disabled(confirmationText != project.name)
+            }
+        }
+        .padding()
+        .frame(width: 480)
     }
 }

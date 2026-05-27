@@ -138,6 +138,23 @@ public final class ProjectDashboardViewModel: ObservableObject {
         project?.isWordPress == true
     }
 
+    public func moveSelectedProjectFolderToTrash() {
+        guard let selectedProject else { return }
+
+        do {
+            try FileManager.default.trashItem(
+                at: URL(fileURLWithPath: selectedProject.appRoot),
+                resultingItemURL: nil
+            )
+            projects.removeAll { $0.id == selectedProject.id }
+            self.selectedProject = projects.first
+            lastCommandResult = nil
+            lastErrorMessage = nil
+        } catch {
+            lastErrorMessage = String(describing: error)
+        }
+    }
+
     private func runMutation(_ operation: @escaping () async throws -> CommandResult) async {
         await runAndCapture {
             let result = try await operation()

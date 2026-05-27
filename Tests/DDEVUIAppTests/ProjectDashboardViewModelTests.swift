@@ -72,6 +72,30 @@ final class ProjectDashboardViewModelTests: XCTestCase {
             "list"
         ])
     }
+
+    func testDeleteDDEVDataRefreshesAfterCommand() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.deleteSelectedDDEVData()
+
+        XCTAssertEqual(service.commands, ["delete:aqua-pura", "list"])
+    }
+
+    func testConfigureProjectRunsDDEVConfigForFolder() async {
+        let service = FakeDDEVService(projects: [])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+
+        await viewModel.configureProject(
+            folder: "/Users/dave/new-site",
+            name: "new-site",
+            type: .wordpress,
+            docroot: "web"
+        )
+
+        XCTAssertEqual(service.commands, ["config:/Users/dave/new-site:new-site:wordpress:web", "list"])
+    }
 }
 
 private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
