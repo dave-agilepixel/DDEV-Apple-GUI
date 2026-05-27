@@ -121,6 +121,7 @@ final class ProjectDashboardViewModelTests: XCTestCase {
     func testViewModelExposesEffectiveDefaultEditor() {
         let viewModel = ProjectDashboardViewModel(
             ddevService: FakeDDEVService(projects: []),
+            preferencesStore: InMemoryAppPreferencesStore(),
             appAvailability: StaticAppAvailabilityService(installedBundleIdentifiers: ["com.microsoft.VSCode"])
         )
 
@@ -132,6 +133,7 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         let service = FakeDDEVService(projects: [.sampleWordPress])
         let viewModel = ProjectDashboardViewModel(
             ddevService: service,
+            preferencesStore: InMemoryAppPreferencesStore(),
             appAvailability: StaticAppAvailabilityService(installedBundleIdentifiers: ["com.tinyapp.TablePlus"])
         )
         viewModel.selectedProject = .sampleWordPress
@@ -149,6 +151,7 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         let service = FakeDDEVService(projects: [.sampleWordPress])
         let viewModel = ProjectDashboardViewModel(
             ddevService: service,
+            preferencesStore: InMemoryAppPreferencesStore(),
             appAvailability: StaticAppAvailabilityService(installedBundleIdentifiers: [])
         )
         viewModel.selectedProject = .sampleWordPress
