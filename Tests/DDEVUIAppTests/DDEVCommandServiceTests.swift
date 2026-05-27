@@ -245,12 +245,18 @@ final class DDEVCommandServiceTests: XCTestCase {
         _ = try await service.createSnapshot(name: "before-upgrade", in: "/Users/dave/site")
         _ = try await service.listSnapshots(in: "/Users/dave/site")
         _ = try await service.restoreSnapshot(named: "before-upgrade", in: "/Users/dave/site")
+        _ = try await service.restoreLatestSnapshot(in: "/Users/dave/site")
+        _ = try await service.cleanupSnapshots(in: "/Users/dave/site")
+        _ = try await service.cleanupSnapshot(named: "before-upgrade", in: "/Users/dave/site")
 
         XCTAssertEqual(runner.commands, [
             CommandSpec(executable: "ddev", arguments: ["snapshot"], workingDirectory: "/Users/dave/site"),
             CommandSpec(executable: "ddev", arguments: ["snapshot", "--name=before-upgrade"], workingDirectory: "/Users/dave/site"),
             CommandSpec(executable: "ddev", arguments: ["snapshot", "--list"], workingDirectory: "/Users/dave/site"),
-            CommandSpec(executable: "ddev", arguments: ["snapshot", "restore", "before-upgrade"], workingDirectory: "/Users/dave/site")
+            CommandSpec(executable: "ddev", arguments: ["snapshot", "restore", "before-upgrade"], workingDirectory: "/Users/dave/site"),
+            CommandSpec(executable: "ddev", arguments: ["snapshot", "restore", "--latest"], workingDirectory: "/Users/dave/site"),
+            CommandSpec(executable: "ddev", arguments: ["snapshot", "--cleanup", "-y"], workingDirectory: "/Users/dave/site"),
+            CommandSpec(executable: "ddev", arguments: ["snapshot", "--cleanup", "--name=before-upgrade", "-y"], workingDirectory: "/Users/dave/site")
         ])
     }
 

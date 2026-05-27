@@ -143,6 +143,21 @@ public final class DDEVCommandService: Sendable {
     }
 
     @discardableResult
+    public func restoreLatestSnapshot(in appRoot: String) async throws -> CommandResult {
+        try await runDDEV(["snapshot", "restore", "--latest"], workingDirectory: appRoot)
+    }
+
+    @discardableResult
+    public func cleanupSnapshots(in appRoot: String) async throws -> CommandResult {
+        try await runDDEV(["snapshot", "--cleanup", "-y"], workingDirectory: appRoot)
+    }
+
+    @discardableResult
+    public func cleanupSnapshot(named snapshotName: String, in appRoot: String) async throws -> CommandResult {
+        try await runDDEV(["snapshot", "--cleanup", "--name=\(snapshotName)", "-y"], workingDirectory: appRoot)
+    }
+
+    @discardableResult
     public func logs(
         projectName: String,
         service: String,

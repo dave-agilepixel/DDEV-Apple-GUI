@@ -18,6 +18,7 @@ struct ProjectInspectorView: View {
                         primaryActionBar(project)
                         environment(project)
                         DatabaseOperationsView(project: project, viewModel: viewModel)
+                        SnapshotManagerView(project: project, viewModel: viewModel)
                         quickLinks(project)
                         if viewModel.canRunWordPressActions(for: project) {
                             wordpressSection

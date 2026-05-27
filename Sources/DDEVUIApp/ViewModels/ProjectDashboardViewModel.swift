@@ -19,6 +19,9 @@ public protocol DDEVServicing: Sendable {
     func createSnapshot(name: String?, in appRoot: String) async throws -> CommandResult
     func listSnapshots(in appRoot: String) async throws -> CommandResult
     func restoreSnapshot(named snapshotName: String, in appRoot: String) async throws -> CommandResult
+    func restoreLatestSnapshot(in appRoot: String) async throws -> CommandResult
+    func cleanupSnapshots(in appRoot: String) async throws -> CommandResult
+    func cleanupSnapshot(named snapshotName: String, in appRoot: String) async throws -> CommandResult
     func logs(projectName: String, service: String, tail: Int, includeTimestamps: Bool, in appRoot: String) async throws -> CommandResult
     func listInstalledAddOns(in appRoot: String) async throws -> CommandResult
     func searchAddOns(query: String, in appRoot: String) async throws -> CommandResult
@@ -90,6 +93,7 @@ public final class ProjectDashboardViewModel: ObservableObject {
     @Published public var lastErrorMessage: String?
     @Published public var commandOutputExpansionRequest = 0
     @Published public var commandHistory: [CommandHistoryEntry] = []
+    @Published public var snapshots: [DDEVSnapshot] = []
     @Published public private(set) var preferences: AppPreferences
     @Published public private(set) var installedEditors: [EditorChoice]
     @Published public private(set) var installedDatabaseTools: [DDEVDatabaseTool]
@@ -298,6 +302,59 @@ public final class ProjectDashboardViewModel: ObservableObject {
         }
     }
 
+    public func loadSnapshotsForSelectedProject() async {
+        guard let selectedProject else { return }
+        await runAndCapture {
+            let result = try await self.ddevService.listSnapshots(in: selectedProject.appRoot)
+            self.snapshots = DDEVSnapshot.parseListOutput(result.stdout)
+            return nil
+        }
+    }
+
+    public func createSnapshotForSelectedProject(name: String?) async {
+        guard let selectedProject else { return }
+        await runAndCapture {
+            let result = try await self.ddevService.createSnapshot(name: name, in: selectedProject.appRoot)
+            self.recordCommandResult(result)
+            await self.refreshSnapshots(in: selectedProject.appRoot)
+            return result
+        }
+    }
+
+    public func restoreSnapshotForSelectedProject(named snapshotName: String) async {
+        guard let selectedProject else { return }
+        await runMutation {
+            try await self.ddevService.restoreSnapshot(named: snapshotName, in: selectedProject.appRoot)
+        }
+    }
+
+    public func restoreLatestSnapshotForSelectedProject() async {
+        guard let selectedProject else { return }
+        await runMutation {
+            try await self.ddevService.restoreLatestSnapshot(in: selectedProject.appRoot)
+        }
+    }
+
+    public func cleanupSnapshotsForSelectedProject() async {
+        guard let selectedProject else { return }
+        await runAndCapture {
+            let result = try await self.ddevService.cleanupSnapshots(in: selectedProject.appRoot)
+            self.recordCommandResult(result)
+            await self.refreshSnapshots(in: selectedProject.appRoot)
+            return result
+        }
+    }
+
+    public func cleanupSnapshotForSelectedProject(named snapshotName: String) async {
+        guard let selectedProject else { return }
+        await runAndCapture {
+            let result = try await self.ddevService.cleanupSnapshot(named: snapshotName, in: selectedProject.appRoot)
+            self.recordCommandResult(result)
+            await self.refreshSnapshots(in: selectedProject.appRoot)
+            return result
+        }
+    }
+
     public func updateWordPressCore() async {
         guard let selectedProject, selectedProject.isWordPress else { return }
         await runMutation {
@@ -370,6 +427,15 @@ public final class ProjectDashboardViewModel: ObservableObject {
 
         if requestsOutputExpansion {
             commandOutputExpansionRequest += 1
+        }
+    }
+
+    private func refreshSnapshots(in appRoot: String) async {
+        do {
+            let result = try await ddevService.listSnapshots(in: appRoot)
+            snapshots = DDEVSnapshot.parseListOutput(result.stdout)
+        } catch {
+            lastErrorMessage = String(describing: error)
         }
     }
 

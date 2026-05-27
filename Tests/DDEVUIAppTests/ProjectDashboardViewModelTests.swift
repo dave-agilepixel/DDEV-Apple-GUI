@@ -366,6 +366,101 @@ final class ProjectDashboardViewModelTests: XCTestCase {
 
         XCTAssertEqual(viewModel.commandHistory.map(\.result), [failure])
     }
+
+    func testLoadSnapshotsUsesSelectedProjectFolder() async {
+        let service = FakeDDEVService(
+            projects: [.sampleWordPress],
+            snapshotListOutput: "before-upgrade_mariadb_10.11.gz\n"
+        )
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.loadSnapshotsForSelectedProject()
+
+        XCTAssertEqual(service.commands, ["snapshot-list:/Users/dave/Development/agilepixel/aqua-pura"])
+        XCTAssertEqual(viewModel.snapshots, [
+            DDEVSnapshot(name: "before-upgrade", databaseSuffix: "mariadb 10.11")
+        ])
+    }
+
+    func testCreateSnapshotRefreshesSnapshotListAndRecordsCreateOutput() async {
+        let service = FakeDDEVService(
+            projects: [.sampleWordPress],
+            snapshotListOutput: "before-upgrade_mariadb_10.11.gz\n"
+        )
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.createSnapshotForSelectedProject(name: "before-upgrade")
+
+        XCTAssertEqual(service.commands, [
+            "snapshot:/Users/dave/Development/agilepixel/aqua-pura:before-upgrade",
+            "snapshot-list:/Users/dave/Development/agilepixel/aqua-pura"
+        ])
+        XCTAssertEqual(viewModel.lastCommandResult?.arguments, ["snapshot"])
+        XCTAssertEqual(viewModel.commandOutputExpansionRequest, 1)
+        XCTAssertEqual(viewModel.snapshots.count, 1)
+    }
+
+    func testRestoreSnapshotRefreshesProjectsAfterSuccessAndKeepsOutputVisible() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.restoreSnapshotForSelectedProject(named: "before-upgrade")
+
+        XCTAssertEqual(service.commands, [
+            "snapshot-restore:/Users/dave/Development/agilepixel/aqua-pura:before-upgrade",
+            "list",
+            "describe:aqua-pura"
+        ])
+        XCTAssertEqual(viewModel.lastCommandResult?.arguments, ["snapshot", "restore", "before-upgrade"])
+        XCTAssertEqual(viewModel.commandOutputExpansionRequest, 1)
+        XCTAssertEqual(viewModel.commandHistory.map(\.result.arguments), [["snapshot", "restore", "before-upgrade"]])
+    }
+
+    func testRestoreLatestSnapshotUsesExplicitServiceMethodAndRefreshes() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.restoreLatestSnapshotForSelectedProject()
+
+        XCTAssertEqual(service.commands, [
+            "snapshot-restore-latest:/Users/dave/Development/agilepixel/aqua-pura",
+            "list",
+            "describe:aqua-pura"
+        ])
+        XCTAssertEqual(viewModel.lastCommandResult?.arguments, ["snapshot", "restore", "--latest"])
+    }
+
+    func testCleanupSnapshotsUsesExplicitCleanupMethodAndRefreshesSnapshotList() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.cleanupSnapshotsForSelectedProject()
+
+        XCTAssertEqual(service.commands, [
+            "snapshot-cleanup:/Users/dave/Development/agilepixel/aqua-pura",
+            "snapshot-list:/Users/dave/Development/agilepixel/aqua-pura"
+        ])
+        XCTAssertEqual(viewModel.lastCommandResult?.arguments, ["snapshot", "--cleanup", "-y"])
+    }
+
+    func testCleanupSingleSnapshotUsesNamedCleanupMethod() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.cleanupSnapshotForSelectedProject(named: "before-upgrade")
+
+        XCTAssertEqual(service.commands, [
+            "snapshot-cleanup-one:/Users/dave/Development/agilepixel/aqua-pura:before-upgrade",
+            "snapshot-list:/Users/dave/Development/agilepixel/aqua-pura"
+        ])
+        XCTAssertEqual(viewModel.lastCommandResult?.arguments, ["snapshot", "--cleanup", "--name=before-upgrade", "-y"])
+    }
 }
 
 private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
@@ -374,6 +469,7 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
     private let phpVersions: [String: String]
     private let listError: Error?
     private let importError: Error?
+    private let snapshotListOutput: String
     private var recordedCommands: [String] = []
 
     var commands: [String] {
@@ -384,12 +480,14 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
         projects: [DDEVProject],
         phpVersions: [String: String] = [:],
         listError: Error? = nil,
-        importError: Error? = nil
+        importError: Error? = nil,
+        snapshotListOutput: String = ""
     ) {
         self.loadedProjects = projects
         self.phpVersions = phpVersions
         self.listError = listError
         self.importError = importError
+        self.snapshotListOutput = snapshotListOutput
     }
 
     func listProjects() async throws -> [DDEVProject] {
@@ -493,12 +591,27 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
 
     func listSnapshots(in appRoot: String) async throws -> CommandResult {
         record("snapshot-list:\(appRoot)")
-        return commandResult(arguments: ["snapshot", "--list"], workingDirectory: appRoot)
+        return commandResult(arguments: ["snapshot", "--list"], workingDirectory: appRoot, stdout: snapshotListOutput)
     }
 
     func restoreSnapshot(named snapshotName: String, in appRoot: String) async throws -> CommandResult {
         record("snapshot-restore:\(appRoot):\(snapshotName)")
         return commandResult(arguments: ["snapshot", "restore", snapshotName], workingDirectory: appRoot)
+    }
+
+    func restoreLatestSnapshot(in appRoot: String) async throws -> CommandResult {
+        record("snapshot-restore-latest:\(appRoot)")
+        return commandResult(arguments: ["snapshot", "restore", "--latest"], workingDirectory: appRoot)
+    }
+
+    func cleanupSnapshots(in appRoot: String) async throws -> CommandResult {
+        record("snapshot-cleanup:\(appRoot)")
+        return commandResult(arguments: ["snapshot", "--cleanup", "-y"], workingDirectory: appRoot)
+    }
+
+    func cleanupSnapshot(named snapshotName: String, in appRoot: String) async throws -> CommandResult {
+        record("snapshot-cleanup-one:\(appRoot):\(snapshotName)")
+        return commandResult(arguments: ["snapshot", "--cleanup", "--name=\(snapshotName)", "-y"], workingDirectory: appRoot)
     }
 
     func logs(projectName: String, service: String, tail: Int, includeTimestamps: Bool, in appRoot: String) async throws -> CommandResult {
@@ -557,14 +670,14 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
         }
     }
 
-    private func commandResult(arguments: [String], workingDirectory: String? = nil) -> CommandResult {
+    private func commandResult(arguments: [String], workingDirectory: String? = nil, stdout: String = "") -> CommandResult {
         let now = Date()
         return CommandResult(
             executable: "ddev",
             arguments: arguments,
             workingDirectory: workingDirectory,
             exitCode: 0,
-            stdout: "",
+            stdout: stdout,
             stderr: "",
             startedAt: now,
             finishedAt: now,
