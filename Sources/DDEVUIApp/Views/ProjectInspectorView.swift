@@ -245,7 +245,7 @@ struct ProjectInspectorView: View {
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
-            .disabled(viewModel.availableDatabaseTools.isEmpty)
+            .disabled(!isRunning || viewModel.availableDatabaseTools.isEmpty)
         }
         .controlSize(.large)
         .fixedSize()
