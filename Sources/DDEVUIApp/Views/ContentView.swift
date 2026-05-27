@@ -160,12 +160,12 @@ private struct SettingsView: View {
                 }
 
                 if viewModel.effectiveDefaultDatabaseTool != nil {
-                    Picker("Open databases in", selection: Binding(
-                        get: { viewModel.effectiveDefaultDatabaseTool ?? viewModel.availableDatabaseTools[0] },
+                    Picker("Open databases in", selection: Binding<DDEVDatabaseTool?>(
+                        get: { viewModel.effectiveDefaultDatabaseTool },
                         set: { viewModel.setDefaultDatabaseTool($0) }
                     )) {
                         ForEach(viewModel.availableDatabaseTools) { tool in
-                            Text(tool.displayName).tag(tool)
+                            Text(tool.displayName).tag(Optional(tool))
                         }
                     }
                 } else {
