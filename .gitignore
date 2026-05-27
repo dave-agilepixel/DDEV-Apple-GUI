@@ -1,5 +1,6 @@
 .DS_Store
 .superpowers/
+.swiftpm/
 DerivedData/
 .build/
 build/
