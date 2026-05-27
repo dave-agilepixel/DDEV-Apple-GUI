@@ -1,0 +1,47 @@
+import SwiftUI
+
+struct ProjectListView: View {
+    @ObservedObject var viewModel: ProjectDashboardViewModel
+
+    var body: some View {
+        VStack(spacing: 0) {
+            TextField("Search projects", text: $viewModel.searchText)
+                .textFieldStyle(.roundedBorder)
+                .padding()
+
+            List(selection: $viewModel.selectedProject) {
+                ForEach(viewModel.filteredProjects) { project in
+                    ProjectRow(project: project)
+                        .tag(project)
+                }
+            }
+        }
+        .navigationTitle("Projects")
+    }
+}
+
+private struct ProjectRow: View {
+    let project: DDEVProject
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(project.name)
+                    .font(.headline)
+                Spacer()
+                Text(project.status.rawValue.capitalized)
+                    .font(.caption)
+                    .foregroundStyle(project.status == .running ? .green : .secondary)
+            }
+
+            HStack(spacing: 8) {
+                Text(project.projectType.rawValue)
+                Text(project.shortRoot)
+                    .lineLimit(1)
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 4)
+    }
+}

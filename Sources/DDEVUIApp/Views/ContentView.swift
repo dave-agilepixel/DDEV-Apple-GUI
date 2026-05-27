@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct ContentView: View {
+    @StateObject private var viewModel = ProjectDashboardViewModel()
+
     var body: some View {
         NavigationSplitView {
             List {
@@ -11,11 +13,19 @@ struct ContentView: View {
             }
             .navigationTitle("DDEVUI")
         } content: {
-            Text("Projects")
-                .font(.title)
+            ProjectListView(viewModel: viewModel)
         } detail: {
-            Text("Select a project")
-                .foregroundStyle(.secondary)
+            ProjectInspectorView(viewModel: viewModel)
+        }
+        .task {
+            await viewModel.refresh()
+        }
+        .toolbar {
+            Button {
+                Task { await viewModel.refresh() }
+            } label: {
+                Label("Refresh", systemImage: "arrow.clockwise")
+            }
         }
     }
 }
