@@ -11,6 +11,7 @@
 		100000000000000000000102 /* CommandResult.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000002 /* CommandResult.swift */; };
 		100000000000000000000103 /* DDEVProject.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000003 /* DDEVProject.swift */; };
 		100000000000000000000113 /* DDEVDatabaseOperation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000013 /* DDEVDatabaseOperation.swift */; };
+		100000000000000000000116 /* AppPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000016 /* AppPreferences.swift */; };
 		100000000000000000000104 /* CommandRunning.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000004 /* CommandRunning.swift */; };
 		100000000000000000000105 /* DDEVCommandService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000005 /* DDEVCommandService.swift */; };
 		100000000000000000000106 /* WorkspaceOpening.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000006 /* WorkspaceOpening.swift */; };
@@ -29,6 +30,7 @@
 		100000000000000000000002 /* CommandResult.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandResult.swift; sourceTree = "<group>"; };
 		100000000000000000000003 /* DDEVProject.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DDEVProject.swift; sourceTree = "<group>"; };
 		100000000000000000000013 /* DDEVDatabaseOperation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DDEVDatabaseOperation.swift; sourceTree = "<group>"; };
+		100000000000000000000016 /* AppPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppPreferences.swift; sourceTree = "<group>"; };
 		100000000000000000000004 /* CommandRunning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandRunning.swift; sourceTree = "<group>"; };
 		100000000000000000000005 /* DDEVCommandService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DDEVCommandService.swift; sourceTree = "<group>"; };
 		100000000000000000000006 /* WorkspaceOpening.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceOpening.swift; sourceTree = "<group>"; };
@@ -85,6 +87,7 @@
 		100000000000000000000303 /* Models */ = {
 			isa = PBXGroup;
 			children = (
+				100000000000000000000016 /* AppPreferences.swift */,
 				100000000000000000000002 /* CommandResult.swift */,
 				100000000000000000000013 /* DDEVDatabaseOperation.swift */,
 				100000000000000000000003 /* DDEVProject.swift */,
@@ -204,6 +207,7 @@
 				100000000000000000000102 /* CommandResult.swift in Sources */,
 				100000000000000000000103 /* DDEVProject.swift in Sources */,
 				100000000000000000000113 /* DDEVDatabaseOperation.swift in Sources */,
+				100000000000000000000116 /* AppPreferences.swift in Sources */,
 				100000000000000000000104 /* CommandRunning.swift in Sources */,
 				100000000000000000000105 /* DDEVCommandService.swift in Sources */,
 				100000000000000000000115 /* ProjectCacheStore.swift in Sources */,

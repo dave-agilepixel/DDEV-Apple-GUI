@@ -234,11 +234,41 @@ public final class DDEVCommandService: Sendable {
     }
 }
 
-public enum DDEVDatabaseTool: String, CaseIterable, Sendable {
+public enum DDEVDatabaseTool: String, CaseIterable, Codable, Identifiable, Sendable {
     case sequelAce = "sequelace"
     case tablePlus = "tableplus"
     case querious
     case dbeaver
+
+    public var id: String {
+        rawValue
+    }
+
+    public var displayName: String {
+        switch self {
+        case .sequelAce:
+            "Sequel Ace"
+        case .tablePlus:
+            "TablePlus"
+        case .querious:
+            "Querious"
+        case .dbeaver:
+            "DBeaver"
+        }
+    }
+
+    public var bundleIdentifier: String {
+        switch self {
+        case .sequelAce:
+            "com.sequel-ace.sequel-ace"
+        case .tablePlus:
+            "com.tinyapp.TablePlus"
+        case .querious:
+            "com.araeliumgroup.Querious"
+        case .dbeaver:
+            "org.jkiss.dbeaver.core.product"
+        }
+    }
 }
 
 public struct DDEVFileImportOptions: Equatable, Sendable {
