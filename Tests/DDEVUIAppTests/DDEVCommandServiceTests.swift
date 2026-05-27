@@ -316,6 +316,33 @@ final class DDEVCommandServiceTests: XCTestCase {
         ])
     }
 
+    func testProjectConfigChangesRunInProjectDirectory() async throws {
+        let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
+        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
+
+        _ = try await service.applyConfigChange(.phpVersion("8.3"), in: "/Users/dave/site")
+        _ = try await service.applyConfigChange(.nodeJSVersion("22"), in: "/Users/dave/site")
+        _ = try await service.applyConfigChange(.database(type: .mariadb, version: "11.8"), in: "/Users/dave/site")
+        _ = try await service.applyConfigChange(.webserverType(.apacheFPM), in: "/Users/dave/site")
+        _ = try await service.applyConfigChange(.performanceMode(.mutagen), in: "/Users/dave/site")
+        _ = try await service.applyConfigChange(.xdebugEnabled(true), in: "/Users/dave/site")
+        _ = try await service.applyConfigChange(.xhprofMode(.prepend), in: "/Users/dave/site")
+        _ = try await service.applyConfigChange(.uploadDirs(["web/app/uploads"]), in: "/Users/dave/site")
+        _ = try await service.applyConfigChange(.additionalHostnames(["www", "admin"]), in: "/Users/dave/site")
+
+        XCTAssertEqual(runner.commands, [
+            CommandSpec(executable: "ddev", arguments: ["config", "--php-version=8.3"], workingDirectory: "/Users/dave/site"),
+            CommandSpec(executable: "ddev", arguments: ["config", "--nodejs-version=22"], workingDirectory: "/Users/dave/site"),
+            CommandSpec(executable: "ddev", arguments: ["config", "--database=mariadb:11.8"], workingDirectory: "/Users/dave/site"),
+            CommandSpec(executable: "ddev", arguments: ["config", "--webserver-type=apache-fpm"], workingDirectory: "/Users/dave/site"),
+            CommandSpec(executable: "ddev", arguments: ["config", "--performance-mode=mutagen"], workingDirectory: "/Users/dave/site"),
+            CommandSpec(executable: "ddev", arguments: ["config", "--xdebug-enabled=true"], workingDirectory: "/Users/dave/site"),
+            CommandSpec(executable: "ddev", arguments: ["config", "--xhprof-mode=prepend"], workingDirectory: "/Users/dave/site"),
+            CommandSpec(executable: "ddev", arguments: ["config", "--upload-dirs=web/app/uploads"], workingDirectory: "/Users/dave/site"),
+            CommandSpec(executable: "ddev", arguments: ["config", "--additional-hostnames=www,admin"], workingDirectory: "/Users/dave/site")
+        ])
+    }
+
     func testUtilityCommandsRunInProjectDirectory() async throws {
         let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
         let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")

@@ -7,6 +7,7 @@ struct ProjectInspectorView: View {
     @State private var confirmUnlink = false
     @State private var confirmDeleteDDEVData = false
     @State private var showSourceDeleteSheet = false
+    @State private var showConfigEditor = false
     @State private var outputExpanded = false
 
     var body: some View {
@@ -88,14 +89,19 @@ struct ProjectInspectorView: View {
         } message: {
             Text("This removes DDEV project data including database data. It does not delete the source folder.")
         }
-        .sheet(isPresented: $showSourceDeleteSheet) {
-            if let project = viewModel.selectedProject {
-                SourceFolderDeleteSheet(project: project, viewModel: viewModel)
-            }
-        }
-        .onChange(of: viewModel.commandOutputExpansionRequest) { _, requestCount in
-            if requestCount > 0 {
-                outputExpanded = true
+                .sheet(isPresented: $showSourceDeleteSheet) {
+                    if let project = viewModel.selectedProject {
+                        SourceFolderDeleteSheet(project: project, viewModel: viewModel)
+                    }
+                }
+                .sheet(isPresented: $showConfigEditor) {
+                    if let project = viewModel.selectedProject {
+                        ProjectConfigEditorView(project: project, viewModel: viewModel)
+                    }
+                }
+                .onChange(of: viewModel.commandOutputExpansionRequest) { _, requestCount in
+                    if requestCount > 0 {
+                        outputExpanded = true
             }
         }
     }
@@ -295,6 +301,17 @@ struct ProjectInspectorView: View {
                         Text(mutagen)
                             .foregroundStyle(.secondary)
                     })
+                }
+
+                HStack {
+                    Spacer()
+                    Button {
+                        showConfigEditor = true
+                    } label: {
+                        Label("Edit Config", systemImage: "slider.horizontal.3")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(viewModel.isRunningCommand)
                 }
             }
         }

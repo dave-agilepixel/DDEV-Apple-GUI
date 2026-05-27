@@ -517,6 +517,66 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertEqual(service.commands, [])
         XCTAssertNil(viewModel.projectLogsResult)
     }
+
+    func testLoadProjectConfigOmitsWebEnvironmentAndStoresParsedConfig() async {
+        let service = FakeDDEVService(
+            projects: [.sampleWordPress],
+            configYAMLOutput: """
+            php_version: "8.4"
+            nodejs_version: "24"
+            database:
+              type: mariadb
+              version: "11.8"
+            webserver_type: nginx-fpm
+            performance_mode: mutagen
+            xdebug_enabled: false
+            xhprof_mode: xhgui
+            upload_dirs: [web/app/uploads]
+            additional_hostnames: [www]
+            """
+        )
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.loadConfigForSelectedProject()
+
+        XCTAssertEqual(service.commands, [
+            "configyaml:/Users/dave/Development/agilepixel/aqua-pura:web_environment"
+        ])
+        XCTAssertEqual(viewModel.projectConfig?.phpVersion, "8.4")
+        XCTAssertEqual(viewModel.projectConfig?.databaseType, .mariadb)
+        XCTAssertNil(viewModel.projectConfigErrorMessage)
+        XCTAssertNil(viewModel.lastCommandResult)
+    }
+
+    func testApplyProjectConfigChangeRecordsCommandAndPromptsRestartForRunningProject() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.applyConfigChangeForSelectedProject(.nodeJSVersion("22"))
+
+        XCTAssertEqual(service.commands, [
+            "config-change:/Users/dave/Development/agilepixel/aqua-pura:--nodejs-version=22"
+        ])
+        XCTAssertEqual(viewModel.lastCommandResult?.arguments, ["config", "--nodejs-version=22"])
+        XCTAssertEqual(viewModel.commandOutputExpansionRequest, 1)
+        XCTAssertTrue(viewModel.projectConfigRestartRecommended)
+    }
+
+    func testApplyProjectConfigChangeDoesNotPromptRestartForStoppedProject() async {
+        let stoppedProject = DDEVProject.sampleWordPress.withStatus(.stopped)
+        let service = FakeDDEVService(projects: [stoppedProject])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = stoppedProject
+
+        await viewModel.applyConfigChangeForSelectedProject(.xdebugEnabled(false))
+
+        XCTAssertEqual(service.commands, [
+            "config-change:/Users/dave/Development/agilepixel/aqua-pura:--xdebug-enabled=false"
+        ])
+        XCTAssertFalse(viewModel.projectConfigRestartRecommended)
+    }
 }
 
 private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
@@ -527,6 +587,7 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
     private let importError: Error?
     private let snapshotListOutput: String
     private let logsOutput: String
+    private let configYAMLOutput: String
     private var recordedCommands: [String] = []
 
     var commands: [String] {
@@ -539,7 +600,8 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
         listError: Error? = nil,
         importError: Error? = nil,
         snapshotListOutput: String = "",
-        logsOutput: String = ""
+        logsOutput: String = "",
+        configYAMLOutput: String = ""
     ) {
         self.loadedProjects = projects
         self.phpVersions = phpVersions
@@ -547,6 +609,7 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
         self.importError = importError
         self.snapshotListOutput = snapshotListOutput
         self.logsOutput = logsOutput
+        self.configYAMLOutput = configYAMLOutput
     }
 
     func listProjects() async throws -> [DDEVProject] {
@@ -703,6 +766,11 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
         return commandResult(arguments: ["config"] + flags, workingDirectory: appRoot)
     }
 
+    func applyConfigChange(_ change: DDEVConfigChange, in appRoot: String) async throws -> CommandResult {
+        record("config-change:\(appRoot):\(change.ddevFlags.joined(separator: ","))")
+        return commandResult(arguments: ["config"] + change.ddevFlags, workingDirectory: appRoot)
+    }
+
     func utilityDiagnose(in appRoot: String) async throws -> CommandResult {
         record("diagnose:\(appRoot)")
         return commandResult(arguments: ["utility", "diagnose"], workingDirectory: appRoot)
@@ -710,7 +778,7 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
 
     func utilityConfigYAML(omitKeys: [String], in appRoot: String) async throws -> CommandResult {
         record("configyaml:\(appRoot):\(omitKeys.joined(separator: ","))")
-        return commandResult(arguments: ["utility", "configyaml"], workingDirectory: appRoot)
+        return commandResult(arguments: ["utility", "configyaml"], workingDirectory: appRoot, stdout: configYAMLOutput)
     }
 
     func mutagen(_ command: DDEVMutagenCommand, in appRoot: String) async throws -> CommandResult {

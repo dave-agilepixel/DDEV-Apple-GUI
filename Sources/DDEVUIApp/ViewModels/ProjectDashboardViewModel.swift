@@ -28,6 +28,7 @@ public protocol DDEVServicing: Sendable {
     func getAddOn(_ repository: String, in appRoot: String) async throws -> CommandResult
     func removeAddOn(named name: String, in appRoot: String) async throws -> CommandResult
     func config(flags: [String], in appRoot: String) async throws -> CommandResult
+    func applyConfigChange(_ change: DDEVConfigChange, in appRoot: String) async throws -> CommandResult
     func utilityDiagnose(in appRoot: String) async throws -> CommandResult
     func utilityConfigYAML(omitKeys: [String], in appRoot: String) async throws -> CommandResult
     func mutagen(_ command: DDEVMutagenCommand, in appRoot: String) async throws -> CommandResult
@@ -96,6 +97,9 @@ public final class ProjectDashboardViewModel: ObservableObject {
     @Published public var snapshots: [DDEVSnapshot] = []
     @Published public var projectLogsResult: CommandResult?
     @Published public var projectLogsErrorMessage: String?
+    @Published public var projectConfig: DDEVConfig?
+    @Published public var projectConfigErrorMessage: String?
+    @Published public var projectConfigRestartRecommended = false
     @Published public private(set) var preferences: AppPreferences
     @Published public private(set) var installedEditors: [EditorChoice]
     @Published public private(set) var installedDatabaseTools: [DDEVDatabaseTool]
@@ -398,6 +402,39 @@ public final class ProjectDashboardViewModel: ObservableObject {
     public func clearProjectLogs() {
         projectLogsResult = nil
         projectLogsErrorMessage = nil
+    }
+
+    public func loadConfigForSelectedProject() async {
+        guard let selectedProject else { return }
+
+        isRunningCommand = true
+        lastErrorMessage = nil
+        projectConfigErrorMessage = nil
+        defer { isRunningCommand = false }
+
+        do {
+            let result = try await ddevService.utilityConfigYAML(omitKeys: ["web_environment"], in: selectedProject.appRoot)
+            projectConfig = try DDEVConfig.parseYAML(result.stdout)
+        } catch {
+            let message = String(describing: error)
+            lastErrorMessage = message
+            projectConfigErrorMessage = message
+        }
+    }
+
+    public func applyConfigChangeForSelectedProject(_ change: DDEVConfigChange) async {
+        guard let selectedProject else { return }
+
+        await runAndCapture {
+            let result = try await self.ddevService.applyConfigChange(change, in: selectedProject.appRoot)
+            self.recordCommandResult(result)
+            self.projectConfigRestartRecommended = selectedProject.status == .running
+            return result
+        }
+    }
+
+    public func clearProjectConfigRestartRecommendation() {
+        projectConfigRestartRecommended = false
     }
 
     public func updateWordPressCore() async {
