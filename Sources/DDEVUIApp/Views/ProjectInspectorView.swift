@@ -143,64 +143,51 @@ struct ProjectInspectorView: View {
     private func primaryActionBar(_ project: DDEVProject) -> some View {
         let isRunning = project.status == .running
 
-        return HStack(spacing: 10) {
-            Button {
-                if let url = project.primaryURL { workspaceOpener.openURL(url) }
-            } label: {
-                Label("Open Site", systemImage: "safari")
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .disabled(!isRunning || project.primaryURL == nil)
-
-            if isRunning {
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
                 Button {
-                    Task { await viewModel.restartSelectedProject() }
+                    if let url = project.primaryURL { workspaceOpener.openURL(url) }
                 } label: {
-                    Label("Restart", systemImage: "arrow.clockwise")
+                    Label("Open Site", systemImage: "safari")
                 }
+                .buttonStyle(.borderedProminent)
                 .controlSize(.large)
+                .disabled(!isRunning || project.primaryURL == nil)
 
-                Button {
-                    Task { await viewModel.stopSelectedProject() }
-                } label: {
-                    Label("Stop", systemImage: "stop.fill")
+                if isRunning {
+                    Button {
+                        Task { await viewModel.restartSelectedProject() }
+                    } label: {
+                        Label("Restart", systemImage: "arrow.clockwise")
+                    }
+                    .controlSize(.large)
+
+                    Button {
+                        Task { await viewModel.stopSelectedProject() }
+                    } label: {
+                        Label("Stop", systemImage: "stop.fill")
+                    }
+                    .controlSize(.large)
+                } else {
+                    Button {
+                        Task { await viewModel.startSelectedProject() }
+                    } label: {
+                        Label("Start", systemImage: "play.fill")
+                    }
+                    .controlSize(.large)
                 }
-                .controlSize(.large)
-            } else {
-                Button {
-                    Task { await viewModel.startSelectedProject() }
-                } label: {
-                    Label("Start", systemImage: "play.fill")
-                }
-                .controlSize(.large)
+
+                Spacer(minLength: 0)
+
+                editorSplitButton(project)
+                databaseSplitButton(isRunning: isRunning)
             }
 
-            Spacer(minLength: 0)
-
-            Menu {
-                Button("Cursor") { workspaceOpener.openFolder(project.appRoot, editor: .cursor) }
-                Button("VS Code") { workspaceOpener.openFolder(project.appRoot, editor: .visualStudioCode) }
-                Button("Finder") { workspaceOpener.openFolder(project.appRoot, editor: .finder) }
-            } label: {
-                Label("Open In", systemImage: "square.and.pencil")
+            if viewModel.effectiveDefaultDatabaseTool == nil {
+                Label("Install TablePlus, Sequel Ace, Querious, or DBeaver to open databases here.", systemImage: "info.circle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-            .controlSize(.large)
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-
-            Menu {
-                Button("Sequel Ace") { Task { await viewModel.launchDatabaseTool(.sequelAce) } }
-                Button("TablePlus") { Task { await viewModel.launchDatabaseTool(.tablePlus) } }
-                Button("Querious") { Task { await viewModel.launchDatabaseTool(.querious) } }
-                Button("DBeaver") { Task { await viewModel.launchDatabaseTool(.dbeaver) } }
-            } label: {
-                Label("Database", systemImage: "cylinder.split.1x2")
-            }
-            .controlSize(.large)
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-            .disabled(!isRunning)
         }
         .labelStyle(.titleAndIcon)
         .buttonStyle(.bordered)
@@ -208,6 +195,60 @@ struct ProjectInspectorView: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
         .glassEffect(in: .rect(cornerRadius: 14))
+    }
+
+    private func editorSplitButton(_ project: DDEVProject) -> some View {
+        HStack(spacing: 0) {
+            Button {
+                workspaceOpener.openFolder(project.appRoot, editor: viewModel.effectiveDefaultEditor)
+            } label: {
+                Label("Open", systemImage: "square.and.pencil")
+            }
+
+            Menu {
+                ForEach(viewModel.availableEditors) { editor in
+                    Button(editor.displayName) {
+                        workspaceOpener.openFolder(project.appRoot, editor: editor)
+                    }
+                }
+            } label: {
+                Image(systemName: "chevron.down")
+                    .imageScale(.small)
+                    .frame(width: 18)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+        }
+        .controlSize(.large)
+        .fixedSize()
+    }
+
+    private func databaseSplitButton(isRunning: Bool) -> some View {
+        HStack(spacing: 0) {
+            Button {
+                Task { await viewModel.launchDefaultDatabaseTool() }
+            } label: {
+                Label("Database", systemImage: "cylinder.split.1x2")
+            }
+            .disabled(!isRunning || viewModel.effectiveDefaultDatabaseTool == nil)
+
+            Menu {
+                ForEach(viewModel.availableDatabaseTools) { tool in
+                    Button(tool.displayName) {
+                        Task { await viewModel.launchDatabaseTool(tool) }
+                    }
+                }
+            } label: {
+                Image(systemName: "chevron.down")
+                    .imageScale(.small)
+                    .frame(width: 18)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .disabled(viewModel.availableDatabaseTools.isEmpty)
+        }
+        .controlSize(.large)
+        .fixedSize()
     }
 
     // MARK: - Environment
