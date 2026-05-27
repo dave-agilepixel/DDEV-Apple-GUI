@@ -72,9 +72,147 @@ public enum DDEVProjectStatus: String, Codable, Sendable {
 }
 
 public enum DDEVProjectType: String, Codable, CaseIterable, Sendable {
+    case asterios
+    case backdrop
+    case cakephp
+    case codeigniter
+    case craftcms
+    case drupal
+    case drupal6
+    case drupal7
+    case drupal8
+    case drupal9
+    case drupal10
+    case drupal11
+    case drupal12
+    case generic
+    case joomla
+    case laravel
+    case magento
+    case magento2
+    case php
+    case shopware6
+    case silverstripe
+    case symfony
+    case typo3
     case wordpress
     case wpBedrock = "wp-bedrock"
-    case laravel
+    case other
+
+    public static let commonProjectTypes: [DDEVProjectType] = [
+        .wordpress,
+        .wpBedrock,
+        .drupal11,
+        .drupal10,
+        .craftcms,
+        .laravel,
+        .php,
+        .generic
+    ]
+
+    public static let advancedProjectTypes: [DDEVProjectType] = supportedConfigTypes
+        .filter { !commonProjectTypes.contains($0) }
+
+    public static let supportedConfigTypes: [DDEVProjectType] = [
+        .asterios,
+        .backdrop,
+        .cakephp,
+        .codeigniter,
+        .craftcms,
+        .drupal,
+        .drupal6,
+        .drupal7,
+        .drupal8,
+        .drupal9,
+        .drupal10,
+        .drupal11,
+        .drupal12,
+        .generic,
+        .joomla,
+        .laravel,
+        .magento,
+        .magento2,
+        .php,
+        .shopware6,
+        .silverstripe,
+        .symfony,
+        .typo3,
+        .wordpress,
+        .wpBedrock
+    ]
+
+    public var displayName: String {
+        switch self {
+        case .asterios: "Asterios"
+        case .backdrop: "Backdrop"
+        case .cakephp: "CakePHP"
+        case .codeigniter: "CodeIgniter"
+        case .craftcms: "Craft CMS"
+        case .drupal: "Drupal"
+        case .drupal6: "Drupal 6"
+        case .drupal7: "Drupal 7"
+        case .drupal8: "Drupal 8"
+        case .drupal9: "Drupal 9"
+        case .drupal10: "Drupal 10"
+        case .drupal11: "Drupal 11"
+        case .drupal12: "Drupal 12"
+        case .generic: "Generic"
+        case .joomla: "Joomla"
+        case .laravel: "Laravel"
+        case .magento: "Magento"
+        case .magento2: "Magento 2"
+        case .php: "PHP"
+        case .shopware6: "Shopware 6"
+        case .silverstripe: "Silverstripe"
+        case .symfony: "Symfony"
+        case .typo3: "TYPO3"
+        case .wordpress: "WordPress"
+        case .wpBedrock: "WP Bedrock"
+        case .other: "Other"
+        }
+    }
+
+    public var symbol: String {
+        switch self {
+        case .wordpress, .wpBedrock: "w.square"
+        case .drupal, .drupal6, .drupal7, .drupal8, .drupal9, .drupal10, .drupal11, .drupal12: "drop"
+        case .laravel: "l.square"
+        case .craftcms: "c.square"
+        case .typo3: "t.square"
+        case .magento, .magento2, .shopware6: "cart"
+        case .php, .symfony, .cakephp, .codeigniter: "chevron.left.forwardslash.chevron.right"
+        case .joomla, .backdrop, .silverstripe, .asterios: "globe"
+        case .generic: "folder"
+        case .other: "questionmark.square.dashed"
+        }
+    }
+
+    public var family: DDEVProjectFamily {
+        switch self {
+        case .wordpress, .wpBedrock:
+            .wordpress
+        case .drupal, .drupal6, .drupal7, .drupal8, .drupal9, .drupal10, .drupal11, .drupal12:
+            .drupal
+        case .laravel, .symfony, .cakephp, .codeigniter:
+            .framework
+        case .magento, .magento2, .shopware6:
+            .commerce
+        case .backdrop, .craftcms, .joomla, .silverstripe, .typo3, .asterios:
+            .cms
+        case .php, .generic:
+            .generic
+        case .other:
+            .other
+        }
+    }
+}
+
+public enum DDEVProjectFamily: String, Equatable, Sendable {
+    case wordpress
+    case drupal
+    case framework
+    case commerce
+    case cms
     case generic
     case other
 }
