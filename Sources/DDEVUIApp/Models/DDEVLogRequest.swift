@@ -4,7 +4,6 @@ public struct DDEVLogRequest: Equatable, Sendable {
     public enum Service: String, CaseIterable, Identifiable, Sendable {
         case web
         case db
-        case router
 
         public var id: String { rawValue }
 
@@ -14,8 +13,6 @@ public struct DDEVLogRequest: Equatable, Sendable {
                 "Web"
             case .db:
                 "Database"
-            case .router:
-                "Router"
             }
         }
     }

@@ -492,6 +492,31 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.commandHistory.map(\.result.arguments), [["logs", "aqua-pura"]])
         XCTAssertEqual(viewModel.commandOutputExpansionRequest, 0)
     }
+
+    func testAutoLoadLogsLoadsForRunningSelectedProject() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress], logsOutput: "web_1  | ready\n")
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.loadLogsForSelectedProjectIfRunning(DDEVLogRequest())
+
+        XCTAssertEqual(service.commands, [
+            "logs:/Users/dave/Development/agilepixel/aqua-pura:aqua-pura:web:100:false"
+        ])
+        XCTAssertEqual(viewModel.projectLogsResult?.stdout, "web_1  | ready\n")
+    }
+
+    func testAutoLoadLogsSkipsPausedSelectedProject() async {
+        let pausedProject = DDEVProject.sampleWordPress.withStatus(.paused)
+        let service = FakeDDEVService(projects: [pausedProject], logsOutput: "web_1  | ready\n")
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = pausedProject
+
+        await viewModel.loadLogsForSelectedProjectIfRunning(DDEVLogRequest())
+
+        XCTAssertEqual(service.commands, [])
+        XCTAssertNil(viewModel.projectLogsResult)
+    }
 }
 
 private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
@@ -793,4 +818,26 @@ extension DDEVProject {
         mutagenStatus: "ok",
         phpVersion: nil
     )
+
+    func withStatus(_ status: DDEVProjectStatus) -> DDEVProject {
+        DDEVProject(
+            name: name,
+            appRoot: appRoot,
+            shortRoot: shortRoot,
+            status: status,
+            statusDescription: status.rawValue,
+            projectType: projectType,
+            docroot: docroot,
+            primaryURL: primaryURL,
+            httpURL: httpURL,
+            httpsURL: httpsURL,
+            mailpitURL: mailpitURL,
+            mailpitHTTPSURL: mailpitHTTPSURL,
+            xhguiURL: xhguiURL,
+            xhguiHTTPSURL: xhguiHTTPSURL,
+            mutagenEnabled: mutagenEnabled,
+            mutagenStatus: mutagenStatus,
+            phpVersion: phpVersion
+        )
+    }
 }

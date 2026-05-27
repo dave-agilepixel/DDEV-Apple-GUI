@@ -9,4 +9,8 @@ final class DDEVLogRequestTests: XCTestCase {
         XCTAssertEqual(request.tailCount, 100)
         XCTAssertFalse(request.includeTimestamps)
     }
+
+    func testSelectableLogServicesAreProjectContainers() {
+        XCTAssertEqual(DDEVLogRequest.Service.allCases, [.web, .db])
+    }
 }

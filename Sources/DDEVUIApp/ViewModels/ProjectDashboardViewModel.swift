@@ -389,6 +389,12 @@ public final class ProjectDashboardViewModel: ObservableObject {
         }
     }
 
+    public func loadLogsForSelectedProjectIfRunning(_ request: DDEVLogRequest) async {
+        guard selectedProject?.status == .running else { return }
+
+        await loadLogsForSelectedProject(request)
+    }
+
     public func clearProjectLogs() {
         projectLogsResult = nil
         projectLogsErrorMessage = nil

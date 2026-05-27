@@ -93,8 +93,9 @@ struct LogsViewerView: View {
                     )
             }
         }
-        .task(id: project.id) {
+        .task(id: loadTrigger) {
             viewModel.clearProjectLogs()
+            await viewModel.loadLogsForSelectedProjectIfRunning(currentRequest)
         }
     }
 
@@ -109,17 +110,29 @@ struct LogsViewerView: View {
             .joined(separator: "\n")
     }
 
-    private func refreshLogs() async {
-        let request = DDEVLogRequest(
+    private var currentRequest: DDEVLogRequest {
+        DDEVLogRequest(
             service: service,
             tailCount: tailCount,
             includeTimestamps: includeTimestamps
         )
-        await viewModel.loadLogsForSelectedProject(request)
+    }
+
+    private var loadTrigger: LogsLoadTrigger {
+        LogsLoadTrigger(projectID: project.id, request: currentRequest)
+    }
+
+    private func refreshLogs() async {
+        await viewModel.loadLogsForSelectedProject(currentRequest)
     }
 
     private func copyLogsToPasteboard() {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(logText, forType: .string)
     }
+}
+
+private struct LogsLoadTrigger: Equatable {
+    let projectID: DDEVProject.ID
+    let request: DDEVLogRequest
 }
