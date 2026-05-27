@@ -40,6 +40,11 @@ public struct DDEVSnapshot: Equatable, Identifiable, Sendable {
 
     private static func parseLine(_ line: String) -> DDEVSnapshot? {
         var trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if trimmed.contains("│") {
+            return parseTableRow(trimmed)
+        }
+
         trimmed = trimmed.trimmingCharacters(in: CharacterSet(charactersIn: "-*| "))
 
         guard !trimmed.isEmpty else { return nil }
@@ -49,7 +54,8 @@ public struct DDEVSnapshot: Equatable, Identifiable, Sendable {
               !lowercased.contains("snapshot list"),
               !lowercased.contains("snapshots for"),
               lowercased != "name",
-              !trimmed.allSatisfy({ $0 == "-" })
+              !trimmed.allSatisfy({ $0 == "-" }),
+              !trimmed.isBoxDrawingRule
         else {
             return nil
         }
@@ -59,6 +65,24 @@ public struct DDEVSnapshot: Equatable, Identifiable, Sendable {
             .first { $0.hasSuffix(".gz") || $0.hasSuffix(".sql.gz") }
             ?? trimmed
 
+        return parseSnapshotToken(token)
+    }
+
+    private static func parseTableRow(_ line: String) -> DDEVSnapshot? {
+        let cells = line
+            .split(separator: "│", omittingEmptySubsequences: false)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        guard let snapshotName = cells.first else { return nil }
+
+        let lowercased = snapshotName.lowercased()
+        guard lowercased != "snapshot", lowercased != "name" else { return nil }
+
+        return parseSnapshotToken(snapshotName)
+    }
+
+    private static func parseSnapshotToken(_ token: String) -> DDEVSnapshot? {
         let filename = URL(fileURLWithPath: token).lastPathComponent
         let baseName = filename.removingGZipSuffix
 
@@ -100,5 +124,10 @@ private extension String {
         } else {
             self
         }
+    }
+
+    var isBoxDrawingRule: Bool {
+        let ruleCharacters = CharacterSet(charactersIn: "┌┬┐├┼┤└┴┘─")
+        return unicodeScalars.allSatisfy { ruleCharacters.contains($0) }
     }
 }

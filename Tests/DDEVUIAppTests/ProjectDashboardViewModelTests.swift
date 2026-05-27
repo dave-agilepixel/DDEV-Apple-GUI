@@ -62,7 +62,7 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertEqual(cache.projects, [.sampleLaravel])
     }
 
-    func testRefreshFailureKeepsCachedProjectsVisible() async {
+    func testBackgroundRefreshFailureKeepsCachedProjectsVisibleWithoutSurfacingError() async {
         let service = FakeDDEVService(projects: [], listError: TestError.expected)
         let cache = InMemoryProjectCacheStore(projects: [.sampleWordPress])
         let viewModel = ProjectDashboardViewModel(ddevService: service, projectCache: cache)
@@ -71,7 +71,20 @@ final class ProjectDashboardViewModelTests: XCTestCase {
 
         XCTAssertEqual(viewModel.projects, [.sampleWordPress])
         XCTAssertEqual(viewModel.selectedProject, .sampleWordPress)
+        XCTAssertNil(viewModel.lastErrorMessage)
+        XCTAssertFalse(viewModel.isRunningCommand)
+    }
+
+    func testInitialRefreshFailureSurfacesErrorWhenNoCacheExists() async {
+        let service = FakeDDEVService(projects: [], listError: TestError.expected)
+        let cache = InMemoryProjectCacheStore()
+        let viewModel = ProjectDashboardViewModel(ddevService: service, projectCache: cache)
+
+        await viewModel.loadCachedProjectsThenRefresh()
+
+        XCTAssertTrue(viewModel.projects.isEmpty)
         XCTAssertNotNil(viewModel.lastErrorMessage)
+        XCTAssertFalse(viewModel.isRunningCommand)
     }
 
     func testRefreshPreservesSelectedProjectWhenCurrentSelectionIsFilteredOut() async {
@@ -461,6 +474,24 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         ])
         XCTAssertEqual(viewModel.lastCommandResult?.arguments, ["snapshot", "--cleanup", "--name=before-upgrade", "-y"])
     }
+
+    func testLoadLogsUsesSelectedProjectAndStoresOutputWithoutExpandingCommandPanel() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress], logsOutput: "web_1  | ready\n")
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.loadLogsForSelectedProject(
+            DDEVLogRequest(service: .db, tailCount: 250, includeTimestamps: true)
+        )
+
+        XCTAssertEqual(service.commands, [
+            "logs:/Users/dave/Development/agilepixel/aqua-pura:aqua-pura:db:250:true"
+        ])
+        XCTAssertEqual(viewModel.projectLogsResult?.stdout, "web_1  | ready\n")
+        XCTAssertEqual(viewModel.lastCommandResult?.arguments, ["logs", "aqua-pura"])
+        XCTAssertEqual(viewModel.commandHistory.map(\.result.arguments), [["logs", "aqua-pura"]])
+        XCTAssertEqual(viewModel.commandOutputExpansionRequest, 0)
+    }
 }
 
 private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
@@ -470,6 +501,7 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
     private let listError: Error?
     private let importError: Error?
     private let snapshotListOutput: String
+    private let logsOutput: String
     private var recordedCommands: [String] = []
 
     var commands: [String] {
@@ -481,13 +513,15 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
         phpVersions: [String: String] = [:],
         listError: Error? = nil,
         importError: Error? = nil,
-        snapshotListOutput: String = ""
+        snapshotListOutput: String = "",
+        logsOutput: String = ""
     ) {
         self.loadedProjects = projects
         self.phpVersions = phpVersions
         self.listError = listError
         self.importError = importError
         self.snapshotListOutput = snapshotListOutput
+        self.logsOutput = logsOutput
     }
 
     func listProjects() async throws -> [DDEVProject] {
@@ -616,7 +650,7 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
 
     func logs(projectName: String, service: String, tail: Int, includeTimestamps: Bool, in appRoot: String) async throws -> CommandResult {
         record("logs:\(appRoot):\(projectName):\(service):\(tail):\(includeTimestamps)")
-        return commandResult(arguments: ["logs", projectName], workingDirectory: appRoot)
+        return commandResult(arguments: ["logs", projectName], workingDirectory: appRoot, stdout: logsOutput)
     }
 
     func listInstalledAddOns(in appRoot: String) async throws -> CommandResult {

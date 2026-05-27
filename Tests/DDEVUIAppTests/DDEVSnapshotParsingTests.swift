@@ -25,6 +25,26 @@ final class DDEVSnapshotParsingTests: XCTestCase {
         )
     }
 
+    func testParseBoxTableSnapshotListOutput() {
+        let output = """
+        ┌───────────────────────────┬────────────┐
+        │ SNAPSHOT                  │ CREATED    │
+        ├───────────────────────────┼────────────┤
+        │ aqua-pura-20260527-221000 │ 2026-05-27 │
+        ├───────────────────────────┼────────────┤
+        │ aqua-pura_20260527133011  │ 2026-05-27 │
+        └───────────────────────────┴────────────┘
+        """
+
+        XCTAssertEqual(
+            DDEVSnapshot.parseListOutput(output),
+            [
+                DDEVSnapshot(name: "aqua-pura-20260527-221000", databaseSuffix: nil),
+                DDEVSnapshot(name: "aqua-pura_20260527133011", databaseSuffix: nil)
+            ]
+        )
+    }
+
     func testDisplayLabelIncludesDatabaseSuffixWhenAvailable() {
         XCTAssertEqual(
             DDEVSnapshot(name: "before-upgrade", databaseSuffix: "mariadb 10.11").displayLabel,

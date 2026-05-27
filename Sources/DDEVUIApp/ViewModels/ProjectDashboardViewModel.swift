@@ -94,6 +94,8 @@ public final class ProjectDashboardViewModel: ObservableObject {
     @Published public var commandOutputExpansionRequest = 0
     @Published public var commandHistory: [CommandHistoryEntry] = []
     @Published public var snapshots: [DDEVSnapshot] = []
+    @Published public var projectLogsResult: CommandResult?
+    @Published public var projectLogsErrorMessage: String?
     @Published public private(set) var preferences: AppPreferences
     @Published public private(set) var installedEditors: [EditorChoice]
     @Published public private(set) var installedDatabaseTools: [DDEVDatabaseTool]
@@ -197,18 +199,19 @@ public final class ProjectDashboardViewModel: ObservableObject {
 
     public func refresh() async {
         await runAndCapture {
-            let loadedProjects = try await self.ddevService.listProjects()
-            let enrichedProjects = await self.enrichProjectsWithDetails(loadedProjects)
-            self.applyProjects(enrichedProjects)
-            try? self.projectCache.saveProjects(enrichedProjects)
-
+            try await self.refreshProjectsFromDDEV()
             return nil
         }
     }
 
     public func loadCachedProjectsThenRefresh() async {
-        loadCachedProjects()
-        await refresh()
+        let loadedCachedProjects = loadCachedProjects()
+
+        if loadedCachedProjects {
+            await refreshProjectsFromDDEVInBackground()
+        } else {
+            await refresh()
+        }
     }
 
     public func setPHPVersionForSelectedProject(_ version: String) async {
@@ -355,6 +358,42 @@ public final class ProjectDashboardViewModel: ObservableObject {
         }
     }
 
+    public func loadLogsForSelectedProject(_ request: DDEVLogRequest) async {
+        guard let selectedProject else { return }
+
+        isRunningCommand = true
+        lastErrorMessage = nil
+        projectLogsErrorMessage = nil
+        defer { isRunningCommand = false }
+
+        do {
+            let result = try await ddevService.logs(
+                projectName: selectedProject.name,
+                service: request.service.rawValue,
+                tail: request.tailCount,
+                includeTimestamps: request.includeTimestamps,
+                in: selectedProject.appRoot
+            )
+            projectLogsResult = result
+            recordCommandResult(result, requestsOutputExpansion: false)
+        } catch CommandRunnerError.nonZeroExit(let result) {
+            projectLogsResult = result
+            recordCommandResult(result, requestsOutputExpansion: false)
+            let message = "Command failed with exit code \(result.exitCode)."
+            lastErrorMessage = message
+            projectLogsErrorMessage = message
+        } catch {
+            let message = String(describing: error)
+            lastErrorMessage = message
+            projectLogsErrorMessage = message
+        }
+    }
+
+    public func clearProjectLogs() {
+        projectLogsResult = nil
+        projectLogsErrorMessage = nil
+    }
+
     public func updateWordPressCore() async {
         guard let selectedProject, selectedProject.isWordPress else { return }
         await runMutation {
@@ -439,11 +478,27 @@ public final class ProjectDashboardViewModel: ObservableObject {
         }
     }
 
-    private func loadCachedProjects() {
-        guard projects.isEmpty else { return }
-        guard let cachedProjects = try? projectCache.loadProjects(), !cachedProjects.isEmpty else { return }
+    private func refreshProjectsFromDDEV() async throws {
+        let loadedProjects = try await ddevService.listProjects()
+        let enrichedProjects = await enrichProjectsWithDetails(loadedProjects)
+        applyProjects(enrichedProjects)
+        try? projectCache.saveProjects(enrichedProjects)
+    }
+
+    private func refreshProjectsFromDDEVInBackground() async {
+        do {
+            try await refreshProjectsFromDDEV()
+        } catch {
+            return
+        }
+    }
+
+    private func loadCachedProjects() -> Bool {
+        guard projects.isEmpty else { return false }
+        guard let cachedProjects = try? projectCache.loadProjects(), !cachedProjects.isEmpty else { return false }
 
         applyProjects(cachedProjects)
+        return true
     }
 
     private func applyProjects(_ projects: [DDEVProject]) {

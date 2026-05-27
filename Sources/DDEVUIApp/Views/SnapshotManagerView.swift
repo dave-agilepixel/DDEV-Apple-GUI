@@ -118,20 +118,25 @@ struct SnapshotManagerView: View {
                     Button {
                         selectedSnapshotID = snapshot.id
                     } label: {
-                        Image(systemName: selectedSnapshotID == snapshot.id ? "largecircle.fill.circle" : "circle")
+                        HStack(spacing: 10) {
+                            Image(systemName: selectedSnapshotID == snapshot.id ? "largecircle.fill.circle" : "circle")
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(snapshot.name)
+                                    .font(.callout.weight(.medium))
+                                if let databaseSuffix = snapshot.databaseSuffix {
+                                    Text(databaseSuffix)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .foregroundStyle(.primary)
                     .help("Select snapshot")
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(snapshot.name)
-                            .font(.callout.weight(.medium))
-                        if let databaseSuffix = snapshot.databaseSuffix {
-                            Text(databaseSuffix)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
+                    .accessibilityLabel("Select \(snapshot.name)")
 
                     Spacer(minLength: 0)
 
