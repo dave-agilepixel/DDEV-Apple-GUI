@@ -74,7 +74,7 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertNotNil(viewModel.lastErrorMessage)
     }
 
-    func testRefreshSelectsFirstVisibleProjectWhenCurrentSelectionIsFilteredOut() async {
+    func testRefreshPreservesSelectedProjectWhenCurrentSelectionIsFilteredOut() async {
         let service = FakeDDEVService(projects: [.sampleWordPress, .sampleLaravel])
         let viewModel = ProjectDashboardViewModel(ddevService: service)
         viewModel.selectedProject = .sampleLaravel
@@ -82,7 +82,7 @@ final class ProjectDashboardViewModelTests: XCTestCase {
 
         await viewModel.refresh()
 
-        XCTAssertEqual(viewModel.selectedProject, .sampleWordPress)
+        XCTAssertEqual(viewModel.selectedProject, .sampleLaravel)
     }
 
     func testWordPressActionsOnlyAvailableForWordPressProjects() {

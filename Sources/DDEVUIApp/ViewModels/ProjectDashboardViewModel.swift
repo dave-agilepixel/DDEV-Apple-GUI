@@ -332,12 +332,11 @@ public final class ProjectDashboardViewModel: ObservableObject {
     private func applyProjects(_ projects: [DDEVProject]) {
         self.projects = projects
 
-        let visibleProjects = filteredProjects(in: projects)
         if let selectedProjectID,
-           let selectedProject = visibleProjects.first(where: { $0.id == selectedProjectID }) {
+           let selectedProject = projects.first(where: { $0.id == selectedProjectID }) {
             selectedProjectFallback = selectedProject
         } else {
-            let fallbackProject = visibleProjects.first ?? projects.first
+            let fallbackProject = filteredProjects(in: projects).first ?? projects.first
             selectedProjectID = fallbackProject?.id
             selectedProjectFallback = fallbackProject
         }
