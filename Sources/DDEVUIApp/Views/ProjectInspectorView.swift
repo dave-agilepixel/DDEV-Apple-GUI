@@ -480,29 +480,6 @@ struct ProjectStatusBadge: View {
     }
 }
 
-// MARK: - DDEVProjectType visual helpers
-
-extension DDEVProjectType {
-    var displayName: String {
-        switch self {
-        case .wordpress: "WordPress"
-        case .wpBedrock: "WP Bedrock"
-        case .laravel: "Laravel"
-        case .generic: "Generic"
-        case .other: "Other"
-        }
-    }
-
-    var symbol: String {
-        switch self {
-        case .wordpress, .wpBedrock: "w.square"
-        case .laravel: "l.square"
-        case .generic: "globe"
-        case .other: "questionmark.square.dashed"
-        }
-    }
-}
-
 // MARK: - Chip-style label (icon + text, no background)
 
 private struct InspectorChipLabelStyle: LabelStyle {

@@ -192,6 +192,7 @@ private struct AddProjectSheet: View {
     @State private var projectName: String
     @State private var projectType: DDEVProjectType = .wordpress
     @State private var docroot = ""
+    @State private var showAdvancedProjectTypes = false
 
     init(folder: URL, viewModel: ProjectDashboardViewModel) {
         self.folder = folder
@@ -221,18 +222,28 @@ private struct AddProjectSheet: View {
                 Section {
                     TextField("Project name", text: $projectName)
 
-                    Picker("Project type", selection: $projectType) {
-                        Label("WordPress", systemImage: "w.square").tag(DDEVProjectType.wordpress)
-                        Label("WP Bedrock", systemImage: "w.square.fill").tag(DDEVProjectType.wpBedrock)
-                        Label("Laravel", systemImage: "l.square").tag(DDEVProjectType.laravel)
-                        Label("Generic", systemImage: "globe").tag(DDEVProjectType.generic)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Picker("Project type", selection: $projectType) {
+                            ForEach(DDEVProjectType.commonProjectTypes, id: \.self) { type in
+                                Label(type.displayName, systemImage: type.symbol).tag(type)
+                            }
+                        }
+
+                        DisclosureGroup("More project types", isExpanded: $showAdvancedProjectTypes) {
+                            Picker("Advanced type", selection: $projectType) {
+                                ForEach(DDEVProjectType.advancedProjectTypes, id: \.self) { type in
+                                    Label(type.displayName, systemImage: type.symbol).tag(type)
+                                }
+                            }
+                            .labelsHidden()
+                        }
                     }
 
                     TextField("Docroot", text: $docroot, prompt: Text("Leave blank for project root"))
                 }
             }
             .formStyle(.grouped)
-            .frame(maxHeight: 200)
+            .frame(maxHeight: showAdvancedProjectTypes ? 270 : 220)
 
             HStack {
                 Spacer()
