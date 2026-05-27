@@ -48,6 +48,19 @@ public final class InMemoryProjectCacheStore: ProjectCacheStoring, @unchecked Se
     public var loadError: Error?
     public var saveError: Error?
 
+    public var projects: [DDEVProject] {
+        get {
+            lock.withLock {
+                storedProjects
+            }
+        }
+        set {
+            lock.withLock {
+                storedProjects = newValue
+            }
+        }
+    }
+
     public init(projects: [DDEVProject] = [], loadError: Error? = nil, saveError: Error? = nil) {
         self.storedProjects = projects
         self.loadError = loadError

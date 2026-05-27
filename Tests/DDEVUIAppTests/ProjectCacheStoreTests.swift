@@ -30,6 +30,16 @@ final class ProjectCacheStoreTests: XCTestCase {
         XCTAssertEqual(try store.loadProjects(), [.sampleWordPress])
     }
 
+    func testInMemoryProjectCacheStoreExposesMutableProjects() throws {
+        let store = InMemoryProjectCacheStore(projects: [.sampleWordPress])
+
+        XCTAssertEqual(store.projects, [.sampleWordPress])
+
+        store.projects = [.sampleLaravel]
+
+        XCTAssertEqual(try store.loadProjects(), [.sampleLaravel])
+    }
+
     private func temporaryDirectory() throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("DDEVUI-\(UUID().uuidString)", isDirectory: true)
