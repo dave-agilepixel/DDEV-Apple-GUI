@@ -49,6 +49,42 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertEqual(service.commands, ["list", "describe:aqua-pura"])
     }
 
+    func testLoadCachedProjectsThenRefreshShowsFreshProjectsAndPersistsThem() async {
+        let service = FakeDDEVService(projects: [.sampleLaravel])
+        let cache = InMemoryProjectCacheStore(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service, projectCache: cache)
+
+        await viewModel.loadCachedProjectsThenRefresh()
+
+        XCTAssertEqual(viewModel.projects, [.sampleLaravel])
+        XCTAssertEqual(viewModel.selectedProject, .sampleLaravel)
+        XCTAssertEqual(service.commands, ["list", "describe:agilebugs"])
+        XCTAssertEqual(cache.projects, [.sampleLaravel])
+    }
+
+    func testRefreshFailureKeepsCachedProjectsVisible() async {
+        let service = FakeDDEVService(projects: [], listError: TestError.expected)
+        let cache = InMemoryProjectCacheStore(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service, projectCache: cache)
+
+        await viewModel.loadCachedProjectsThenRefresh()
+
+        XCTAssertEqual(viewModel.projects, [.sampleWordPress])
+        XCTAssertEqual(viewModel.selectedProject, .sampleWordPress)
+        XCTAssertNotNil(viewModel.lastErrorMessage)
+    }
+
+    func testRefreshSelectsFirstVisibleProjectWhenCurrentSelectionIsFilteredOut() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress, .sampleLaravel])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleLaravel
+        viewModel.selectedSidebarItem = .running
+
+        await viewModel.refresh()
+
+        XCTAssertEqual(viewModel.selectedProject, .sampleWordPress)
+    }
+
     func testWordPressActionsOnlyAvailableForWordPressProjects() {
         let viewModel = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: []))
 
@@ -143,6 +179,20 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         ])
     }
 
+    func testSetPHPVersionRecordsEachMutatingCommandInHistory() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress], phpVersions: ["aqua-pura": "8.3"])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.setPHPVersionForSelectedProject("8.3")
+
+        XCTAssertEqual(viewModel.commandHistory.map(\.result.arguments), [
+            ["config", "--php-version=8.3"],
+            ["restart", "aqua-pura"]
+        ])
+        XCTAssertEqual(viewModel.lastCommandResult?.arguments, ["restart", "aqua-pura"])
+    }
+
     func testSetPHPVersionDoesNotRestartPausedProject() async {
         let service = FakeDDEVService(projects: [.sampleLaravel], phpVersions: ["agilebugs": "8.2"])
         let viewModel = ProjectDashboardViewModel(ddevService: service)
@@ -156,25 +206,134 @@ final class ProjectDashboardViewModelTests: XCTestCase {
             "describe:agilebugs"
         ])
     }
+
+    func testImportDatabaseUsesSelectedProjectFolderAndRefreshes() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.importDatabase(
+            DDEVDatabaseImportOptions(
+                filePath: "/Users/dave/Downloads/db.sql.gz",
+                database: "legacy",
+                dropExistingDatabase: false
+            )
+        )
+
+        XCTAssertEqual(service.commands, [
+            "import:/Users/dave/Development/agilepixel/aqua-pura:/Users/dave/Downloads/db.sql.gz:legacy::false",
+            "list",
+            "describe:aqua-pura"
+        ])
+        XCTAssertEqual(viewModel.lastCommandResult?.succeeded, true)
+        XCTAssertEqual(viewModel.commandOutputExpansionRequest, 1)
+    }
+
+    func testExportDatabaseUsesSelectedProjectFolderWithoutRefreshing() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.exportDatabase(
+            DDEVDatabaseExportOptions(
+                outputPath: "/Users/dave/Backups/db.sql.xz",
+                database: "legacy",
+                compression: .xz
+            )
+        )
+
+        XCTAssertEqual(service.commands, [
+            "export:/Users/dave/Development/agilepixel/aqua-pura:/Users/dave/Backups/db.sql.xz:legacy:xz"
+        ])
+        XCTAssertEqual(viewModel.lastCommandResult?.succeeded, true)
+        XCTAssertEqual(viewModel.commandOutputExpansionRequest, 1)
+    }
+
+    func testFailedImportKeepsCommandOutputVisible() async {
+        let failure = CommandResult(
+            executable: "ddev",
+            arguments: ["import-db"],
+            workingDirectory: "/Users/dave/Development/agilepixel/aqua-pura",
+            exitCode: 1,
+            stdout: "Import started",
+            stderr: "Invalid dump",
+            startedAt: Date(),
+            finishedAt: Date(),
+            wasCancelled: false
+        )
+        let service = FakeDDEVService(projects: [.sampleWordPress], importError: CommandRunnerError.nonZeroExit(failure))
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.importDatabase(DDEVDatabaseImportOptions(filePath: "/Users/dave/Downloads/bad.sql"))
+
+        XCTAssertEqual(viewModel.lastCommandResult, failure)
+        XCTAssertEqual(viewModel.lastErrorMessage, "Command failed with exit code 1.")
+        XCTAssertEqual(viewModel.commandOutputExpansionRequest, 1)
+    }
+
+    func testEachCompletedCommandRequestsOutputExpansion() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.exportDatabase(DDEVDatabaseExportOptions(outputPath: "/Users/dave/Backups/first.sql.gz"))
+        await viewModel.exportDatabase(DDEVDatabaseExportOptions(outputPath: "/Users/dave/Backups/second.sql.gz"))
+
+        XCTAssertEqual(viewModel.commandOutputExpansionRequest, 2)
+    }
+
+    func testFailedImportIsRecordedInCommandHistory() async {
+        let failure = CommandResult(
+            executable: "ddev",
+            arguments: ["import-db"],
+            workingDirectory: "/Users/dave/Development/agilepixel/aqua-pura",
+            exitCode: 1,
+            stdout: "Import started",
+            stderr: "Invalid dump",
+            startedAt: Date(),
+            finishedAt: Date(),
+            wasCancelled: false
+        )
+        let service = FakeDDEVService(projects: [.sampleWordPress], importError: CommandRunnerError.nonZeroExit(failure))
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.importDatabase(DDEVDatabaseImportOptions(filePath: "/Users/dave/Downloads/bad.sql"))
+
+        XCTAssertEqual(viewModel.commandHistory.map(\.result), [failure])
+    }
 }
 
 private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
     private let lock = NSLock()
     private let loadedProjects: [DDEVProject]
     private let phpVersions: [String: String]
+    private let listError: Error?
+    private let importError: Error?
     private var recordedCommands: [String] = []
 
     var commands: [String] {
         lock.withLock { recordedCommands }
     }
 
-    init(projects: [DDEVProject], phpVersions: [String: String] = [:]) {
+    init(
+        projects: [DDEVProject],
+        phpVersions: [String: String] = [:],
+        listError: Error? = nil,
+        importError: Error? = nil
+    ) {
         self.loadedProjects = projects
         self.phpVersions = phpVersions
+        self.listError = listError
+        self.importError = importError
     }
 
     func listProjects() async throws -> [DDEVProject] {
         record("list")
+        if let listError {
+            throw listError
+        }
         return loadedProjects
     }
 
@@ -195,7 +354,7 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
 
     func restart(projectName: String) async throws -> CommandResult {
         record("restart:\(projectName)")
-        return .success()
+        return commandResult(arguments: ["restart", projectName])
     }
 
     func unlink(projectName: String) async throws -> CommandResult {
@@ -240,6 +399,19 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
 
     func setPHPVersion(_ version: String, in appRoot: String) async throws -> CommandResult {
         record("php:\(version):\(appRoot)")
+        return commandResult(arguments: ["config", "--php-version=\(version)"])
+    }
+
+    func importDatabase(_ options: DDEVDatabaseImportOptions, in appRoot: String) async throws -> CommandResult {
+        record("import:\(appRoot):\(options.filePath):\(options.database):\(options.extractPath ?? ""):\(options.dropExistingDatabase)")
+        if let importError {
+            throw importError
+        }
+        return .success()
+    }
+
+    func exportDatabase(_ options: DDEVDatabaseExportOptions, in appRoot: String) async throws -> CommandResult {
+        record("export:\(appRoot):\(options.outputPath):\(options.database):\(options.compression.rawValue)")
         return .success()
     }
 
@@ -248,6 +420,25 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
             recordedCommands.append(command)
         }
     }
+
+    private func commandResult(arguments: [String]) -> CommandResult {
+        let now = Date()
+        return CommandResult(
+            executable: "ddev",
+            arguments: arguments,
+            workingDirectory: nil,
+            exitCode: 0,
+            stdout: "",
+            stderr: "",
+            startedAt: now,
+            finishedAt: now,
+            wasCancelled: false
+        )
+    }
+}
+
+private enum TestError: Error {
+    case expected
 }
 
 extension DDEVProject {

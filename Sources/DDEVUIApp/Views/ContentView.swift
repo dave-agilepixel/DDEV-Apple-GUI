@@ -29,7 +29,7 @@ struct ContentView: View {
                 .navigationSplitViewColumnWidth(min: 540, ideal: 720)
         }
         .task {
-            await viewModel.refresh()
+            await viewModel.loadCachedProjectsThenRefresh()
         }
         .toolbar {
             ToolbarItemGroup {
