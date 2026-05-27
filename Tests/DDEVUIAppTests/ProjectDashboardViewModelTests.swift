@@ -43,6 +43,35 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertEqual(service.commands, ["start:aqua-pura", "list"])
         XCTAssertEqual(viewModel.lastCommandResult?.succeeded, true)
     }
+
+    func testDatabaseToolLaunchUsesSelectedProjectFolder() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.launchDatabaseTool(.tablePlus)
+
+        XCTAssertEqual(service.commands, ["db:tableplus:/Users/dave/Development/agilepixel/aqua-pura", "list"])
+    }
+
+    func testWordPressPresetActionsUseSelectedProjectFolder() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.updateWordPressCore()
+        await viewModel.updateWordPressPlugins()
+        await viewModel.updateWordPressThemes()
+
+        XCTAssertEqual(service.commands, [
+            "wp-core:/Users/dave/Development/agilepixel/aqua-pura",
+            "list",
+            "wp-plugins:/Users/dave/Development/agilepixel/aqua-pura",
+            "list",
+            "wp-themes:/Users/dave/Development/agilepixel/aqua-pura",
+            "list"
+        ])
+    }
 }
 
 private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {

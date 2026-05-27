@@ -3,6 +3,7 @@ import SwiftUI
 
 struct ProjectInspectorView: View {
     @ObservedObject var viewModel: ProjectDashboardViewModel
+    private let workspaceOpener = MacWorkspaceOpener()
 
     var body: some View {
         Group {
@@ -50,22 +51,43 @@ struct ProjectInspectorView: View {
         actionSection("Daily Tools") {
             Button("Open Site") {
                 if let url = project.primaryURL {
-                    NSWorkspace.shared.open(url)
+                    workspaceOpener.openURL(url)
                 }
             }
             .disabled(project.primaryURL == nil)
 
-            Button("Open Folder") {
-                NSWorkspace.shared.open(URL(fileURLWithPath: project.appRoot))
+            Menu("Open In") {
+                Button("Cursor") {
+                    workspaceOpener.openFolder(project.appRoot, editor: .cursor)
+                }
+                Button("VS Code") {
+                    workspaceOpener.openFolder(project.appRoot, editor: .visualStudioCode)
+                }
+                Button("Finder") {
+                    workspaceOpener.openFolder(project.appRoot, editor: .finder)
+                }
+            }
+
+            Menu("Database") {
+                Button("Sequel Ace") { Task { await viewModel.launchDatabaseTool(.sequelAce) } }
+                Button("TablePlus") { Task { await viewModel.launchDatabaseTool(.tablePlus) } }
+                Button("Querious") { Task { await viewModel.launchDatabaseTool(.querious) } }
+                Button("DBeaver") { Task { await viewModel.launchDatabaseTool(.dbeaver) } }
             }
         }
     }
 
     private var wordpressActions: some View {
         actionSection("WordPress") {
-            Button("Update Core") {}
-            Button("Update Plugins") {}
-            Button("Update Themes") {}
+            Button("Update Core") {
+                Task { await viewModel.updateWordPressCore() }
+            }
+            Button("Update Plugins") {
+                Task { await viewModel.updateWordPressPlugins() }
+            }
+            Button("Update Themes") {
+                Task { await viewModel.updateWordPressThemes() }
+            }
         }
     }
 
