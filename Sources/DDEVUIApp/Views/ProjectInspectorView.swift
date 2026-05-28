@@ -639,6 +639,58 @@ private struct ManageTabContent: View {
     }
 }
 
+// MARK: - Logs tab
+
+private struct LogsTabContent: View {
+    let project: DDEVProject
+    @ObservedObject var viewModel: ProjectDashboardViewModel
+
+    var body: some View {
+        let hasAnyActivity =
+            viewModel.lastCommandResult != nil ||
+            viewModel.lastErrorMessage != nil ||
+            viewModel.isRunningCommand ||
+            !viewModel.commandHistory.isEmpty
+
+        VStack(alignment: .leading, spacing: 24) {
+            LogsViewerView(project: project, viewModel: viewModel)
+
+            if hasAnyActivity {
+                commandHistorySection
+            }
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var commandHistorySection: some View {
+        InspectorSection(viewModel.commandHistory.count > 1 ? "Command History" : "Last Command") {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 10) {
+                    if viewModel.isRunningCommand {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else if viewModel.lastErrorMessage != nil {
+                        Image(systemName: "xmark.octagon.fill")
+                            .foregroundStyle(.red)
+                    } else if let result = viewModel.lastCommandResult {
+                        Image(systemName: result.succeeded ? "checkmark.circle.fill" : "xmark.octagon.fill")
+                            .foregroundStyle(result.succeeded ? .green : .red)
+                    }
+                    Spacer()
+                }
+
+                CommandOutputView(
+                    result: viewModel.lastCommandResult,
+                    history: viewModel.commandHistory,
+                    errorMessage: viewModel.lastErrorMessage
+                )
+            }
+        }
+    }
+}
+
 // MARK: - FlowHStack (wraps items to new lines on overflow)
 
 private struct FlowHStack<Content: View>: View {
