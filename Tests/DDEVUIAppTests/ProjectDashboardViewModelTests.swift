@@ -53,6 +53,23 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertEqual(service.commands, ["list", "describe:aqua-pura"])
     }
 
+    func testRefreshAddsXHGuiStatusFromProjectDetails() async {
+        let project = DDEVProject.sampleWordPress.withXHGuiURLs(
+            xhguiURL: URL(string: "http://aqua-pura.ddev.site:8143"),
+            xhguiHTTPSURL: URL(string: "https://aqua-pura.ddev.site:8142")
+        )
+        let service = FakeDDEVService(
+            projects: [project],
+            xhguiStatuses: ["aqua-pura": .disabled]
+        )
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+
+        await viewModel.refresh()
+
+        XCTAssertEqual(viewModel.projects.first?.xhguiStatus, .disabled)
+        XCTAssertNil(viewModel.projects.first?.openableXHGuiURL)
+    }
+
     func testLoadCachedProjectsThenRefreshShowsFreshProjectsAndPersistsThem() async {
         let service = FakeDDEVService(projects: [.sampleLaravel])
         let cache = InMemoryProjectCacheStore(projects: [.sampleWordPress])
@@ -747,12 +764,28 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.diagnosticReport.entries.map(\.check), [.mutagenReset])
         XCTAssertEqual(viewModel.lastCommandResult?.arguments, ["mutagen", "reset"])
     }
+
+    func testEnableXHGuiRunsInSelectedProjectAndRefreshes() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.enableXHGuiForSelectedProject()
+
+        XCTAssertEqual(service.commands, [
+            "xhgui:/Users/dave/Development/agilepixel/aqua-pura:on",
+            "list",
+            "describe:aqua-pura"
+        ])
+        XCTAssertEqual(viewModel.lastCommandResult?.arguments, ["xhgui", "on"])
+    }
 }
 
 private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
     private let lock = NSLock()
     private let loadedProjects: [DDEVProject]
     private let phpVersions: [String: String]
+    private let xhguiStatuses: [String: DDEVXHGuiStatus]
     private let listError: Error?
     private let importError: Error?
     private let snapshotListOutput: String
@@ -771,6 +804,7 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
     init(
         projects: [DDEVProject],
         phpVersions: [String: String] = [:],
+        xhguiStatuses: [String: DDEVXHGuiStatus] = [:],
         listError: Error? = nil,
         importError: Error? = nil,
         snapshotListOutput: String = "",
@@ -783,6 +817,7 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
     ) {
         self.loadedProjects = projects
         self.phpVersions = phpVersions
+        self.xhguiStatuses = xhguiStatuses
         self.listError = listError
         self.importError = importError
         self.snapshotListOutput = snapshotListOutput
@@ -804,7 +839,7 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
 
     func describe(projectName: String) async throws -> DDEVProjectDetails {
         record("describe:\(projectName)")
-        return DDEVProjectDetails(phpVersion: phpVersions[projectName])
+        return DDEVProjectDetails(phpVersion: phpVersions[projectName], xhguiStatus: xhguiStatuses[projectName])
     }
 
     func start(projectName: String) async throws -> CommandResult {
@@ -1091,6 +1126,7 @@ extension DDEVProject {
         mailpitHTTPSURL: nil,
         xhguiURL: nil,
         xhguiHTTPSURL: nil,
+        xhguiStatus: nil,
         mutagenEnabled: true,
         mutagenStatus: "ok",
         phpVersion: nil
@@ -1111,6 +1147,7 @@ extension DDEVProject {
         mailpitHTTPSURL: nil,
         xhguiURL: nil,
         xhguiHTTPSURL: nil,
+        xhguiStatus: nil,
         mutagenEnabled: true,
         mutagenStatus: "ok",
         phpVersion: nil
@@ -1132,6 +1169,30 @@ extension DDEVProject {
             mailpitHTTPSURL: mailpitHTTPSURL,
             xhguiURL: xhguiURL,
             xhguiHTTPSURL: xhguiHTTPSURL,
+            xhguiStatus: xhguiStatus,
+            mutagenEnabled: mutagenEnabled,
+            mutagenStatus: mutagenStatus,
+            phpVersion: phpVersion
+        )
+    }
+
+    func withXHGuiURLs(xhguiURL: URL?, xhguiHTTPSURL: URL?) -> DDEVProject {
+        DDEVProject(
+            name: name,
+            appRoot: appRoot,
+            shortRoot: shortRoot,
+            status: status,
+            statusDescription: statusDescription,
+            projectType: projectType,
+            docroot: docroot,
+            primaryURL: primaryURL,
+            httpURL: httpURL,
+            httpsURL: httpsURL,
+            mailpitURL: mailpitURL,
+            mailpitHTTPSURL: mailpitHTTPSURL,
+            xhguiURL: xhguiURL,
+            xhguiHTTPSURL: xhguiHTTPSURL,
+            xhguiStatus: xhguiStatus,
             mutagenEnabled: mutagenEnabled,
             mutagenStatus: mutagenStatus,
             phpVersion: phpVersion

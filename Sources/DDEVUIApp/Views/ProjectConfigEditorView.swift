@@ -32,7 +32,11 @@ struct ProjectConfigEditorView: View {
         .frame(width: 620)
         .frame(minHeight: 620)
         .task(id: project.id) {
+            loadedConfig = nil
             await viewModel.loadConfigForSelectedProject()
+            if let config = viewModel.projectConfig {
+                syncState(from: config)
+            }
         }
         .onChange(of: viewModel.projectConfig) { _, config in
             guard let config else { return }

@@ -477,14 +477,14 @@ private struct OverviewTabContent: View {
             ("HTTPS", "lock.shield", project.httpsURL),
             ("HTTP", "globe", project.httpURL),
             ("Mailpit", "envelope", project.mailpitHTTPSURL ?? project.mailpitURL),
-            ("XHGui", "chart.bar.xaxis", project.xhguiHTTPSURL ?? project.xhguiURL)
+            ("XHGui", "chart.bar.xaxis", project.openableXHGuiURL)
         ]
         let available = links.compactMap { item -> (String, String, URL)? in
             guard let url = item.2 else { return nil }
             return (item.0, item.1, url)
         }
 
-        if !available.isEmpty {
+        if !available.isEmpty || project.xhguiStatus == .disabled {
             InspectorSection("URLs") {
                 FlowHStack(spacing: 8) {
                     ForEach(available, id: \.0) { item in
@@ -492,6 +492,16 @@ private struct OverviewTabContent: View {
                             workspaceOpener.openURL(item.2)
                         } label: {
                             Label(item.0, systemImage: item.1)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+
+                    if project.xhguiStatus == .disabled {
+                        Button {
+                            Task { await viewModel.enableXHGuiForSelectedProject() }
+                        } label: {
+                            Label("Enable XHGui", systemImage: "chart.bar.xaxis")
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)

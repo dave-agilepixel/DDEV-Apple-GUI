@@ -432,6 +432,7 @@ public final class ProjectDashboardViewModel: ObservableObject {
         isRunningCommand = true
         lastErrorMessage = nil
         projectConfigErrorMessage = nil
+        projectConfig = nil
         defer { isRunningCommand = false }
 
         do {
@@ -653,6 +654,14 @@ public final class ProjectDashboardViewModel: ObservableObject {
                     try await self.ddevService.mutagen(command, in: selectedProject.appRoot)
                 }
             ]
+        }
+    }
+
+    public func enableXHGuiForSelectedProject() async {
+        guard let selectedProject else { return }
+
+        await runMutation {
+            try await self.ddevService.xhgui(.on, in: selectedProject.appRoot)
         }
     }
 

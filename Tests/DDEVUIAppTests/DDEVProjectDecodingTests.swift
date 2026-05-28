@@ -21,6 +21,7 @@ final class DDEVProjectDecodingTests: XCTestCase {
               "mailpit_https_url": "https://aqua-pura.ddev.site:8026",
               "xhgui_url": "http://aqua-pura.ddev.site:8143",
               "xhgui_https_url": "https://aqua-pura.ddev.site:8142",
+              "xhgui_status": "enabled",
               "mutagen_enabled": true,
               "mutagen_status": "ok"
             }
@@ -36,8 +37,43 @@ final class DDEVProjectDecodingTests: XCTestCase {
         XCTAssertEqual(projects[0].status, .running)
         XCTAssertEqual(projects[0].projectType, .wordpress)
         XCTAssertEqual(projects[0].primaryURL?.absoluteString, "https://aqua-pura.ddev.site")
+        XCTAssertEqual(projects[0].xhguiStatus, .enabled)
+        XCTAssertEqual(projects[0].openableXHGuiURL?.absoluteString, "https://aqua-pura.ddev.site:8142")
         XCTAssertNil(projects[0].phpVersion)
         XCTAssertTrue(projects[0].isWordPress)
+    }
+
+    func testDisabledXHGuiURLIsNotOpenable() throws {
+        let data = """
+        {
+          "raw": [
+            {
+              "name": "aqua-pura",
+              "approot": "/Users/dave/Development/agilepixel/aqua-pura",
+              "shortroot": "~/Development/agilepixel/aqua-pura",
+              "status": "running",
+              "status_desc": "running",
+              "type": "wordpress",
+              "docroot": "",
+              "primary_url": "https://aqua-pura.ddev.site",
+              "httpurl": "http://aqua-pura.ddev.site",
+              "httpsurl": "https://aqua-pura.ddev.site",
+              "mailpit_url": "http://aqua-pura.ddev.site:8025",
+              "mailpit_https_url": "https://aqua-pura.ddev.site:8026",
+              "xhgui_url": "http://aqua-pura.ddev.site:8143",
+              "xhgui_https_url": "https://aqua-pura.ddev.site:8142",
+              "xhgui_status": "disabled",
+              "mutagen_enabled": true,
+              "mutagen_status": "ok"
+            }
+          ]
+        }
+        """.data(using: .utf8)!
+
+        let project = try XCTUnwrap(try DDEVProject.decodeListPayload(data).first)
+
+        XCTAssertEqual(project.xhguiStatus, .disabled)
+        XCTAssertNil(project.openableXHGuiURL)
     }
 
     func testDecodesPHPVersionFromDDEVDescribePayload() throws {
@@ -45,7 +81,8 @@ final class DDEVProjectDecodingTests: XCTestCase {
         {
           "raw": {
             "name": "aqua-pura",
-            "php_version": "8.4"
+            "php_version": "8.4",
+            "xhgui_status": "disabled"
           }
         }
         """.data(using: .utf8)!
@@ -53,6 +90,7 @@ final class DDEVProjectDecodingTests: XCTestCase {
         let details = try DDEVProjectDetails.decodeDescribePayload(data)
 
         XCTAssertEqual(details.phpVersion, "8.4")
+        XCTAssertEqual(details.xhguiStatus, .disabled)
     }
 
     func testProjectRoundTripsThroughJSONForCache() throws {
@@ -160,6 +198,7 @@ final class DDEVProjectDecodingTests: XCTestCase {
               "mailpit_https_url": "https://\(type)-site.ddev.site:8026",
               "xhgui_url": "http://\(type)-site.ddev.site:8143",
               "xhgui_https_url": "https://\(type)-site.ddev.site:8142",
+              "xhgui_status": "enabled",
               "mutagen_enabled": true,
               "mutagen_status": "ok"
             }
