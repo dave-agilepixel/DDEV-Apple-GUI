@@ -1,24 +1,20 @@
-import Testing
+import XCTest
 @testable import DDEVUIApp
 
-@Suite("InspectorTab")
-struct InspectorTabTests {
-    @Test("has exactly three cases in display order")
-    func casesInOrder() {
-        #expect(InspectorTab.allCases == [.overview, .manage, .logs])
+final class InspectorTabTests: XCTestCase {
+    func testCasesInDisplayOrder() {
+        XCTAssertEqual(InspectorTab.allCases, [.overview, .manage, .logs])
     }
 
-    @Test("display names match the design spec")
-    func displayNames() {
-        #expect(InspectorTab.overview.displayName == "Overview")
-        #expect(InspectorTab.manage.displayName == "Manage")
-        #expect(InspectorTab.logs.displayName == "Logs")
+    func testDisplayNamesMatchDesignSpec() {
+        XCTAssertEqual(InspectorTab.overview.displayName, "Overview")
+        XCTAssertEqual(InspectorTab.manage.displayName, "Manage")
+        XCTAssertEqual(InspectorTab.logs.displayName, "Logs")
     }
 
-    @Test("system images are populated for each case")
-    func systemImages() {
+    func testSystemImagesArePopulated() {
         for tab in InspectorTab.allCases {
-            #expect(!tab.systemImage.isEmpty)
+            XCTAssertFalse(tab.systemImage.isEmpty)
         }
     }
 }
