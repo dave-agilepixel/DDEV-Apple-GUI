@@ -139,7 +139,8 @@ public final class DDEVCommandService: Sendable {
 
     @discardableResult
     public func restoreSnapshot(named snapshotName: String, in appRoot: String) async throws -> CommandResult {
-        try await runDDEV(["snapshot", "restore", snapshotName], workingDirectory: appRoot)
+        try Self.rejectDashPrefixed(snapshotName, field: "snapshot name")
+        return try await runDDEV(["snapshot", "restore", snapshotName], workingDirectory: appRoot)
     }
 
     @discardableResult
@@ -184,17 +185,30 @@ public final class DDEVCommandService: Sendable {
 
     @discardableResult
     public func searchAddOns(query: String, in appRoot: String) async throws -> CommandResult {
-        try await runDDEV(["add-on", "search", query, "--json-output"], workingDirectory: appRoot)
+        try Self.rejectDashPrefixed(query, field: "search query")
+        return try await runDDEV(["add-on", "search", query, "--json-output"], workingDirectory: appRoot)
     }
 
     @discardableResult
     public func getAddOn(_ repository: String, projectName: String, in appRoot: String) async throws -> CommandResult {
-        try await runDDEV(["add-on", "get", repository, "--project", projectName], workingDirectory: appRoot)
+        try Self.rejectDashPrefixed(repository, field: "add-on repository")
+        return try await runDDEV(["add-on", "get", repository, "--project", projectName], workingDirectory: appRoot)
     }
 
     @discardableResult
     public func removeAddOn(named name: String, projectName: String, in appRoot: String) async throws -> CommandResult {
-        try await runDDEV(["add-on", "remove", name, "--project", projectName], workingDirectory: appRoot)
+        try Self.rejectDashPrefixed(name, field: "add-on name")
+        return try await runDDEV(["add-on", "remove", name, "--project", projectName], workingDirectory: appRoot)
+    }
+
+    // Refuse to forward user-controlled positional arguments that look like flags.
+    // A value such as `--help` passed positionally to a cobra/pflag CLI like ddev would
+    // be parsed as an option, not the intended snapshot/repository/query name. We don't
+    // append a `--` separator because that requires a per-version compatibility audit.
+    private static func rejectDashPrefixed(_ value: String, field: String) throws {
+        if value.hasPrefix("-") {
+            throw DDEVCommandValidationError.dashPrefixedArgument(field: field, value: value)
+        }
     }
 
     @discardableResult
@@ -347,14 +361,10 @@ public enum DDEVXHGuiCommand: String, CaseIterable, Sendable {
 public enum DDEVCommandValidationError: Error, Equatable, Sendable {
     case invalidConfigFlags([String])
     case emptyProjectCommand
+    case dashPrefixedArgument(field: String, value: String)
 }
 
 private extension String {
-    var nilIfBlank: String? {
-        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
-    }
-
     var isValidDDEVConfigFlag: Bool {
         hasPrefix("--") && count > 2
     }

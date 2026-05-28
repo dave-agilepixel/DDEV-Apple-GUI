@@ -55,10 +55,8 @@ struct ProjectListView: View {
         Binding {
             viewModel.selectedProjectID
         } set: { newSelection in
-            Task { @MainActor in
-                guard viewModel.selectedProjectID != newSelection else { return }
-                viewModel.selectedProjectID = newSelection
-            }
+            guard viewModel.selectedProjectID != newSelection else { return }
+            viewModel.selectedProjectID = newSelection
         }
     }
 

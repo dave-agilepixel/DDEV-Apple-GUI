@@ -89,6 +89,32 @@ final class DDEVConfigParsingTests: XCTestCase {
         XCTAssertEqual(config.additionalHostnames, [])
     }
 
+    func testYAMLCommentStrippingPreservesHashInsideQuotedStrings() throws {
+        let yaml = """
+        name: aqua-pura
+        type: wordpress
+        docroot: ""
+        php_version: "8.3"
+        nodejs_version: "22"
+        database:
+          type: mariadb
+          version: "11.8"
+        router_http_port: "80"  # real trailing comment
+        router_https_port: "443"
+        webserver_type: nginx-fpm
+        performance_mode: none
+        xdebug_enabled: false
+        xhprof_mode: global
+        upload_dirs: ["public/uploads#archive"]
+        additional_hostnames: ["alpha", "beta # not-a-comment"]
+        """
+
+        let config = try DDEVConfig.parseYAML(yaml)
+
+        XCTAssertEqual(config.uploadDirs, ["public/uploads#archive"])
+        XCTAssertEqual(config.additionalHostnames, ["alpha", "beta # not-a-comment"])
+    }
+
     func testConfigChangesMapToDDEVFlags() {
         XCTAssertEqual(DDEVConfigChange.phpVersion("8.3").ddevFlags, ["--php-version=8.3"])
         XCTAssertEqual(DDEVConfigChange.nodeJSVersion("22").ddevFlags, ["--nodejs-version=22"])

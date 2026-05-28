@@ -422,6 +422,38 @@ final class DDEVCommandServiceTests: XCTestCase {
         ])
     }
 
+    func testRejectsDashPrefixedSnapshotName() async throws {
+        let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
+        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
+
+        do {
+            _ = try await service.restoreSnapshot(named: "--latest", in: "/Users/dave/site")
+            XCTFail("Expected dashPrefixedArgument validation error")
+        } catch DDEVCommandValidationError.dashPrefixedArgument(let field, let value) {
+            XCTAssertEqual(field, "snapshot name")
+            XCTAssertEqual(value, "--latest")
+        }
+
+        XCTAssertTrue(runner.commands.isEmpty, "Runner should not be invoked when validation rejects input")
+    }
+
+    func testRejectsDashPrefixedAddOnArguments() async throws {
+        let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
+        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
+
+        await XCTAssertThrowsValidationError {
+            _ = try await service.searchAddOns(query: "--help", in: "/Users/dave/site")
+        }
+        await XCTAssertThrowsValidationError {
+            _ = try await service.getAddOn("--config=/etc/passwd", projectName: "aqua-pura", in: "/Users/dave/site")
+        }
+        await XCTAssertThrowsValidationError {
+            _ = try await service.removeAddOn(named: "-all", projectName: "aqua-pura", in: "/Users/dave/site")
+        }
+
+        XCTAssertTrue(runner.commands.isEmpty)
+    }
+
     func testXHGuiCommandsRunInProjectDirectory() async throws {
         let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
         let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
@@ -437,6 +469,21 @@ final class DDEVCommandServiceTests: XCTestCase {
             CommandSpec(executable: "ddev", arguments: ["xhgui", "launch"], workingDirectory: "/Users/dave/site"),
             CommandSpec(executable: "ddev", arguments: ["xhgui", "status"], workingDirectory: "/Users/dave/site")
         ])
+    }
+}
+
+private func XCTAssertThrowsValidationError(
+    _ expression: () async throws -> Void,
+    file: StaticString = #filePath,
+    line: UInt = #line
+) async {
+    do {
+        try await expression()
+        XCTFail("Expected DDEVCommandValidationError to be thrown", file: file, line: line)
+    } catch is DDEVCommandValidationError {
+        // Expected.
+    } catch {
+        XCTFail("Expected DDEVCommandValidationError, got \(error)", file: file, line: line)
     }
 }
 

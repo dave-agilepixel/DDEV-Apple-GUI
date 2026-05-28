@@ -108,7 +108,7 @@ struct AddonManagerView: View {
             presenting: pendingRemoval
         ) { addon in
             Button("Remove \(addon.repository)", role: .destructive) {
-                Task { await viewModel.removeAddOnForSelectedProject(named: addon.repository) }
+                Task { await viewModel.removeAddOnForSelectedProject(named: addon.installName) }
             }
             Button("Cancel", role: .cancel) {}
         } message: { addon in

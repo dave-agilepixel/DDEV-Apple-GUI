@@ -66,8 +66,4 @@ private extension String {
         return trimmed.isEmpty ? "db" : trimmed
     }
 
-    var nilIfBlank: String? {
-        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
-    }
 }

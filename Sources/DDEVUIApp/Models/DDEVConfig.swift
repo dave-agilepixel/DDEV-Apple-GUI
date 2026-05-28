@@ -255,11 +255,6 @@ private struct DDEVConfigDocument {
         return value
     }
 
-    func requiredBool(_ key: String) throws -> Bool {
-        let value = try requiredScalar(key)
-        return try boolValue(field: key, value: value)
-    }
-
     func bool(_ key: String, default defaultValue: Bool) throws -> Bool {
         guard let value = scalars[key], !value.isEmpty else {
             return defaultValue
@@ -370,8 +365,22 @@ private extension String {
     }
 
     var droppingYAMLComment: String {
-        guard let commentStart = firstIndex(of: "#") else { return self }
-        return String(self[..<commentStart])
+        var inSingleQuote = false
+        var inDoubleQuote = false
+        for index in indices {
+            let character = self[index]
+            switch character {
+            case "'" where !inDoubleQuote:
+                inSingleQuote.toggle()
+            case "\"" where !inSingleQuote:
+                inDoubleQuote.toggle()
+            case "#" where !inSingleQuote && !inDoubleQuote:
+                return String(self[..<index])
+            default:
+                continue
+            }
+        }
+        return self
     }
 
     var trimmedForDDEVFlag: String {

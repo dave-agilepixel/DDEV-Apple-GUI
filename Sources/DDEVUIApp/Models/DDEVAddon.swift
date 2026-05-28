@@ -34,8 +34,10 @@ public struct DDEVAddon: Equatable, Identifiable, Sendable {
         repository
     }
 
+    /// The identifier accepted by `ddev add-on remove`. Older DDEV versions reject the
+    /// slashed `org/repo` form; the trailing path component is the safe-compatible form.
     public var installName: String {
-        repository
+        repository.split(separator: "/").last.map(String.init) ?? repository
     }
 
     public var isOfficial: Bool {
@@ -84,10 +86,12 @@ public struct DDEVAddon: Equatable, Identifiable, Sendable {
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                 .filter { !$0.isEmpty }
 
+            // `contains("/")` already excludes the "ADD-ON" header row and box-drawing
+            // separators — no additional substring guard needed (it used to incorrectly
+            // drop repositories such as `acme/awesome-add-on`).
             guard cells.count >= 2,
                   let repository = cells.first,
-                  repository.contains("/"),
-                  !repository.lowercased().contains("add-on")
+                  repository.contains("/")
             else {
                 continue
             }
@@ -155,9 +159,3 @@ private struct DDEVRawAddon: Decodable {
     }
 }
 
-private extension String {
-    var nilIfBlank: String? {
-        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
-    }
-}

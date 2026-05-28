@@ -24,6 +24,26 @@ public final class ProcessCommandRunner: CommandRunning, @unchecked Sendable {
     public init() {}
 
     public func run(_ spec: CommandSpec) async throws -> CommandResult {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<CommandResult, Error>) in
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    let result = try Self.executeBlocking(spec)
+                    if result.succeeded {
+                        continuation.resume(returning: result)
+                    } else {
+                        continuation.resume(throwing: CommandRunnerError.nonZeroExit(result))
+                    }
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    // Blocking implementation, intended to run on a background dispatch queue.
+    // Drains stdout and stderr concurrently while the child runs so we don't deadlock
+    // on output larger than the pipe kernel buffer (16-64 KiB).
+    private static func executeBlocking(_ spec: CommandSpec) throws -> CommandResult {
         let startedAt = Date()
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
@@ -38,12 +58,30 @@ public final class ProcessCommandRunner: CommandRunning, @unchecked Sendable {
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
 
+        let stdoutBuffer = NSMutableData()
+        let stderrBuffer = NSMutableData()
+        let group = DispatchGroup()
+        let readQueue = DispatchQueue(label: "ddevui.process-reader", attributes: .concurrent)
+
+        group.enter()
+        readQueue.async {
+            stdoutBuffer.append(stdoutPipe.fileHandleForReading.readDataToEndOfFile())
+            group.leave()
+        }
+
+        group.enter()
+        readQueue.async {
+            stderrBuffer.append(stderrPipe.fileHandleForReading.readDataToEndOfFile())
+            group.leave()
+        }
+
         try process.run()
         process.waitUntilExit()
+        group.wait()
 
-        let stdout = String(data: stdoutPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        let stderr = String(data: stderrPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        let result = CommandResult(
+        let stdout = String(data: stdoutBuffer as Data, encoding: .utf8) ?? ""
+        let stderr = String(data: stderrBuffer as Data, encoding: .utf8) ?? ""
+        return CommandResult(
             executable: spec.executable,
             arguments: spec.arguments,
             workingDirectory: spec.workingDirectory,
@@ -54,15 +92,9 @@ public final class ProcessCommandRunner: CommandRunning, @unchecked Sendable {
             finishedAt: Date(),
             wasCancelled: false
         )
-
-        if result.succeeded {
-            return result
-        }
-
-        throw CommandRunnerError.nonZeroExit(result)
     }
 
-    private func environmentForGUIApp() -> [String: String] {
+    private static func environmentForGUIApp() -> [String: String] {
         var environment = ProcessInfo.processInfo.environment
         let existingPath = environment["PATH", default: ""]
         let standardPath = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"

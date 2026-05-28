@@ -32,10 +32,9 @@ public struct FileProjectCacheStore: ProjectCacheStoring {
             withIntermediateDirectories: true
         )
 
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-
-        let data = try encoder.encode(projects)
+        // Cache file is machine-only; pretty-printing + sorted keys doubled file size and
+        // slowed every refresh's encode.
+        let data = try JSONEncoder().encode(projects)
         let cacheFileURL = cacheDirectory.appendingPathComponent(cacheFileName, isDirectory: false)
         try data.write(to: cacheFileURL, options: .atomic)
     }

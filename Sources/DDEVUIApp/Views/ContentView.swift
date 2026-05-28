@@ -84,10 +84,8 @@ struct ContentView: View {
         Binding {
             viewModel.selectedSidebarItem
         } set: { newSelection in
-            Task { @MainActor in
-                guard viewModel.selectedSidebarItem != newSelection else { return }
-                viewModel.selectedSidebarItem = newSelection
-            }
+            guard viewModel.selectedSidebarItem != newSelection else { return }
+            viewModel.selectedSidebarItem = newSelection
         }
     }
 

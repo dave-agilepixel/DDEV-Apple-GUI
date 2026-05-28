@@ -437,6 +437,11 @@ public final class ProjectDashboardViewModel: ObservableObject {
         do {
             let result = try await ddevService.utilityConfigYAML(omitKeys: ["web_environment"], in: selectedProject.appRoot)
             projectConfig = try DDEVConfig.parseYAML(result.stdout)
+        } catch CommandRunnerError.nonZeroExit(let result) {
+            recordCommandResult(result, requestsOutputExpansion: false)
+            let message = result.stderr.nilIfBlank ?? "Command failed with exit code \(result.exitCode)."
+            lastErrorMessage = message
+            projectConfigErrorMessage = message
         } catch {
             let message = String(describing: error)
             lastErrorMessage = message
@@ -702,14 +707,20 @@ public final class ProjectDashboardViewModel: ObservableObject {
             let entries = try await operation()
             diagnosticReport = DDEVDiagnosticReport(entries: entries)
             entries.forEach { recordCommandResult($0.result, requestsOutputExpansion: false) }
-        } catch CommandRunnerError.nonZeroExit(let result) {
-            recordCommandResult(result, requestsOutputExpansion: false)
-            diagnosticReport = DDEVDiagnosticReport(entries: [
-                DDEVDiagnosticEntry(check: .projectDiagnose, result: result)
-            ])
-            let message = "Command failed with exit code \(result.exitCode)."
-            lastErrorMessage = message
-            diagnosticsErrorMessage = message
+        } catch let failure as DiagnosticFailure {
+            if let result = failure.result {
+                recordCommandResult(result, requestsOutputExpansion: false)
+                diagnosticReport = DDEVDiagnosticReport(entries: [
+                    DDEVDiagnosticEntry(check: failure.check, result: result)
+                ])
+                let message = "Command failed with exit code \(result.exitCode)."
+                lastErrorMessage = message
+                diagnosticsErrorMessage = message
+            } else {
+                let message = String(describing: failure.underlying)
+                lastErrorMessage = message
+                diagnosticsErrorMessage = message
+            }
         } catch {
             let message = String(describing: error)
             lastErrorMessage = message
@@ -721,16 +732,56 @@ public final class ProjectDashboardViewModel: ObservableObject {
         _ check: DDEVDiagnosticCheck,
         operation: () async throws -> CommandResult
     ) async throws -> DDEVDiagnosticEntry {
-        DDEVDiagnosticEntry(check: check, result: try await operation())
+        do {
+            return DDEVDiagnosticEntry(check: check, result: try await operation())
+        } catch CommandRunnerError.nonZeroExit(let result) {
+            throw DiagnosticFailure(check: check, result: result, underlying: CommandRunnerError.nonZeroExit(result))
+        } catch {
+            throw DiagnosticFailure(check: check, result: nil, underlying: error)
+        }
     }
 
     private func recordCommandResult(_ result: CommandResult, requestsOutputExpansion: Bool = true) {
         lastCommandResult = result
-        commandHistory.append(CommandHistoryEntry(result: result))
+        commandHistory.append(CommandHistoryEntry(result: Self.bounded(result)))
+
+        // Keep history bounded so long sessions don't accumulate megabytes of stdout
+        // from `ddev logs`, `import-db`, `utility diagnose`, etc.
+        if commandHistory.count > Self.commandHistoryLimit {
+            commandHistory.removeFirst(commandHistory.count - Self.commandHistoryLimit)
+        }
 
         if requestsOutputExpansion {
             commandOutputExpansionRequest += 1
         }
+    }
+
+    private static let commandHistoryLimit = 50
+    private static let commandHistoryOutputLimit = 32 * 1024
+
+    private static func bounded(_ result: CommandResult) -> CommandResult {
+        let stdoutBounded = bound(result.stdout)
+        let stderrBounded = bound(result.stderr)
+        guard stdoutBounded.count != result.stdout.count || stderrBounded.count != result.stderr.count else {
+            return result
+        }
+        return CommandResult(
+            executable: result.executable,
+            arguments: result.arguments,
+            workingDirectory: result.workingDirectory,
+            exitCode: result.exitCode,
+            stdout: stdoutBounded,
+            stderr: stderrBounded,
+            startedAt: result.startedAt,
+            finishedAt: result.finishedAt,
+            wasCancelled: result.wasCancelled
+        )
+    }
+
+    private static func bound(_ text: String) -> String {
+        guard text.count > commandHistoryOutputLimit else { return text }
+        let prefix = text.prefix(commandHistoryOutputLimit)
+        return prefix + "\n…[truncated \(text.count - commandHistoryOutputLimit) chars]"
     }
 
     private func refreshSnapshots(in appRoot: String) async {
@@ -791,24 +842,31 @@ public final class ProjectDashboardViewModel: ObservableObject {
     }
 
     private func enrichProjectsWithDetails(_ projects: [DDEVProject]) async -> [DDEVProject] {
-        var enrichedProjects: [DDEVProject] = []
-
-        for project in projects {
-            do {
-                let details = try await ddevService.describe(projectName: project.name)
-                enrichedProjects.append(project.applying(details: details))
-            } catch {
-                enrichedProjects.append(project)
+        // Each describe is an independent subprocess; running them in parallel turns an
+        // O(N × describe-latency) freeze into roughly O(slowest-describe).
+        await withTaskGroup(of: (Int, DDEVProject).self) { group in
+            for (index, project) in projects.enumerated() {
+                group.addTask { [ddevService] in
+                    do {
+                        let details = try await ddevService.describe(projectName: project.name)
+                        return (index, project.applying(details: details))
+                    } catch {
+                        return (index, project)
+                    }
+                }
             }
-        }
 
-        return enrichedProjects
+            var collected = Array<DDEVProject?>(repeating: nil, count: projects.count)
+            for await (index, project) in group {
+                collected[index] = project
+            }
+            return collected.compactMap { $0 }
+        }
     }
 }
 
-private extension String {
-    var nilIfBlank: String? {
-        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
-    }
+private struct DiagnosticFailure: Error {
+    let check: DDEVDiagnosticCheck
+    let result: CommandResult?
+    let underlying: Error
 }
