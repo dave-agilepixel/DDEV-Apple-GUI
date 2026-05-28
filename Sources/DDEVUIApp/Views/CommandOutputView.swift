@@ -109,7 +109,7 @@ struct CommandOutputView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(12)
         }
-        .frame(maxHeight: 220)
+        .frame(minHeight: 180, maxHeight: .infinity)
         .background(
             RoundedRectangle(cornerRadius: 8)
                 .fill(.black.opacity(0.04))
