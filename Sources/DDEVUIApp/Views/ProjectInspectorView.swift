@@ -499,6 +499,124 @@ private struct InspectorChipLabelStyle: LabelStyle {
     }
 }
 
+// MARK: - Overview tab
+
+private struct OverviewTabContent: View {
+    let project: DDEVProject
+    @ObservedObject var viewModel: ProjectDashboardViewModel
+    let workspaceOpener: MacWorkspaceOpener
+    @Binding var showConfigEditor: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            environmentSection
+            urlsSection
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var environmentSection: some View {
+        InspectorSection("Environment") {
+            VStack(alignment: .leading, spacing: 8) {
+                metaRow("PHP version", trailing: {
+                    HStack(spacing: 6) {
+                        Text(project.phpVersion ?? "Unknown")
+                            .font(.system(.body, design: .monospaced))
+                        Menu {
+                            ForEach(viewModel.supportedPHPVersions, id: \.self) { version in
+                                Button("PHP \(version)") {
+                                    Task { await viewModel.setPHPVersionForSelectedProject(version) }
+                                }
+                                .disabled(project.phpVersion == version)
+                            }
+                        } label: {
+                            Text("Change")
+                        }
+                        .menuStyle(.borderlessButton)
+                        .fixedSize()
+                        .disabled(viewModel.isRunningCommand)
+                    }
+                })
+
+                metaRow("Project type", trailing: {
+                    Text(project.projectType.displayName)
+                        .foregroundStyle(.secondary)
+                })
+
+                if !project.docroot.isEmpty {
+                    metaRow("Docroot", trailing: {
+                        Text(project.docroot)
+                            .font(.system(.body, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    })
+                }
+
+                if let mutagen = project.mutagenStatus, project.mutagenEnabled {
+                    metaRow("Mutagen", trailing: {
+                        Text(mutagen)
+                            .foregroundStyle(.secondary)
+                    })
+                }
+
+                HStack {
+                    Spacer()
+                    Button {
+                        showConfigEditor = true
+                    } label: {
+                        Label("Edit Config", systemImage: "slider.horizontal.3")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(viewModel.isRunningCommand)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var urlsSection: some View {
+        let links: [(String, String, URL?)] = [
+            ("Primary", "safari", project.primaryURL),
+            ("HTTPS", "lock.shield", project.httpsURL),
+            ("HTTP", "globe", project.httpURL),
+            ("Mailpit", "envelope", project.mailpitHTTPSURL ?? project.mailpitURL),
+            ("XHGui", "chart.bar.xaxis", project.xhguiHTTPSURL ?? project.xhguiURL)
+        ]
+        let available = links.compactMap { item -> (String, String, URL)? in
+            guard let url = item.2 else { return nil }
+            return (item.0, item.1, url)
+        }
+
+        if !available.isEmpty {
+            InspectorSection("URLs") {
+                FlowHStack(spacing: 8) {
+                    ForEach(available, id: \.0) { item in
+                        Button {
+                            workspaceOpener.openURL(item.2)
+                        } label: {
+                            Label(item.0, systemImage: item.1)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                }
+                .disabled(project.status != .running)
+            }
+        }
+    }
+
+    private func metaRow<Trailing: View>(_ label: String, @ViewBuilder trailing: () -> Trailing) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(label)
+                .foregroundStyle(.secondary)
+            Spacer()
+            trailing()
+        }
+        .font(.callout)
+    }
+}
+
 // MARK: - FlowHStack (wraps items to new lines on overflow)
 
 private struct FlowHStack<Content: View>: View {
