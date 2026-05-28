@@ -348,9 +348,9 @@ Keep existing files, but stop allowing them to balloon unchecked.
 
 - [x] Add command mappings for `ddev add-on list --installed --project <name>`, `ddev add-on search <query>`, `ddev add-on get <owner/repo> --project <name>`, and `ddev add-on remove <name> --project <name>`.
 - [x] Parse tabular add-on output conservatively; preserve raw output if parsing fails.
-- [ ] Build installed add-ons list with remove controls.
-- [ ] Build search/install sheet.
-- [ ] Show a restart-needed banner after install/remove.
+- [x] Build installed add-ons list with remove controls.
+- [x] Build search/install sheet.
+- [x] Show a restart-needed banner after install/remove.
 - [ ] Run `swift test`.
 - [ ] Commit as `feat: Add DDEV add-on manager`.
 

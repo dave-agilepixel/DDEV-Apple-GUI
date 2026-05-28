@@ -19,6 +19,7 @@ struct ProjectInspectorView: View {
                         primaryActionBar(project)
                         environment(project)
                         FrameworkCommandLauncherView(project: project, viewModel: viewModel)
+                        AddonManagerView(project: project, viewModel: viewModel)
                         DatabaseOperationsView(project: project, viewModel: viewModel)
                         SnapshotManagerView(project: project, viewModel: viewModel)
                         LogsViewerView(project: project, viewModel: viewModel)
@@ -87,19 +88,19 @@ struct ProjectInspectorView: View {
         } message: {
             Text("This removes DDEV project data including database data. It does not delete the source folder.")
         }
-                .sheet(isPresented: $showSourceDeleteSheet) {
-                    if let project = viewModel.selectedProject {
-                        SourceFolderDeleteSheet(project: project, viewModel: viewModel)
-                    }
-                }
-                .sheet(isPresented: $showConfigEditor) {
-                    if let project = viewModel.selectedProject {
-                        ProjectConfigEditorView(project: project, viewModel: viewModel)
-                    }
-                }
-                .onChange(of: viewModel.commandOutputExpansionRequest) { _, requestCount in
-                    if requestCount > 0 {
-                        outputExpanded = true
+        .sheet(isPresented: $showSourceDeleteSheet) {
+            if let project = viewModel.selectedProject {
+                SourceFolderDeleteSheet(project: project, viewModel: viewModel)
+            }
+        }
+        .sheet(isPresented: $showConfigEditor) {
+            if let project = viewModel.selectedProject {
+                ProjectConfigEditorView(project: project, viewModel: viewModel)
+            }
+        }
+        .onChange(of: viewModel.commandOutputExpansionRequest) { _, requestCount in
+            if requestCount > 0 {
+                outputExpanded = true
             }
         }
     }
