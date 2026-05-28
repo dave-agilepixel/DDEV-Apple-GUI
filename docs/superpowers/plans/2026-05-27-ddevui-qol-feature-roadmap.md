@@ -323,7 +323,7 @@ Keep existing files, but stop allowing them to balloon unchecked.
 
 ### Phase 7: Add-On Browser and Manager
 
-**Status:** In progress on `codex/phase-7-addon-browser-manager`.
+**Status:** Implemented, visually checked, tested, and ready for PR on `codex/phase-7-addon-browser-manager`.
 
 **Why later:** It is high-value, but add-ons involve network calls, GitHub rate limits, project file changes, and dependency installs.
 
@@ -351,14 +351,14 @@ Keep existing files, but stop allowing them to balloon unchecked.
 - [x] Build installed add-ons list with remove controls.
 - [x] Build search/install sheet.
 - [x] Show a restart-needed banner after install/remove.
-- [ ] Run `swift test`.
-- [ ] Commit as `feat: Add DDEV add-on manager`.
+- [x] Run `swift test`.
+- [x] Commit as incremental `feat:` commits for add-on model, commands, UI, and error handling.
 
 **Acceptance Criteria:**
 
-- A user can see what add-ons are installed.
-- A user can install and remove common add-ons without typing command syntax.
-- Network or GitHub rate-limit failures are shown clearly.
+- [x] A user can see what add-ons are installed.
+- [x] A user can install and remove common add-ons without typing command syntax.
+- [x] Network or GitHub rate-limit failures are shown clearly.
 
 ### Phase 8: Diagnostics and Health Panel
 

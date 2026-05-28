@@ -458,6 +458,11 @@ public final class ProjectDashboardViewModel: ObservableObject {
             )
             installedAddOns = try DDEVAddon.parseListOutput(result.stdout)
             addonRawOutput = installedAddOns.isEmpty ? result.stdout.nilIfBlank : nil
+        } catch CommandRunnerError.nonZeroExit(let result) {
+            recordCommandResult(result, requestsOutputExpansion: false)
+            let message = "Command failed with exit code \(result.exitCode)."
+            lastErrorMessage = message
+            addonErrorMessage = message
         } catch {
             let message = String(describing: error)
             lastErrorMessage = message
@@ -485,6 +490,11 @@ public final class ProjectDashboardViewModel: ObservableObject {
             let parsedResults = try DDEVAddon.parseListOutput(result.stdout)
             addonSearchResults = parsedResults.isEmpty ? DDEVAddon.recommendedOfficial : parsedResults
             addonRawOutput = parsedResults.isEmpty ? result.stdout.nilIfBlank : nil
+        } catch CommandRunnerError.nonZeroExit(let result) {
+            recordCommandResult(result, requestsOutputExpansion: false)
+            let message = "Command failed with exit code \(result.exitCode)."
+            lastErrorMessage = message
+            addonErrorMessage = message
         } catch {
             let message = String(describing: error)
             lastErrorMessage = message
@@ -495,6 +505,7 @@ public final class ProjectDashboardViewModel: ObservableObject {
     public func installAddOnForSelectedProject(_ repository: String) async {
         guard let selectedProject else { return }
 
+        addonErrorMessage = nil
         await runAndCapture {
             let result = try await self.ddevService.getAddOn(
                 repository,
@@ -506,11 +517,13 @@ public final class ProjectDashboardViewModel: ObservableObject {
             await self.refreshInstalledAddOns(in: selectedProject.appRoot, projectName: selectedProject.name)
             return result
         }
+        addonErrorMessage = lastErrorMessage
     }
 
     public func removeAddOnForSelectedProject(named name: String) async {
         guard let selectedProject else { return }
 
+        addonErrorMessage = nil
         await runAndCapture {
             let result = try await self.ddevService.removeAddOn(
                 named: name,
@@ -522,6 +535,7 @@ public final class ProjectDashboardViewModel: ObservableObject {
             await self.refreshInstalledAddOns(in: selectedProject.appRoot, projectName: selectedProject.name)
             return result
         }
+        addonErrorMessage = lastErrorMessage
     }
 
     public func clearAddOnRestartRecommendation() {

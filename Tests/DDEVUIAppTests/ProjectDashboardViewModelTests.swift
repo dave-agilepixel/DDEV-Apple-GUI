@@ -669,6 +669,32 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertTrue(viewModel.addOnRestartRecommended)
         XCTAssertEqual(viewModel.commandOutputExpansionRequest, 2)
     }
+
+    func testAddOnCommandFailuresSurfacePanelError() async {
+        let now = Date()
+        let failure = CommandResult(
+            executable: "ddev",
+            arguments: ["add-on", "search", "redis", "--json-output"],
+            workingDirectory: "/Users/dave/Development/agilepixel/aqua-pura",
+            exitCode: 1,
+            stdout: "",
+            stderr: "GitHub API rate limit exceeded",
+            startedAt: now,
+            finishedAt: now,
+            wasCancelled: false
+        )
+        let service = FakeDDEVService(
+            projects: [.sampleWordPress],
+            addonError: CommandRunnerError.nonZeroExit(failure)
+        )
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.searchAddOnsForSelectedProject(query: "redis")
+
+        XCTAssertEqual(viewModel.addonErrorMessage, "Command failed with exit code 1.")
+        XCTAssertEqual(viewModel.lastCommandResult?.stderr, "GitHub API rate limit exceeded")
+    }
 }
 
 private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
@@ -682,6 +708,7 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
     private let configYAMLOutput: String
     private let addonListOutput: String
     private let addonSearchOutput: String
+    private let addonError: Error?
     private var recordedCommands: [String] = []
 
     var commands: [String] {
@@ -697,7 +724,8 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
         logsOutput: String = "",
         configYAMLOutput: String = "",
         addonListOutput: String = "",
-        addonSearchOutput: String = ""
+        addonSearchOutput: String = "",
+        addonError: Error? = nil
     ) {
         self.loadedProjects = projects
         self.phpVersions = phpVersions
@@ -708,6 +736,7 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
         self.configYAMLOutput = configYAMLOutput
         self.addonListOutput = addonListOutput
         self.addonSearchOutput = addonSearchOutput
+        self.addonError = addonError
     }
 
     func listProjects() async throws -> [DDEVProject] {
@@ -841,21 +870,33 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
 
     func listInstalledAddOns(projectName: String, in appRoot: String) async throws -> CommandResult {
         record("addon-list:\(appRoot):\(projectName)")
+        if let addonError {
+            throw addonError
+        }
         return commandResult(arguments: ["add-on", "list", "--installed"], workingDirectory: appRoot, stdout: addonListOutput)
     }
 
     func searchAddOns(query: String, in appRoot: String) async throws -> CommandResult {
         record("addon-search:\(appRoot):\(query)")
+        if let addonError {
+            throw addonError
+        }
         return commandResult(arguments: ["add-on", "search", query], workingDirectory: appRoot, stdout: addonSearchOutput)
     }
 
     func getAddOn(_ repository: String, projectName: String, in appRoot: String) async throws -> CommandResult {
         record("addon-get:\(appRoot):\(projectName):\(repository)")
+        if let addonError {
+            throw addonError
+        }
         return commandResult(arguments: ["add-on", "get", repository], workingDirectory: appRoot)
     }
 
     func removeAddOn(named name: String, projectName: String, in appRoot: String) async throws -> CommandResult {
         record("addon-remove:\(appRoot):\(projectName):\(name)")
+        if let addonError {
+            throw addonError
+        }
         return commandResult(arguments: ["add-on", "remove", name], workingDirectory: appRoot)
     }
 
