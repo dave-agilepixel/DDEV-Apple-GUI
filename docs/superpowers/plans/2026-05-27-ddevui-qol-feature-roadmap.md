@@ -386,9 +386,9 @@ Keep existing files, but stop allowing them to balloon unchecked.
 **Tasks:**
 
 - [x] Add command mappings for `ddev version`, `ddev utility diagnose`, `ddev utility check-custom-config`, `ddev utility check-db-match`, `ddev mutagen status`, `ddev mutagen sync`, `ddev mutagen reset`, and `ddev mutagen logs`.
-- [ ] Build a Diagnostics sidebar item separate from Settings.
+- [x] Build a Diagnostics sidebar item separate from Settings.
 - [x] Add global checks when no project is selected and project checks when one is selected.
-- [ ] Require confirmation before Mutagen reset.
+- [x] Require confirmation before Mutagen reset.
 - [x] Add copy-all diagnostic output.
 - [ ] Run `swift test`.
 - [ ] Commit as `feat: Add diagnostics health panel`.

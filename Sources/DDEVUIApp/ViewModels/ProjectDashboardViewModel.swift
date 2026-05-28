@@ -56,6 +56,7 @@ public enum ProjectSidebarItem: String, CaseIterable, Identifiable, Sendable {
     case projects
     case running
     case wordpress
+    case diagnostics
     case settings
 
     public var id: String { rawValue }
@@ -68,6 +69,8 @@ public enum ProjectSidebarItem: String, CaseIterable, Identifiable, Sendable {
             "Running"
         case .wordpress:
             "WordPress"
+        case .diagnostics:
+            "Diagnostics"
         case .settings:
             "Settings"
         }
@@ -81,6 +84,8 @@ public enum ProjectSidebarItem: String, CaseIterable, Identifiable, Sendable {
             "play.circle"
         case .wordpress:
             "w.circle"
+        case .diagnostics:
+            "stethoscope"
         case .settings:
             "gearshape"
         }
@@ -186,6 +191,8 @@ public final class ProjectDashboardViewModel: ObservableObject {
                 project.status == .running
             case .wordpress:
                 project.isWordPress
+            case .diagnostics:
+                false
             case .settings:
                 false
             }

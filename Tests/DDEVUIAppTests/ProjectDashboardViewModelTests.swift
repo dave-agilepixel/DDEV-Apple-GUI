@@ -37,6 +37,10 @@ final class ProjectDashboardViewModelTests: XCTestCase {
 
         viewModel.selectedSidebarItem = .wordpress
         XCTAssertEqual(viewModel.filteredProjects, [.sampleWordPress])
+
+        viewModel.selectedSidebarItem = .diagnostics
+        XCTAssertEqual(viewModel.filteredProjects, [])
+        XCTAssertEqual(ProjectSidebarItem.diagnostics.title, "Diagnostics")
     }
 
     func testRefreshAddsPHPVersionsFromProjectDetails() async {
