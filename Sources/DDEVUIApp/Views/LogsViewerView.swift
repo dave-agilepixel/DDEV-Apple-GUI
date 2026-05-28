@@ -86,7 +86,7 @@ struct LogsViewerView: View {
                     .font(.system(.caption, design: .monospaced))
                     .textSelection(.enabled)
                     .scrollContentBackground(.hidden)
-                    .frame(minHeight: 180, maxHeight: 340)
+                    .frame(minHeight: 240, maxHeight: 400)
                     .overlay(
                         RoundedRectangle(cornerRadius: 6)
                             .stroke(.separator, lineWidth: 1)

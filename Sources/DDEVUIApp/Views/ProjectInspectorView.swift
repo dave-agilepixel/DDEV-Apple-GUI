@@ -1,6 +1,28 @@
 import AppKit
 import SwiftUI
 
+enum InspectorTab: Hashable, CaseIterable {
+    case overview
+    case manage
+    case logs
+
+    var displayName: String {
+        switch self {
+        case .overview: "Overview"
+        case .manage: "Manage"
+        case .logs: "Logs"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .overview: "info.circle"
+        case .manage: "slider.horizontal.3"
+        case .logs: "text.alignleft"
+        }
+    }
+}
+
 struct ProjectInspectorView: View {
     @ObservedObject var viewModel: ProjectDashboardViewModel
     private let workspaceOpener = MacWorkspaceOpener()
@@ -8,29 +30,19 @@ struct ProjectInspectorView: View {
     @State private var confirmDeleteDDEVData = false
     @State private var showSourceDeleteSheet = false
     @State private var showConfigEditor = false
-    @State private var outputExpanded = false
+    @State private var selectedTab: InspectorTab = .overview
 
     var body: some View {
         Group {
             if let project = viewModel.selectedProject {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 24) {
-                        header(project)
-                        primaryActionBar(project)
-                        environment(project)
-                        FrameworkCommandLauncherView(project: project, viewModel: viewModel)
-                        AddonManagerView(project: project, viewModel: viewModel)
-                        DatabaseOperationsView(project: project, viewModel: viewModel)
-                        SnapshotManagerView(project: project, viewModel: viewModel)
-                        LogsViewerView(project: project, viewModel: viewModel)
-                        quickLinks(project)
-                        commandOutputSection
-                    }
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 20)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: 0) {
+                    pinnedRegion(project)
+
+                    Divider()
+
+                    tabContent(project)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                .scrollContentBackground(.hidden)
                 .toolbar {
                     ToolbarItem(placement: .primaryAction) {
                         Menu {
@@ -100,8 +112,56 @@ struct ProjectInspectorView: View {
         }
         .onChange(of: viewModel.commandOutputExpansionRequest) { _, requestCount in
             if requestCount > 0 {
-                outputExpanded = true
+                selectedTab = .logs
             }
+        }
+        .onChange(of: viewModel.selectedProject?.id) { _, _ in
+            selectedTab = .overview
+        }
+    }
+
+    // MARK: - Pinned region
+
+    @ViewBuilder
+    private func pinnedRegion(_ project: DDEVProject) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            header(project)
+            primaryActionBar(project)
+            tabPicker
+        }
+        .padding(.horizontal, 24)
+        .padding(.top, 20)
+        .padding(.bottom, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var tabPicker: some View {
+        Picker("Section", selection: $selectedTab) {
+            ForEach(InspectorTab.allCases, id: \.self) { tab in
+                Text(tab.displayName).tag(tab)
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+    }
+
+    @ViewBuilder
+    private func tabContent(_ project: DDEVProject) -> some View {
+        switch selectedTab {
+        case .overview:
+            ScrollView {
+                OverviewTabContent(
+                    project: project,
+                    viewModel: viewModel,
+                    workspaceOpener: workspaceOpener,
+                    showConfigEditor: $showConfigEditor
+                )
+            }
+            .scrollContentBackground(.hidden)
+        case .manage:
+            ManageTabContent(project: project, viewModel: viewModel)
+        case .logs:
+            LogsTabContent(project: project, viewModel: viewModel)
         }
     }
 
@@ -144,7 +204,7 @@ struct ProjectInspectorView: View {
         }
     }
 
-    // MARK: - Primary action bar (single glass element, not a card)
+    // MARK: - Primary action bar
 
     private func primaryActionBar(_ project: DDEVProject) -> some View {
         let isRunning = project.status == .running
@@ -218,11 +278,10 @@ struct ProjectInspectorView: View {
                     }
                 }
             } label: {
-                Image(systemName: "chevron.down")
-                    .imageScale(.small)
-                    .frame(width: 18)
+                EmptyView()
             }
             .menuStyle(.borderlessButton)
+            .menuIndicator(.visible)
             .fixedSize()
         }
         .controlSize(.large)
@@ -245,158 +304,15 @@ struct ProjectInspectorView: View {
                     }
                 }
             } label: {
-                Image(systemName: "chevron.down")
-                    .imageScale(.small)
-                    .frame(width: 18)
+                EmptyView()
             }
             .menuStyle(.borderlessButton)
+            .menuIndicator(.visible)
             .fixedSize()
             .disabled(!isRunning || viewModel.availableDatabaseTools.isEmpty)
         }
         .controlSize(.large)
         .fixedSize()
-    }
-
-    // MARK: - Environment
-
-    private func environment(_ project: DDEVProject) -> some View {
-        InspectorSection("Environment") {
-            VStack(alignment: .leading, spacing: 8) {
-                metaRow("PHP version", trailing: {
-                    HStack(spacing: 6) {
-                        Text(project.phpVersion ?? "Unknown")
-                            .font(.system(.body, design: .monospaced))
-                        Menu {
-                            ForEach(viewModel.supportedPHPVersions, id: \.self) { version in
-                                Button("PHP \(version)") {
-                                    Task { await viewModel.setPHPVersionForSelectedProject(version) }
-                                }
-                                .disabled(project.phpVersion == version)
-                            }
-                        } label: {
-                            Text("Change")
-                        }
-                        .menuStyle(.borderlessButton)
-                        .fixedSize()
-                        .disabled(viewModel.isRunningCommand)
-                    }
-                })
-
-                metaRow("Project type", trailing: {
-                    Text(project.projectType.displayName)
-                        .foregroundStyle(.secondary)
-                })
-
-                if !project.docroot.isEmpty {
-                    metaRow("Docroot", trailing: {
-                        Text(project.docroot)
-                            .font(.system(.body, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                    })
-                }
-
-                if let mutagen = project.mutagenStatus, project.mutagenEnabled {
-                    metaRow("Mutagen", trailing: {
-                        Text(mutagen)
-                            .foregroundStyle(.secondary)
-                    })
-                }
-
-                HStack {
-                    Spacer()
-                    Button {
-                        showConfigEditor = true
-                    } label: {
-                        Label("Edit Config", systemImage: "slider.horizontal.3")
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(viewModel.isRunningCommand)
-                }
-            }
-        }
-    }
-
-    // MARK: - Quick links
-
-    @ViewBuilder
-    private func quickLinks(_ project: DDEVProject) -> some View {
-        let links: [(String, String, URL?)] = [
-            ("Primary", "safari", project.primaryURL),
-            ("HTTPS", "lock.shield", project.httpsURL),
-            ("HTTP", "globe", project.httpURL),
-            ("Mailpit", "envelope", project.mailpitHTTPSURL ?? project.mailpitURL),
-            ("XHGui", "chart.bar.xaxis", project.xhguiHTTPSURL ?? project.xhguiURL)
-        ]
-        let available = links.compactMap { item -> (String, String, URL)? in
-            guard let url = item.2 else { return nil }
-            return (item.0, item.1, url)
-        }
-
-        if !available.isEmpty {
-            InspectorSection("URLs") {
-                FlowHStack(spacing: 8) {
-                    ForEach(available, id: \.0) { item in
-                        Button {
-                            workspaceOpener.openURL(item.2)
-                        } label: {
-                            Label(item.0, systemImage: item.1)
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                    }
-                }
-                .disabled(project.status != .running)
-            }
-        }
-    }
-
-    // MARK: - Command output (disclosure)
-
-    @ViewBuilder
-    private var commandOutputSection: some View {
-        if viewModel.lastCommandResult != nil || viewModel.lastErrorMessage != nil || viewModel.isRunningCommand {
-            DisclosureGroup(isExpanded: $outputExpanded) {
-                CommandOutputView(
-                    result: viewModel.lastCommandResult,
-                    history: viewModel.commandHistory,
-                    errorMessage: viewModel.lastErrorMessage
-                )
-                .padding(.top, 8)
-            } label: {
-                HStack(spacing: 10) {
-                    Text(viewModel.commandHistory.count > 1 ? "Command History" : "Last Command")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
-                        .kerning(0.5)
-
-                    if viewModel.isRunningCommand {
-                        ProgressView()
-                            .controlSize(.small)
-                    } else if viewModel.lastErrorMessage != nil {
-                        Image(systemName: "xmark.octagon.fill")
-                            .foregroundStyle(.red)
-                    } else if let result = viewModel.lastCommandResult {
-                        Image(systemName: result.succeeded ? "checkmark.circle.fill" : "xmark.octagon.fill")
-                            .foregroundStyle(result.succeeded ? .green : .red)
-                    }
-
-                    Spacer()
-                }
-            }
-        }
-    }
-
-    // MARK: - Small helpers
-
-    private func metaRow<Trailing: View>(_ label: String, @ViewBuilder trailing: () -> Trailing) -> some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text(label)
-                .foregroundStyle(.secondary)
-            Spacer()
-            trailing()
-        }
-        .font(.callout)
     }
 }
 
@@ -475,6 +391,201 @@ private struct InspectorChipLabelStyle: LabelStyle {
             configuration.icon
                 .foregroundStyle(.tertiary)
             configuration.title
+        }
+    }
+}
+
+// MARK: - Overview tab
+
+private struct OverviewTabContent: View {
+    let project: DDEVProject
+    @ObservedObject var viewModel: ProjectDashboardViewModel
+    let workspaceOpener: MacWorkspaceOpener
+    @Binding var showConfigEditor: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            environmentSection
+            urlsSection
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var environmentSection: some View {
+        InspectorSection("Environment") {
+            VStack(alignment: .leading, spacing: 8) {
+                metaRow("PHP version", trailing: {
+                    HStack(spacing: 6) {
+                        Text(project.phpVersion ?? "Unknown")
+                            .font(.system(.body, design: .monospaced))
+                        Menu {
+                            ForEach(viewModel.supportedPHPVersions, id: \.self) { version in
+                                Button("PHP \(version)") {
+                                    Task { await viewModel.setPHPVersionForSelectedProject(version) }
+                                }
+                                .disabled(project.phpVersion == version)
+                            }
+                        } label: {
+                            Text("Change")
+                        }
+                        .menuStyle(.borderlessButton)
+                        .fixedSize()
+                        .disabled(viewModel.isRunningCommand)
+                    }
+                })
+
+                metaRow("Project type", trailing: {
+                    Text(project.projectType.displayName)
+                        .foregroundStyle(.secondary)
+                })
+
+                if !project.docroot.isEmpty {
+                    metaRow("Docroot", trailing: {
+                        Text(project.docroot)
+                            .font(.system(.body, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    })
+                }
+
+                if let mutagen = project.mutagenStatus, project.mutagenEnabled {
+                    metaRow("Mutagen", trailing: {
+                        Text(mutagen)
+                            .foregroundStyle(.secondary)
+                    })
+                }
+
+                HStack {
+                    Spacer()
+                    Button {
+                        showConfigEditor = true
+                    } label: {
+                        Label("Edit Config", systemImage: "slider.horizontal.3")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(viewModel.isRunningCommand)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var urlsSection: some View {
+        let links: [(String, String, URL?)] = [
+            ("Primary", "safari", project.primaryURL),
+            ("HTTPS", "lock.shield", project.httpsURL),
+            ("HTTP", "globe", project.httpURL),
+            ("Mailpit", "envelope", project.mailpitHTTPSURL ?? project.mailpitURL),
+            ("XHGui", "chart.bar.xaxis", project.xhguiHTTPSURL ?? project.xhguiURL)
+        ]
+        let available = links.compactMap { item -> (String, String, URL)? in
+            guard let url = item.2 else { return nil }
+            return (item.0, item.1, url)
+        }
+
+        if !available.isEmpty {
+            InspectorSection("URLs") {
+                FlowHStack(spacing: 8) {
+                    ForEach(available, id: \.0) { item in
+                        Button {
+                            workspaceOpener.openURL(item.2)
+                        } label: {
+                            Label(item.0, systemImage: item.1)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                }
+                .disabled(project.status != .running)
+            }
+        }
+    }
+
+    private func metaRow<Trailing: View>(_ label: String, @ViewBuilder trailing: () -> Trailing) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(label)
+                .foregroundStyle(.secondary)
+            Spacer()
+            trailing()
+        }
+        .font(.callout)
+    }
+}
+
+// MARK: - Manage tab
+
+private struct ManageTabContent: View {
+    let project: DDEVProject
+    @ObservedObject var viewModel: ProjectDashboardViewModel
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                FrameworkCommandLauncherView(project: project, viewModel: viewModel)
+                DatabaseOperationsView(project: project, viewModel: viewModel)
+                SnapshotManagerView(project: project, viewModel: viewModel)
+                AddonManagerView(project: project, viewModel: viewModel)
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 20)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .scrollContentBackground(.hidden)
+    }
+}
+
+// MARK: - Logs tab
+
+private struct LogsTabContent: View {
+    let project: DDEVProject
+    @ObservedObject var viewModel: ProjectDashboardViewModel
+
+    var body: some View {
+        let hasAnyActivity =
+            viewModel.lastCommandResult != nil ||
+            viewModel.lastErrorMessage != nil ||
+            viewModel.isRunningCommand ||
+            !viewModel.commandHistory.isEmpty
+
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                LogsViewerView(project: project, viewModel: viewModel)
+
+                if hasAnyActivity {
+                    commandHistorySection
+                }
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 20)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .scrollContentBackground(.hidden)
+    }
+
+    private var commandHistorySection: some View {
+        InspectorSection(viewModel.commandHistory.count > 1 ? "Command History" : "Last Command") {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 10) {
+                    if viewModel.isRunningCommand {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else if viewModel.lastErrorMessage != nil {
+                        Image(systemName: "xmark.octagon.fill")
+                            .foregroundStyle(.red)
+                    } else if let result = viewModel.lastCommandResult {
+                        Image(systemName: result.succeeded ? "checkmark.circle.fill" : "xmark.octagon.fill")
+                            .foregroundStyle(result.succeeded ? .green : .red)
+                    }
+                    Spacer()
+                }
+
+                CommandOutputView(
+                    result: viewModel.lastCommandResult,
+                    history: viewModel.commandHistory,
+                    errorMessage: viewModel.lastErrorMessage
+                )
+            }
         }
     }
 }
