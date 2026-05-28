@@ -204,6 +204,11 @@ public final class DDEVCommandService: Sendable {
     }
 
     @discardableResult
+    public func applyConfigChange(_ change: DDEVConfigChange, in appRoot: String) async throws -> CommandResult {
+        try await config(flags: change.ddevFlags, in: appRoot)
+    }
+
+    @discardableResult
     public func runProjectCommand(arguments: [String], in appRoot: String) async throws -> CommandResult {
         guard !arguments.isEmpty else {
             throw DDEVCommandValidationError.emptyProjectCommand
