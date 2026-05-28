@@ -58,8 +58,8 @@ public final class ProcessCommandRunner: CommandRunning, @unchecked Sendable {
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
 
-        let stdoutBuffer = NSMutableData()
-        let stderrBuffer = NSMutableData()
+        let stdoutBuffer = PipeBuffer()
+        let stderrBuffer = PipeBuffer()
         let group = DispatchGroup()
         let readQueue = DispatchQueue(label: "ddevui.process-reader", attributes: .concurrent)
 
@@ -79,8 +79,8 @@ public final class ProcessCommandRunner: CommandRunning, @unchecked Sendable {
         process.waitUntilExit()
         group.wait()
 
-        let stdout = String(data: stdoutBuffer as Data, encoding: .utf8) ?? ""
-        let stderr = String(data: stderrBuffer as Data, encoding: .utf8) ?? ""
+        let stdout = String(data: stdoutBuffer.snapshot, encoding: .utf8) ?? ""
+        let stderr = String(data: stderrBuffer.snapshot, encoding: .utf8) ?? ""
         return CommandResult(
             executable: spec.executable,
             arguments: spec.arguments,
@@ -92,6 +92,21 @@ public final class ProcessCommandRunner: CommandRunning, @unchecked Sendable {
             finishedAt: Date(),
             wasCancelled: false
         )
+    }
+
+    // Lock-guarded accumulator so the per-pipe drain on a background dispatch queue can
+    // safely append without tripping Swift 6 Sendable checks on the @Sendable GCD closure.
+    private final class PipeBuffer: @unchecked Sendable {
+        private let lock = NSLock()
+        private var data = Data()
+
+        func append(_ chunk: Data) {
+            lock.withLock { data.append(chunk) }
+        }
+
+        var snapshot: Data {
+            lock.withLock { data }
+        }
     }
 
     private static func environmentForGUIApp() -> [String: String] {
