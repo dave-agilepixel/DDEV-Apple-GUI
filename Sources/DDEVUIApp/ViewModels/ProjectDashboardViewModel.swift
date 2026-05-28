@@ -30,8 +30,11 @@ public protocol DDEVServicing: Sendable {
     func config(flags: [String], in appRoot: String) async throws -> CommandResult
     func applyConfigChange(_ change: DDEVConfigChange, in appRoot: String) async throws -> CommandResult
     func runProjectCommand(arguments: [String], in appRoot: String) async throws -> CommandResult
-    func utilityDiagnose(in appRoot: String) async throws -> CommandResult
+    func version() async throws -> CommandResult
+    func utilityDiagnose(in appRoot: String?) async throws -> CommandResult
     func utilityConfigYAML(omitKeys: [String], in appRoot: String) async throws -> CommandResult
+    func utilityCheckCustomConfig(in appRoot: String) async throws -> CommandResult
+    func utilityCheckDBMatch(in appRoot: String) async throws -> CommandResult
     func mutagen(_ command: DDEVMutagenCommand, in appRoot: String) async throws -> CommandResult
     func xhgui(_ command: DDEVXHGuiCommand, in appRoot: String) async throws -> CommandResult
     func updateWordPressCore(in appRoot: String) async throws -> CommandResult
@@ -53,6 +56,7 @@ public enum ProjectSidebarItem: String, CaseIterable, Identifiable, Sendable {
     case projects
     case running
     case wordpress
+    case diagnostics
     case settings
 
     public var id: String { rawValue }
@@ -65,6 +69,8 @@ public enum ProjectSidebarItem: String, CaseIterable, Identifiable, Sendable {
             "Running"
         case .wordpress:
             "WordPress"
+        case .diagnostics:
+            "Diagnostics"
         case .settings:
             "Settings"
         }
@@ -78,6 +84,8 @@ public enum ProjectSidebarItem: String, CaseIterable, Identifiable, Sendable {
             "play.circle"
         case .wordpress:
             "w.circle"
+        case .diagnostics:
+            "stethoscope"
         case .settings:
             "gearshape"
         }
@@ -106,6 +114,8 @@ public final class ProjectDashboardViewModel: ObservableObject {
     @Published public var addonErrorMessage: String?
     @Published public var addOnRestartRecommended = false
     @Published public var addonRawOutput: String?
+    @Published public var diagnosticReport = DDEVDiagnosticReport()
+    @Published public var diagnosticsErrorMessage: String?
     @Published public private(set) var preferences: AppPreferences
     @Published public private(set) var installedEditors: [EditorChoice]
     @Published public private(set) var installedDatabaseTools: [DDEVDatabaseTool]
@@ -167,6 +177,10 @@ public final class ProjectDashboardViewModel: ObservableObject {
         )
     }
 
+    public var copyableDiagnosticOutput: String {
+        diagnosticReport.copyableOutput
+    }
+
     private func filteredProjects(in sourceProjects: [DDEVProject]) -> [DDEVProject] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         let sectionProjects = sourceProjects.filter { project in
@@ -177,6 +191,8 @@ public final class ProjectDashboardViewModel: ObservableObject {
                 project.status == .running
             case .wordpress:
                 project.isWordPress
+            case .diagnostics:
+                false
             case .settings:
                 false
             }
@@ -581,6 +597,60 @@ public final class ProjectDashboardViewModel: ObservableObject {
         }
     }
 
+    public func runGlobalDiagnostics() async {
+        await runDiagnostics {
+            [
+                try await self.diagnosticEntry(.ddevVersion) {
+                    try await self.ddevService.version()
+                },
+                try await self.diagnosticEntry(.globalDiagnose) {
+                    try await self.ddevService.utilityDiagnose(in: nil)
+                }
+            ]
+        }
+    }
+
+    public func runProjectDiagnosticsForSelectedProject() async {
+        guard let selectedProject else {
+            await runGlobalDiagnostics()
+            return
+        }
+
+        await runDiagnostics {
+            var entries = [
+                try await self.diagnosticEntry(.projectDiagnose) {
+                    try await self.ddevService.utilityDiagnose(in: selectedProject.appRoot)
+                },
+                try await self.diagnosticEntry(.customConfig) {
+                    try await self.ddevService.utilityCheckCustomConfig(in: selectedProject.appRoot)
+                },
+                try await self.diagnosticEntry(.dbMatch) {
+                    try await self.ddevService.utilityCheckDBMatch(in: selectedProject.appRoot)
+                }
+            ]
+
+            if selectedProject.mutagenEnabled {
+                entries.append(try await self.diagnosticEntry(.mutagenStatus) {
+                    try await self.ddevService.mutagen(.status, in: selectedProject.appRoot)
+                })
+            }
+
+            return entries
+        }
+    }
+
+    public func runMutagenDiagnosticForSelectedProject(_ command: DDEVMutagenCommand) async {
+        guard let selectedProject else { return }
+
+        await runDiagnostics {
+            [
+                try await self.diagnosticEntry(DDEVDiagnosticCheck(mutagenCommand: command)) {
+                    try await self.ddevService.mutagen(command, in: selectedProject.appRoot)
+                }
+            ]
+        }
+    }
+
     public func moveSelectedProjectFolderToTrash() {
         guard let selectedProject else { return }
 
@@ -620,6 +690,38 @@ public final class ProjectDashboardViewModel: ObservableObject {
         } catch {
             lastErrorMessage = String(describing: error)
         }
+    }
+
+    private func runDiagnostics(_ operation: @escaping () async throws -> [DDEVDiagnosticEntry]) async {
+        isRunningCommand = true
+        lastErrorMessage = nil
+        diagnosticsErrorMessage = nil
+        defer { isRunningCommand = false }
+
+        do {
+            let entries = try await operation()
+            diagnosticReport = DDEVDiagnosticReport(entries: entries)
+            entries.forEach { recordCommandResult($0.result, requestsOutputExpansion: false) }
+        } catch CommandRunnerError.nonZeroExit(let result) {
+            recordCommandResult(result, requestsOutputExpansion: false)
+            diagnosticReport = DDEVDiagnosticReport(entries: [
+                DDEVDiagnosticEntry(check: .projectDiagnose, result: result)
+            ])
+            let message = "Command failed with exit code \(result.exitCode)."
+            lastErrorMessage = message
+            diagnosticsErrorMessage = message
+        } catch {
+            let message = String(describing: error)
+            lastErrorMessage = message
+            diagnosticsErrorMessage = message
+        }
+    }
+
+    private func diagnosticEntry(
+        _ check: DDEVDiagnosticCheck,
+        operation: () async throws -> CommandResult
+    ) async throws -> DDEVDiagnosticEntry {
+        DDEVDiagnosticEntry(check: check, result: try await operation())
     }
 
     private func recordCommandResult(_ result: CommandResult, requestsOutputExpansion: Bool = true) {

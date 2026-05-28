@@ -376,14 +376,30 @@ final class DDEVCommandServiceTests: XCTestCase {
         let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
         let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
 
+        _ = try await service.version()
+        _ = try await service.utilityDiagnose()
         _ = try await service.utilityDiagnose(in: "/Users/dave/site")
         _ = try await service.utilityConfigYAML(omitKeys: ["web_environment"], in: "/Users/dave/site")
+        _ = try await service.utilityCheckCustomConfig(in: "/Users/dave/site")
+        _ = try await service.utilityCheckDBMatch(in: "/Users/dave/site")
 
         XCTAssertEqual(runner.commands, [
+            CommandSpec(executable: "ddev", arguments: ["version"], workingDirectory: nil),
+            CommandSpec(executable: "ddev", arguments: ["utility", "diagnose"], workingDirectory: nil),
             CommandSpec(executable: "ddev", arguments: ["utility", "diagnose"], workingDirectory: "/Users/dave/site"),
             CommandSpec(
                 executable: "ddev",
                 arguments: ["utility", "configyaml", "--full-yaml", "--omit-keys=web_environment"],
+                workingDirectory: "/Users/dave/site"
+            ),
+            CommandSpec(
+                executable: "ddev",
+                arguments: ["utility", "check-custom-config"],
+                workingDirectory: "/Users/dave/site"
+            ),
+            CommandSpec(
+                executable: "ddev",
+                arguments: ["utility", "check-db-match"],
                 workingDirectory: "/Users/dave/site"
             )
         ])

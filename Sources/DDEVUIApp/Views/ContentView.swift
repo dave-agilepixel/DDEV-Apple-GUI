@@ -20,13 +20,25 @@ struct ContentView: View {
         } content: {
             if viewModel.selectedSidebarItem == .settings {
                 SettingsView(viewModel: viewModel)
+            } else if viewModel.selectedSidebarItem == .diagnostics {
+                DiagnosticsView(viewModel: viewModel)
+                    .navigationSplitViewColumnWidth(min: 480, ideal: 680)
             } else {
                 ProjectListView(viewModel: viewModel)
                     .navigationSplitViewColumnWidth(min: 280, ideal: 320, max: 420)
             }
         } detail: {
-            ProjectInspectorView(viewModel: viewModel)
-                .navigationSplitViewColumnWidth(min: 540, ideal: 720)
+            if viewModel.selectedSidebarItem == .diagnostics {
+                ContentUnavailableView(
+                    "Diagnostics",
+                    systemImage: "stethoscope",
+                    description: Text("Run global checks or select a project before opening Diagnostics for project-specific checks.")
+                )
+                .navigationSplitViewColumnWidth(min: 360, ideal: 420)
+            } else {
+                ProjectInspectorView(viewModel: viewModel)
+                    .navigationSplitViewColumnWidth(min: 540, ideal: 720)
+            }
         }
         .task {
             await viewModel.loadCachedProjectsThenRefresh()
@@ -63,6 +75,7 @@ struct ContentView: View {
         case .projects: viewModel.projects.count
         case .running: viewModel.projects.filter { $0.status == .running }.count
         case .wordpress: viewModel.projects.filter { $0.isWordPress }.count
+        case .diagnostics: nil
         case .settings: nil
         }
     }
