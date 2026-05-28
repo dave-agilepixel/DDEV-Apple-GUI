@@ -548,16 +548,19 @@ private struct LogsTabContent: View {
             viewModel.isRunningCommand ||
             !viewModel.commandHistory.isEmpty
 
-        VStack(alignment: .leading, spacing: 24) {
-            LogsViewerView(project: project, viewModel: viewModel)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                LogsViewerView(project: project, viewModel: viewModel)
 
-            if hasAnyActivity {
-                commandHistorySection
+                if hasAnyActivity {
+                    commandHistorySection
+                }
             }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 20)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 20)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .scrollContentBackground(.hidden)
     }
 
     private var commandHistorySection: some View {
