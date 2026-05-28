@@ -209,6 +209,15 @@ public final class DDEVCommandService: Sendable {
     }
 
     @discardableResult
+    public func runProjectCommand(arguments: [String], in appRoot: String) async throws -> CommandResult {
+        guard !arguments.isEmpty else {
+            throw DDEVCommandValidationError.emptyProjectCommand
+        }
+
+        return try await runDDEV(arguments, workingDirectory: appRoot)
+    }
+
+    @discardableResult
     public func utilityDiagnose(in appRoot: String) async throws -> CommandResult {
         try await runDDEV(["utility", "diagnose"], workingDirectory: appRoot)
     }
@@ -319,6 +328,7 @@ public enum DDEVXHGuiCommand: String, CaseIterable, Sendable {
 
 public enum DDEVCommandValidationError: Error, Equatable, Sendable {
     case invalidConfigFlags([String])
+    case emptyProjectCommand
 }
 
 private extension String {

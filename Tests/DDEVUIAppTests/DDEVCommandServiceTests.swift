@@ -343,6 +343,19 @@ final class DDEVCommandServiceTests: XCTestCase {
         ])
     }
 
+    func testProjectCommandRunsArbitraryDDEVArgumentsInProjectDirectory() async throws {
+        let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
+        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
+
+        _ = try await service.runProjectCommand(arguments: ["artisan", "migrate"], in: "/Users/dave/site")
+        _ = try await service.runProjectCommand(arguments: ["composer", "install"], in: "/Users/dave/site")
+
+        XCTAssertEqual(runner.commands, [
+            CommandSpec(executable: "ddev", arguments: ["artisan", "migrate"], workingDirectory: "/Users/dave/site"),
+            CommandSpec(executable: "ddev", arguments: ["composer", "install"], workingDirectory: "/Users/dave/site")
+        ])
+    }
+
     func testUtilityCommandsRunInProjectDirectory() async throws {
         let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
         let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")

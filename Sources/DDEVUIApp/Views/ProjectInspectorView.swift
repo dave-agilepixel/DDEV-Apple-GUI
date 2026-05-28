@@ -18,13 +18,11 @@ struct ProjectInspectorView: View {
                         header(project)
                         primaryActionBar(project)
                         environment(project)
+                        FrameworkCommandLauncherView(project: project, viewModel: viewModel)
                         DatabaseOperationsView(project: project, viewModel: viewModel)
                         SnapshotManagerView(project: project, viewModel: viewModel)
                         LogsViewerView(project: project, viewModel: viewModel)
                         quickLinks(project)
-                        if viewModel.canRunWordPressActions(for: project) {
-                            wordpressSection
-                        }
                         commandOutputSection
                     }
                     .padding(.horizontal, 24)
@@ -348,35 +346,6 @@ struct ProjectInspectorView: View {
                 }
                 .disabled(project.status != .running)
             }
-        }
-    }
-
-    // MARK: - WordPress
-
-    private var wordpressSection: some View {
-        InspectorSection("WordPress") {
-            HStack(spacing: 8) {
-                Button {
-                    Task { await viewModel.updateWordPressCore() }
-                } label: {
-                    Label("Update Core", systemImage: "shippingbox.and.arrow.backward")
-                }
-                Button {
-                    Task { await viewModel.updateWordPressPlugins() }
-                } label: {
-                    Label("Update Plugins", systemImage: "puzzlepiece.extension")
-                }
-                Button {
-                    Task { await viewModel.updateWordPressThemes() }
-                } label: {
-                    Label("Update Themes", systemImage: "paintpalette")
-                }
-                Spacer(minLength: 0)
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.regular)
-            .labelStyle(.titleAndIcon)
-            .disabled(viewModel.isRunningCommand)
         }
     }
 

@@ -29,6 +29,7 @@ public protocol DDEVServicing: Sendable {
     func removeAddOn(named name: String, in appRoot: String) async throws -> CommandResult
     func config(flags: [String], in appRoot: String) async throws -> CommandResult
     func applyConfigChange(_ change: DDEVConfigChange, in appRoot: String) async throws -> CommandResult
+    func runProjectCommand(arguments: [String], in appRoot: String) async throws -> CommandResult
     func utilityDiagnose(in appRoot: String) async throws -> CommandResult
     func utilityConfigYAML(omitKeys: [String], in appRoot: String) async throws -> CommandResult
     func mutagen(_ command: DDEVMutagenCommand, in appRoot: String) async throws -> CommandResult
@@ -460,6 +461,20 @@ public final class ProjectDashboardViewModel: ObservableObject {
 
     public func canRunWordPressActions(for project: DDEVProject?) -> Bool {
         project?.isWordPress == true
+    }
+
+    public func frameworkCommands(for project: DDEVProject) -> [DDEVFrameworkCommand] {
+        DDEVFrameworkCommand.presets(for: project.projectType)
+    }
+
+    public func runFrameworkCommandForSelectedProject(_ command: DDEVFrameworkCommand) async {
+        guard let selectedProject else { return }
+
+        await runAndCapture {
+            let result = try await self.ddevService.runProjectCommand(arguments: command.arguments, in: selectedProject.appRoot)
+            self.recordCommandResult(result)
+            return result
+        }
     }
 
     public func moveSelectedProjectFolderToTrash() {
