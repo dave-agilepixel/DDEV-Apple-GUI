@@ -695,6 +695,54 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.addonErrorMessage, "Command failed with exit code 1.")
         XCTAssertEqual(viewModel.lastCommandResult?.stderr, "GitHub API rate limit exceeded")
     }
+
+    func testGlobalDiagnosticsRunWithoutSelectedProject() async {
+        let service = FakeDDEVService(projects: [])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+
+        await viewModel.runGlobalDiagnostics()
+
+        XCTAssertEqual(service.commands, [
+            "version",
+            "diagnose:"
+        ])
+        XCTAssertEqual(viewModel.diagnosticReport.entries.map(\.check), [.ddevVersion, .globalDiagnose])
+        XCTAssertTrue(viewModel.copyableDiagnosticOutput.contains("DDEV Version"))
+        XCTAssertNil(viewModel.diagnosticsErrorMessage)
+    }
+
+    func testProjectDiagnosticsIncludeProjectAndMutagenChecks() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.runProjectDiagnosticsForSelectedProject()
+
+        XCTAssertEqual(service.commands, [
+            "diagnose:/Users/dave/Development/agilepixel/aqua-pura",
+            "check-custom-config:/Users/dave/Development/agilepixel/aqua-pura",
+            "check-db-match:/Users/dave/Development/agilepixel/aqua-pura",
+            "mutagen:/Users/dave/Development/agilepixel/aqua-pura:status"
+        ])
+        XCTAssertEqual(
+            viewModel.diagnosticReport.entries.map(\.check),
+            [.projectDiagnose, .customConfig, .dbMatch, .mutagenStatus]
+        )
+    }
+
+    func testMutagenResetRecordsDiagnosticOutput() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.runMutagenDiagnosticForSelectedProject(.reset)
+
+        XCTAssertEqual(service.commands, [
+            "mutagen:/Users/dave/Development/agilepixel/aqua-pura:reset"
+        ])
+        XCTAssertEqual(viewModel.diagnosticReport.entries.map(\.check), [.mutagenReset])
+        XCTAssertEqual(viewModel.lastCommandResult?.arguments, ["mutagen", "reset"])
+    }
 }
 
 private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
@@ -709,6 +757,7 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
     private let addonListOutput: String
     private let addonSearchOutput: String
     private let addonError: Error?
+    private let diagnosticError: Error?
     private var recordedCommands: [String] = []
 
     var commands: [String] {
@@ -725,7 +774,8 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
         configYAMLOutput: String = "",
         addonListOutput: String = "",
         addonSearchOutput: String = "",
-        addonError: Error? = nil
+        addonError: Error? = nil,
+        diagnosticError: Error? = nil
     ) {
         self.loadedProjects = projects
         self.phpVersions = phpVersions
@@ -737,6 +787,7 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
         self.addonListOutput = addonListOutput
         self.addonSearchOutput = addonSearchOutput
         self.addonError = addonError
+        self.diagnosticError = diagnosticError
     }
 
     func listProjects() async throws -> [DDEVProject] {
@@ -915,8 +966,19 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
         return commandResult(arguments: arguments, workingDirectory: appRoot)
     }
 
-    func utilityDiagnose(in appRoot: String) async throws -> CommandResult {
-        record("diagnose:\(appRoot)")
+    func version() async throws -> CommandResult {
+        record("version")
+        if let diagnosticError {
+            throw diagnosticError
+        }
+        return commandResult(arguments: ["version"], stdout: "ddev version v1.24.8\n")
+    }
+
+    func utilityDiagnose(in appRoot: String?) async throws -> CommandResult {
+        record("diagnose:\(appRoot ?? "")")
+        if let diagnosticError {
+            throw diagnosticError
+        }
         return commandResult(arguments: ["utility", "diagnose"], workingDirectory: appRoot)
     }
 
@@ -925,8 +987,27 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
         return commandResult(arguments: ["utility", "configyaml"], workingDirectory: appRoot, stdout: configYAMLOutput)
     }
 
+    func utilityCheckCustomConfig(in appRoot: String) async throws -> CommandResult {
+        record("check-custom-config:\(appRoot)")
+        if let diagnosticError {
+            throw diagnosticError
+        }
+        return commandResult(arguments: ["utility", "check-custom-config"], workingDirectory: appRoot)
+    }
+
+    func utilityCheckDBMatch(in appRoot: String) async throws -> CommandResult {
+        record("check-db-match:\(appRoot)")
+        if let diagnosticError {
+            throw diagnosticError
+        }
+        return commandResult(arguments: ["utility", "check-db-match"], workingDirectory: appRoot)
+    }
+
     func mutagen(_ command: DDEVMutagenCommand, in appRoot: String) async throws -> CommandResult {
         record("mutagen:\(appRoot):\(command.rawValue)")
+        if let diagnosticError {
+            throw diagnosticError
+        }
         return commandResult(arguments: ["mutagen", command.rawValue], workingDirectory: appRoot)
     }
 

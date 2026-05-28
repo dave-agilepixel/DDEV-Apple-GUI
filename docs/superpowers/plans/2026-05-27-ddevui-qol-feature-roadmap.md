@@ -362,6 +362,8 @@ Keep existing files, but stop allowing them to balloon unchecked.
 
 ### Phase 8: Diagnostics and Health Panel
 
+**Status:** In progress on `codex/phase-8-diagnostics-health-panel`.
+
 **Why near the end:** It benefits from the config, project type, logs, Mutagen, and add-on work already being present.
 
 **Files:**
@@ -383,11 +385,11 @@ Keep existing files, but stop allowing them to balloon unchecked.
 
 **Tasks:**
 
-- [ ] Add command mappings for `ddev version`, `ddev utility diagnose`, `ddev utility check-custom-config`, `ddev utility check-db-match`, `ddev mutagen status`, `ddev mutagen sync`, `ddev mutagen reset`, and `ddev mutagen logs`.
+- [x] Add command mappings for `ddev version`, `ddev utility diagnose`, `ddev utility check-custom-config`, `ddev utility check-db-match`, `ddev mutagen status`, `ddev mutagen sync`, `ddev mutagen reset`, and `ddev mutagen logs`.
 - [ ] Build a Diagnostics sidebar item separate from Settings.
-- [ ] Add global checks when no project is selected and project checks when one is selected.
+- [x] Add global checks when no project is selected and project checks when one is selected.
 - [ ] Require confirmation before Mutagen reset.
-- [ ] Add copy-all diagnostic output.
+- [x] Add copy-all diagnostic output.
 - [ ] Run `swift test`.
 - [ ] Commit as `feat: Add diagnostics health panel`.
 

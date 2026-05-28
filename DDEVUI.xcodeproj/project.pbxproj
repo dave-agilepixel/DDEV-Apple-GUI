@@ -16,6 +16,7 @@
 		100000000000000000000125 /* DDEVConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000025 /* DDEVConfig.swift */; };
 		100000000000000000000127 /* DDEVFrameworkCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000027 /* DDEVFrameworkCommand.swift */; };
 		100000000000000000000129 /* DDEVAddon.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000029 /* DDEVAddon.swift */; };
+		100000000000000000000131 /* DDEVDiagnostic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000031 /* DDEVDiagnostic.swift */; };
 		100000000000000000000116 /* AppPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000016 /* AppPreferences.swift */; };
 		100000000000000000000117 /* AppAvailabilityService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000017 /* AppAvailabilityService.swift */; };
 		100000000000000000000104 /* CommandRunning.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000004 /* CommandRunning.swift */; };
@@ -47,6 +48,7 @@
 		100000000000000000000025 /* DDEVConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DDEVConfig.swift; sourceTree = "<group>"; };
 		100000000000000000000027 /* DDEVFrameworkCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DDEVFrameworkCommand.swift; sourceTree = "<group>"; };
 		100000000000000000000029 /* DDEVAddon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DDEVAddon.swift; sourceTree = "<group>"; };
+		100000000000000000000031 /* DDEVDiagnostic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DDEVDiagnostic.swift; sourceTree = "<group>"; };
 		100000000000000000000016 /* AppPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppPreferences.swift; sourceTree = "<group>"; };
 		100000000000000000000017 /* AppAvailabilityService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppAvailabilityService.swift; sourceTree = "<group>"; };
 		100000000000000000000004 /* CommandRunning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandRunning.swift; sourceTree = "<group>"; };
@@ -117,6 +119,7 @@
 				100000000000000000000029 /* DDEVAddon.swift */,
 				100000000000000000000013 /* DDEVDatabaseOperation.swift */,
 				100000000000000000000025 /* DDEVConfig.swift */,
+				100000000000000000000031 /* DDEVDiagnostic.swift */,
 				100000000000000000000027 /* DDEVFrameworkCommand.swift */,
 				100000000000000000000023 /* DDEVLogRequest.swift */,
 				100000000000000000000019 /* DDEVSnapshot.swift */,
@@ -257,6 +260,7 @@
 				100000000000000000000125 /* DDEVConfig.swift in Sources */,
 				100000000000000000000127 /* DDEVFrameworkCommand.swift in Sources */,
 				100000000000000000000129 /* DDEVAddon.swift in Sources */,
+				100000000000000000000131 /* DDEVDiagnostic.swift in Sources */,
 				100000000000000000000116 /* AppPreferences.swift in Sources */,
 				100000000000000000000117 /* AppAvailabilityService.swift in Sources */,
 				100000000000000000000104 /* CommandRunning.swift in Sources */,

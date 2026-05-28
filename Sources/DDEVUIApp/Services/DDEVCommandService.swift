@@ -221,7 +221,12 @@ public final class DDEVCommandService: Sendable {
     }
 
     @discardableResult
-    public func utilityDiagnose(in appRoot: String) async throws -> CommandResult {
+    public func version() async throws -> CommandResult {
+        try await runDDEV(["version"])
+    }
+
+    @discardableResult
+    public func utilityDiagnose(in appRoot: String? = nil) async throws -> CommandResult {
         try await runDDEV(["utility", "diagnose"], workingDirectory: appRoot)
     }
 
@@ -234,6 +239,16 @@ public final class DDEVCommandService: Sendable {
         }
 
         return try await runDDEV(arguments, workingDirectory: appRoot)
+    }
+
+    @discardableResult
+    public func utilityCheckCustomConfig(in appRoot: String) async throws -> CommandResult {
+        try await runDDEV(["utility", "check-custom-config"], workingDirectory: appRoot)
+    }
+
+    @discardableResult
+    public func utilityCheckDBMatch(in appRoot: String) async throws -> CommandResult {
+        try await runDDEV(["utility", "check-db-match"], workingDirectory: appRoot)
     }
 
     @discardableResult
