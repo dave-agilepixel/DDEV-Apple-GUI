@@ -216,6 +216,41 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         ])
     }
 
+    func testFrameworkCommandPresetsAreTypeAware() {
+        let viewModel = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: []))
+
+        XCTAssertEqual(viewModel.frameworkCommands(for: .sampleWordPress).map(\.title), [
+            "Update Core",
+            "Update Plugins",
+            "Update Themes",
+            "Flush Cache"
+        ])
+        XCTAssertEqual(viewModel.frameworkCommands(for: .sampleLaravel).map(\.title), [
+            "Migrate",
+            "Fresh Migrate Seed",
+            "Clear Cache",
+            "List Routes"
+        ])
+    }
+
+    func testRunFrameworkCommandUsesSelectedProjectFolderAndShowsOutput() async {
+        let service = FakeDDEVService(projects: [.sampleLaravel])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleLaravel
+
+        let command = DDEVFrameworkCommand.presets(for: .laravel)
+            .first { $0.title == "Clear Cache" }!
+
+        await viewModel.runFrameworkCommandForSelectedProject(command)
+
+        XCTAssertEqual(service.commands, [
+            "project-command:/Users/dave/Development/agilepixel/agilebugs:artisan,cache:clear"
+        ])
+        XCTAssertEqual(viewModel.lastCommandResult?.arguments, ["artisan", "cache:clear"])
+        XCTAssertEqual(viewModel.commandHistory.map(\.result.arguments), [["artisan", "cache:clear"]])
+        XCTAssertEqual(viewModel.commandOutputExpansionRequest, 1)
+    }
+
     func testDeleteDDEVDataRefreshesAfterCommand() async {
         let service = FakeDDEVService(projects: [.sampleWordPress])
         let viewModel = ProjectDashboardViewModel(ddevService: service)
@@ -701,6 +736,11 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
     func config(flags: [String], in appRoot: String) async throws -> CommandResult {
         record("config-flags:\(appRoot):\(flags.joined(separator: ","))")
         return commandResult(arguments: ["config"] + flags, workingDirectory: appRoot)
+    }
+
+    func runProjectCommand(arguments: [String], in appRoot: String) async throws -> CommandResult {
+        record("project-command:\(appRoot):\(arguments.joined(separator: ","))")
+        return commandResult(arguments: arguments, workingDirectory: appRoot)
     }
 
     func utilityDiagnose(in appRoot: String) async throws -> CommandResult {
