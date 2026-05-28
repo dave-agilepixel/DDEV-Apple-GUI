@@ -1,6 +1,28 @@
 import AppKit
 import SwiftUI
 
+enum InspectorTab: Hashable, CaseIterable {
+    case overview
+    case manage
+    case logs
+
+    var displayName: String {
+        switch self {
+        case .overview: "Overview"
+        case .manage: "Manage"
+        case .logs: "Logs"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .overview: "info.circle"
+        case .manage: "slider.horizontal.3"
+        case .logs: "text.alignleft"
+        }
+    }
+}
+
 struct ProjectInspectorView: View {
     @ObservedObject var viewModel: ProjectDashboardViewModel
     private let workspaceOpener = MacWorkspaceOpener()
