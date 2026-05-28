@@ -612,6 +612,63 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         ])
         XCTAssertFalse(viewModel.projectConfigRestartRecommended)
     }
+
+    func testLoadInstalledAddOnsUsesSelectedProjectNameAndParsesOutput() async {
+        let service = FakeDDEVService(
+            projects: [.sampleWordPress],
+            addonListOutput: """
+            {"raw":[{"title":"ddev/ddev-redis","description":"Redis cache","tag_name":"v2.2.0","dependencies":[],"type":"official"}]}
+            """
+        )
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.loadInstalledAddOnsForSelectedProject()
+
+        XCTAssertEqual(service.commands, [
+            "addon-list:/Users/dave/Development/agilepixel/aqua-pura:aqua-pura"
+        ])
+        XCTAssertEqual(viewModel.installedAddOns.map(\.repository), ["ddev/ddev-redis"])
+        XCTAssertNil(viewModel.addonErrorMessage)
+    }
+
+    func testSearchAddOnsUsesSelectedProjectFolderAndParsesResults() async {
+        let service = FakeDDEVService(
+            projects: [.sampleWordPress],
+            addonSearchOutput: """
+            {"raw":[{"title":"ddev/ddev-redis-insight","description":"Redis Insight","tag_name":"v1.0.2","dependencies":["ddev/ddev-redis"],"type":"official"}]}
+            """
+        )
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.searchAddOnsForSelectedProject(query: "redis insight")
+
+        XCTAssertEqual(service.commands, [
+            "addon-search:/Users/dave/Development/agilepixel/aqua-pura:redis insight"
+        ])
+        XCTAssertEqual(viewModel.addonSearchResults.map(\.repository), ["ddev/ddev-redis-insight"])
+        XCTAssertEqual(viewModel.addonSearchResults.first?.dependencies, ["ddev/ddev-redis"])
+    }
+
+    func testInstallAndRemoveAddOnsRecordOutputAndPromptRestart() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.installAddOnForSelectedProject("ddev/ddev-redis")
+        await viewModel.removeAddOnForSelectedProject(named: "ddev-redis")
+
+        XCTAssertEqual(service.commands, [
+            "addon-get:/Users/dave/Development/agilepixel/aqua-pura:aqua-pura:ddev/ddev-redis",
+            "addon-list:/Users/dave/Development/agilepixel/aqua-pura:aqua-pura",
+            "addon-remove:/Users/dave/Development/agilepixel/aqua-pura:aqua-pura:ddev-redis",
+            "addon-list:/Users/dave/Development/agilepixel/aqua-pura:aqua-pura"
+        ])
+        XCTAssertEqual(viewModel.lastCommandResult?.arguments, ["add-on", "remove", "ddev-redis"])
+        XCTAssertTrue(viewModel.addOnRestartRecommended)
+        XCTAssertEqual(viewModel.commandOutputExpansionRequest, 2)
+    }
 }
 
 private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
@@ -623,6 +680,8 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
     private let snapshotListOutput: String
     private let logsOutput: String
     private let configYAMLOutput: String
+    private let addonListOutput: String
+    private let addonSearchOutput: String
     private var recordedCommands: [String] = []
 
     var commands: [String] {
@@ -636,7 +695,9 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
         importError: Error? = nil,
         snapshotListOutput: String = "",
         logsOutput: String = "",
-        configYAMLOutput: String = ""
+        configYAMLOutput: String = "",
+        addonListOutput: String = "",
+        addonSearchOutput: String = ""
     ) {
         self.loadedProjects = projects
         self.phpVersions = phpVersions
@@ -645,6 +706,8 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
         self.snapshotListOutput = snapshotListOutput
         self.logsOutput = logsOutput
         self.configYAMLOutput = configYAMLOutput
+        self.addonListOutput = addonListOutput
+        self.addonSearchOutput = addonSearchOutput
     }
 
     func listProjects() async throws -> [DDEVProject] {
@@ -776,23 +839,23 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
         return commandResult(arguments: ["logs", projectName], workingDirectory: appRoot, stdout: logsOutput)
     }
 
-    func listInstalledAddOns(in appRoot: String) async throws -> CommandResult {
-        record("addon-list:\(appRoot)")
-        return commandResult(arguments: ["add-on", "list", "--installed"], workingDirectory: appRoot)
+    func listInstalledAddOns(projectName: String, in appRoot: String) async throws -> CommandResult {
+        record("addon-list:\(appRoot):\(projectName)")
+        return commandResult(arguments: ["add-on", "list", "--installed"], workingDirectory: appRoot, stdout: addonListOutput)
     }
 
     func searchAddOns(query: String, in appRoot: String) async throws -> CommandResult {
         record("addon-search:\(appRoot):\(query)")
-        return commandResult(arguments: ["add-on", "search", query], workingDirectory: appRoot)
+        return commandResult(arguments: ["add-on", "search", query], workingDirectory: appRoot, stdout: addonSearchOutput)
     }
 
-    func getAddOn(_ repository: String, in appRoot: String) async throws -> CommandResult {
-        record("addon-get:\(appRoot):\(repository)")
+    func getAddOn(_ repository: String, projectName: String, in appRoot: String) async throws -> CommandResult {
+        record("addon-get:\(appRoot):\(projectName):\(repository)")
         return commandResult(arguments: ["add-on", "get", repository], workingDirectory: appRoot)
     }
 
-    func removeAddOn(named name: String, in appRoot: String) async throws -> CommandResult {
-        record("addon-remove:\(appRoot):\(name)")
+    func removeAddOn(named name: String, projectName: String, in appRoot: String) async throws -> CommandResult {
+        record("addon-remove:\(appRoot):\(projectName):\(name)")
         return commandResult(arguments: ["add-on", "remove", name], workingDirectory: appRoot)
     }
 

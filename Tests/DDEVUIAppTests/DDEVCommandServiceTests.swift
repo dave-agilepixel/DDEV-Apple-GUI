@@ -281,20 +281,36 @@ final class DDEVCommandServiceTests: XCTestCase {
         ])
     }
 
-    func testAddOnCommandsRunInProjectDirectory() async throws {
+    func testAddOnCommandsUseProjectNameAndJSONOutput() async throws {
         let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
         let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
 
-        _ = try await service.listInstalledAddOns(in: "/Users/dave/site")
+        _ = try await service.listInstalledAddOns(projectName: "aqua-pura", in: "/Users/dave/site")
         _ = try await service.searchAddOns(query: "redis", in: "/Users/dave/site")
-        _ = try await service.getAddOn("ddev/ddev-redis", in: "/Users/dave/site")
-        _ = try await service.removeAddOn(named: "redis", in: "/Users/dave/site")
+        _ = try await service.getAddOn("ddev/ddev-redis", projectName: "aqua-pura", in: "/Users/dave/site")
+        _ = try await service.removeAddOn(named: "redis", projectName: "aqua-pura", in: "/Users/dave/site")
 
         XCTAssertEqual(runner.commands, [
-            CommandSpec(executable: "ddev", arguments: ["add-on", "list", "--installed"], workingDirectory: "/Users/dave/site"),
-            CommandSpec(executable: "ddev", arguments: ["add-on", "search", "redis"], workingDirectory: "/Users/dave/site"),
-            CommandSpec(executable: "ddev", arguments: ["add-on", "get", "ddev/ddev-redis"], workingDirectory: "/Users/dave/site"),
-            CommandSpec(executable: "ddev", arguments: ["add-on", "remove", "redis"], workingDirectory: "/Users/dave/site")
+            CommandSpec(
+                executable: "ddev",
+                arguments: ["add-on", "list", "--installed", "--project", "aqua-pura", "--json-output"],
+                workingDirectory: "/Users/dave/site"
+            ),
+            CommandSpec(
+                executable: "ddev",
+                arguments: ["add-on", "search", "redis", "--json-output"],
+                workingDirectory: "/Users/dave/site"
+            ),
+            CommandSpec(
+                executable: "ddev",
+                arguments: ["add-on", "get", "ddev/ddev-redis", "--project", "aqua-pura"],
+                workingDirectory: "/Users/dave/site"
+            ),
+            CommandSpec(
+                executable: "ddev",
+                arguments: ["add-on", "remove", "redis", "--project", "aqua-pura"],
+                workingDirectory: "/Users/dave/site"
+            )
         ])
     }
 

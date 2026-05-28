@@ -175,23 +175,26 @@ public final class DDEVCommandService: Sendable {
     }
 
     @discardableResult
-    public func listInstalledAddOns(in appRoot: String) async throws -> CommandResult {
-        try await runDDEV(["add-on", "list", "--installed"], workingDirectory: appRoot)
+    public func listInstalledAddOns(projectName: String, in appRoot: String) async throws -> CommandResult {
+        try await runDDEV(
+            ["add-on", "list", "--installed", "--project", projectName, "--json-output"],
+            workingDirectory: appRoot
+        )
     }
 
     @discardableResult
     public func searchAddOns(query: String, in appRoot: String) async throws -> CommandResult {
-        try await runDDEV(["add-on", "search", query], workingDirectory: appRoot)
+        try await runDDEV(["add-on", "search", query, "--json-output"], workingDirectory: appRoot)
     }
 
     @discardableResult
-    public func getAddOn(_ repository: String, in appRoot: String) async throws -> CommandResult {
-        try await runDDEV(["add-on", "get", repository], workingDirectory: appRoot)
+    public func getAddOn(_ repository: String, projectName: String, in appRoot: String) async throws -> CommandResult {
+        try await runDDEV(["add-on", "get", repository, "--project", projectName], workingDirectory: appRoot)
     }
 
     @discardableResult
-    public func removeAddOn(named name: String, in appRoot: String) async throws -> CommandResult {
-        try await runDDEV(["add-on", "remove", name], workingDirectory: appRoot)
+    public func removeAddOn(named name: String, projectName: String, in appRoot: String) async throws -> CommandResult {
+        try await runDDEV(["add-on", "remove", name, "--project", projectName], workingDirectory: appRoot)
     }
 
     @discardableResult

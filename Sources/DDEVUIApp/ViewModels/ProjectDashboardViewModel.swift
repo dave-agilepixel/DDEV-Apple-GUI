@@ -23,10 +23,10 @@ public protocol DDEVServicing: Sendable {
     func cleanupSnapshots(in appRoot: String) async throws -> CommandResult
     func cleanupSnapshot(named snapshotName: String, in appRoot: String) async throws -> CommandResult
     func logs(projectName: String, service: String, tail: Int, includeTimestamps: Bool, in appRoot: String) async throws -> CommandResult
-    func listInstalledAddOns(in appRoot: String) async throws -> CommandResult
+    func listInstalledAddOns(projectName: String, in appRoot: String) async throws -> CommandResult
     func searchAddOns(query: String, in appRoot: String) async throws -> CommandResult
-    func getAddOn(_ repository: String, in appRoot: String) async throws -> CommandResult
-    func removeAddOn(named name: String, in appRoot: String) async throws -> CommandResult
+    func getAddOn(_ repository: String, projectName: String, in appRoot: String) async throws -> CommandResult
+    func removeAddOn(named name: String, projectName: String, in appRoot: String) async throws -> CommandResult
     func config(flags: [String], in appRoot: String) async throws -> CommandResult
     func applyConfigChange(_ change: DDEVConfigChange, in appRoot: String) async throws -> CommandResult
     func runProjectCommand(arguments: [String], in appRoot: String) async throws -> CommandResult
@@ -101,6 +101,11 @@ public final class ProjectDashboardViewModel: ObservableObject {
     @Published public var projectConfig: DDEVConfig?
     @Published public var projectConfigErrorMessage: String?
     @Published public var projectConfigRestartRecommended = false
+    @Published public var installedAddOns: [DDEVAddon] = []
+    @Published public var addonSearchResults: [DDEVAddon] = DDEVAddon.recommendedOfficial
+    @Published public var addonErrorMessage: String?
+    @Published public var addOnRestartRecommended = false
+    @Published public var addonRawOutput: String?
     @Published public private(set) var preferences: AppPreferences
     @Published public private(set) var installedEditors: [EditorChoice]
     @Published public private(set) var installedDatabaseTools: [DDEVDatabaseTool]
@@ -438,6 +443,91 @@ public final class ProjectDashboardViewModel: ObservableObject {
         projectConfigRestartRecommended = false
     }
 
+    public func loadInstalledAddOnsForSelectedProject() async {
+        guard let selectedProject else { return }
+
+        isRunningCommand = true
+        lastErrorMessage = nil
+        addonErrorMessage = nil
+        defer { isRunningCommand = false }
+
+        do {
+            let result = try await ddevService.listInstalledAddOns(
+                projectName: selectedProject.name,
+                in: selectedProject.appRoot
+            )
+            installedAddOns = try DDEVAddon.parseListOutput(result.stdout)
+            addonRawOutput = installedAddOns.isEmpty ? result.stdout.nilIfBlank : nil
+        } catch {
+            let message = String(describing: error)
+            lastErrorMessage = message
+            addonErrorMessage = message
+        }
+    }
+
+    public func searchAddOnsForSelectedProject(query: String) async {
+        guard let selectedProject else { return }
+
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedQuery.isEmpty else {
+            addonSearchResults = DDEVAddon.recommendedOfficial
+            addonErrorMessage = nil
+            return
+        }
+
+        isRunningCommand = true
+        lastErrorMessage = nil
+        addonErrorMessage = nil
+        defer { isRunningCommand = false }
+
+        do {
+            let result = try await ddevService.searchAddOns(query: trimmedQuery, in: selectedProject.appRoot)
+            let parsedResults = try DDEVAddon.parseListOutput(result.stdout)
+            addonSearchResults = parsedResults.isEmpty ? DDEVAddon.recommendedOfficial : parsedResults
+            addonRawOutput = parsedResults.isEmpty ? result.stdout.nilIfBlank : nil
+        } catch {
+            let message = String(describing: error)
+            lastErrorMessage = message
+            addonErrorMessage = message
+        }
+    }
+
+    public func installAddOnForSelectedProject(_ repository: String) async {
+        guard let selectedProject else { return }
+
+        await runAndCapture {
+            let result = try await self.ddevService.getAddOn(
+                repository,
+                projectName: selectedProject.name,
+                in: selectedProject.appRoot
+            )
+            self.recordCommandResult(result)
+            self.addOnRestartRecommended = true
+            await self.refreshInstalledAddOns(in: selectedProject.appRoot, projectName: selectedProject.name)
+            return result
+        }
+    }
+
+    public func removeAddOnForSelectedProject(named name: String) async {
+        guard let selectedProject else { return }
+
+        await runAndCapture {
+            let result = try await self.ddevService.removeAddOn(
+                named: name,
+                projectName: selectedProject.name,
+                in: selectedProject.appRoot
+            )
+            self.recordCommandResult(result)
+            self.addOnRestartRecommended = true
+            await self.refreshInstalledAddOns(in: selectedProject.appRoot, projectName: selectedProject.name)
+            return result
+        }
+    }
+
+    public func clearAddOnRestartRecommendation() {
+        addOnRestartRecommended = false
+    }
+
     public func updateWordPressCore() async {
         guard let selectedProject, selectedProject.isWordPress else { return }
         await runMutation {
@@ -536,6 +626,18 @@ public final class ProjectDashboardViewModel: ObservableObject {
         }
     }
 
+    private func refreshInstalledAddOns(in appRoot: String, projectName: String) async {
+        do {
+            let result = try await ddevService.listInstalledAddOns(projectName: projectName, in: appRoot)
+            installedAddOns = try DDEVAddon.parseListOutput(result.stdout)
+            addonRawOutput = installedAddOns.isEmpty ? result.stdout.nilIfBlank : nil
+        } catch {
+            let message = String(describing: error)
+            lastErrorMessage = message
+            addonErrorMessage = message
+        }
+    }
+
     private func refreshProjectsFromDDEV() async throws {
         let loadedProjects = try await ddevService.listProjects()
         let enrichedProjects = await enrichProjectsWithDetails(loadedProjects)
@@ -585,5 +687,12 @@ public final class ProjectDashboardViewModel: ObservableObject {
         }
 
         return enrichedProjects
+    }
+}
+
+private extension String {
+    var nilIfBlank: String? {
+        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 }
