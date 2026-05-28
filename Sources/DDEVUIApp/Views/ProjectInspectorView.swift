@@ -617,6 +617,28 @@ private struct OverviewTabContent: View {
     }
 }
 
+// MARK: - Manage tab
+
+private struct ManageTabContent: View {
+    let project: DDEVProject
+    @ObservedObject var viewModel: ProjectDashboardViewModel
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                FrameworkCommandLauncherView(project: project, viewModel: viewModel)
+                DatabaseOperationsView(project: project, viewModel: viewModel)
+                SnapshotManagerView(project: project, viewModel: viewModel)
+                AddonManagerView(project: project, viewModel: viewModel)
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 20)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .scrollContentBackground(.hidden)
+    }
+}
+
 // MARK: - FlowHStack (wraps items to new lines on overflow)
 
 private struct FlowHStack<Content: View>: View {
