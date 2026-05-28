@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @StateObject private var viewModel = ProjectDashboardViewModel()
+    @StateObject private var prerequisites = PrerequisiteMonitor()
     @State private var folderToConfigure: FolderToConfigure?
 
     var body: some View {
@@ -67,6 +68,16 @@ struct ContentView: View {
         }
         .sheet(item: $folderToConfigure) { folder in
             AddProjectSheet(folder: folder.url, viewModel: viewModel)
+        }
+        .sheet(isPresented: Binding(
+            get: { prerequisites.shouldBlockUI },
+            set: { _ in }
+        )) {
+            PrerequisiteSheet(monitor: prerequisites)
+                .interactiveDismissDisabled()
+        }
+        .task {
+            prerequisites.start()
         }
     }
 
