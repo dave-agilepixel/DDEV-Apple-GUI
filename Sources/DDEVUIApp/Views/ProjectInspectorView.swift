@@ -240,11 +240,10 @@ struct ProjectInspectorView: View {
                     }
                 }
             } label: {
-                Image(systemName: "chevron.down")
-                    .imageScale(.small)
-                    .frame(width: 18)
+                EmptyView()
             }
             .menuStyle(.borderlessButton)
+            .menuIndicator(.visible)
             .fixedSize()
         }
         .controlSize(.large)
