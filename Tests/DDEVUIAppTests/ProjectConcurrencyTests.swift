@@ -90,6 +90,26 @@ final class ProjectConcurrencyTests: XCTestCase {
         XCTAssertEqual(calls.first?.succeeded, true)
     }
 
+    func testBackgroundProjectMutationFailureNotifies() async {
+        let service = GatedDDEVService(
+            projects: [.sampleWordPress, .sampleLaravel],
+            failingLabels: ["stop:agilebugs"]
+        )
+        let spy = SpyNotificationScheduler()
+        let viewModel = ProjectDashboardViewModel(ddevService: service, notifier: spy)
+        await viewModel.refresh()
+        viewModel.selectedProject = .sampleWordPress // aqua-pura is focused
+
+        let task = Task { await viewModel.stop(.sampleLaravel) } // background project, will fail
+        await service.waitForInFlight(count: 1)
+        await service.releaseAll()
+        await task.value
+
+        let calls = spy.snapshot()
+        XCTAssertEqual(calls.map(\.projectName), ["agilebugs"])
+        XCTAssertEqual(calls.first?.succeeded, false, "Background failures notify too")
+    }
+
     func testSelectedProjectMutationDoesNotNotify() async {
         let service = GatedDDEVService(projects: [.sampleWordPress])
         let spy = SpyNotificationScheduler()
@@ -146,6 +166,8 @@ private final class SpyNotificationScheduler: NotificationScheduling, @unchecked
 /// can be observed in flight simultaneously. Reads (list/describe) return immediately.
 private actor GatedDDEVService: DDEVServicing {
     private let projects: [DDEVProject]
+    /// Mutation labels that should fail with a non-zero exit (e.g. "stop:agilebugs").
+    private let failingLabels: Set<String>
     private var recorded: [String] = []
     private var inFlight = 0
     private var gate: [CheckedContinuation<Void, Never>] = []
@@ -154,7 +176,10 @@ private actor GatedDDEVService: DDEVServicing {
     /// reaches `runGated` *after* `releaseAll()` has drained the initially in-flight ones.
     private var isOpen = false
 
-    init(projects: [DDEVProject]) { self.projects = projects }
+    init(projects: [DDEVProject], failingLabels: Set<String> = []) {
+        self.projects = projects
+        self.failingLabels = failingLabels
+    }
 
     /// Snapshot of recorded commands. Async (not a blocking `nonisolated` accessor) to avoid
     /// deadlocking the MainActor test thread under Swift 6 strict concurrency.
@@ -171,16 +196,20 @@ private actor GatedDDEVService: DDEVServicing {
         waiters.forEach { $0.resume() }
     }
 
-    private func runGated(_ label: String) async -> CommandResult {
+    private func runGated(_ label: String) async throws -> CommandResult {
         recorded.append(label)
         if !isOpen {
             inFlight += 1
             await withCheckedContinuation { gate.append($0) }
             inFlight -= 1
         }
-        return CommandResult(executable: "ddev", arguments: label.split(separator: ":").map(String.init),
-                             workingDirectory: nil, exitCode: 0, stdout: "", stderr: "",
-                             startedAt: .distantPast, finishedAt: .distantPast, wasCancelled: false)
+        let failed = failingLabels.contains(label)
+        let result = CommandResult(executable: "ddev", arguments: label.split(separator: ":").map(String.init),
+                                   workingDirectory: nil, exitCode: failed ? 1 : 0,
+                                   stdout: "", stderr: failed ? "boom" : "",
+                                   startedAt: .distantPast, finishedAt: .distantPast, wasCancelled: false)
+        if failed { throw CommandRunnerError.nonZeroExit(result) }
+        return result
     }
 
     private func runImmediate() -> CommandResult {
@@ -192,44 +221,44 @@ private actor GatedDDEVService: DDEVServicing {
     func describe(projectName: String) async throws -> DDEVProjectDetails {
         recorded.append("describe:\(projectName)"); return DDEVProjectDetails(phpVersion: nil, xhguiStatus: nil)
     }
-    func start(projectName: String) async throws -> CommandResult { await runGated("start:\(projectName)") }
-    func stop(projectName: String) async throws -> CommandResult { await runGated("stop:\(projectName)") }
-    func restart(projectName: String) async throws -> CommandResult { await runGated("restart:\(projectName)") }
+    func start(projectName: String) async throws -> CommandResult { try await runGated("start:\(projectName)") }
+    func stop(projectName: String) async throws -> CommandResult { try await runGated("stop:\(projectName)") }
+    func restart(projectName: String) async throws -> CommandResult { try await runGated("restart:\(projectName)") }
 
     // Remaining DDEVServicing methods are unused by these tests; gated unless they are reads.
-    func unlink(projectName: String) async throws -> CommandResult { await runGated("unlink:\(projectName)") }
-    func deleteDDEVData(projectName: String) async throws -> CommandResult { await runGated("delete:\(projectName)") }
-    func startProject(in appRoot: String) async throws -> CommandResult { await runGated("start-folder") }
-    func configureProject(in appRoot: String, name: String, type: DDEVProjectType, docroot: String) async throws -> CommandResult { await runGated("config") }
-    func setPHPVersion(_ version: String, in appRoot: String) async throws -> CommandResult { await runGated("php") }
-    func launchDatabaseTool(_ tool: DDEVDatabaseTool, in appRoot: String) async throws -> CommandResult { await runGated("db") }
-    func importDatabase(_ options: DDEVDatabaseImportOptions, in appRoot: String) async throws -> CommandResult { await runGated("import") }
-    func exportDatabase(_ options: DDEVDatabaseExportOptions, in appRoot: String) async throws -> CommandResult { await runGated("export") }
-    func importFiles(_ options: DDEVFileImportOptions, in appRoot: String) async throws -> CommandResult { await runGated("import-files") }
-    func createSnapshot(name: String?, in appRoot: String) async throws -> CommandResult { await runGated("snapshot") }
+    func unlink(projectName: String) async throws -> CommandResult { try await runGated("unlink:\(projectName)") }
+    func deleteDDEVData(projectName: String) async throws -> CommandResult { try await runGated("delete:\(projectName)") }
+    func startProject(in appRoot: String) async throws -> CommandResult { try await runGated("start-folder") }
+    func configureProject(in appRoot: String, name: String, type: DDEVProjectType, docroot: String) async throws -> CommandResult { try await runGated("config") }
+    func setPHPVersion(_ version: String, in appRoot: String) async throws -> CommandResult { try await runGated("php") }
+    func launchDatabaseTool(_ tool: DDEVDatabaseTool, in appRoot: String) async throws -> CommandResult { try await runGated("db") }
+    func importDatabase(_ options: DDEVDatabaseImportOptions, in appRoot: String) async throws -> CommandResult { try await runGated("import") }
+    func exportDatabase(_ options: DDEVDatabaseExportOptions, in appRoot: String) async throws -> CommandResult { try await runGated("export") }
+    func importFiles(_ options: DDEVFileImportOptions, in appRoot: String) async throws -> CommandResult { try await runGated("import-files") }
+    func createSnapshot(name: String?, in appRoot: String) async throws -> CommandResult { try await runGated("snapshot") }
     func listSnapshots(in appRoot: String) async throws -> CommandResult { recorded.append("snapshot-list"); return runImmediate() }
-    func restoreSnapshot(named snapshotName: String, in appRoot: String) async throws -> CommandResult { await runGated("snapshot-restore") }
-    func restoreLatestSnapshot(in appRoot: String) async throws -> CommandResult { await runGated("snapshot-restore-latest") }
-    func cleanupSnapshots(in appRoot: String) async throws -> CommandResult { await runGated("snapshot-cleanup") }
-    func cleanupSnapshot(named snapshotName: String, in appRoot: String) async throws -> CommandResult { await runGated("snapshot-cleanup-one") }
+    func restoreSnapshot(named snapshotName: String, in appRoot: String) async throws -> CommandResult { try await runGated("snapshot-restore") }
+    func restoreLatestSnapshot(in appRoot: String) async throws -> CommandResult { try await runGated("snapshot-restore-latest") }
+    func cleanupSnapshots(in appRoot: String) async throws -> CommandResult { try await runGated("snapshot-cleanup") }
+    func cleanupSnapshot(named snapshotName: String, in appRoot: String) async throws -> CommandResult { try await runGated("snapshot-cleanup-one") }
     func logs(projectName: String, service: String, tail: Int, includeTimestamps: Bool, in appRoot: String) async throws -> CommandResult { recorded.append("logs"); return runImmediate() }
     func listInstalledAddOns(projectName: String, in appRoot: String) async throws -> CommandResult { recorded.append("addon-list"); return runImmediate() }
     func searchAddOns(query: String, in appRoot: String) async throws -> CommandResult { recorded.append("addon-search"); return runImmediate() }
-    func getAddOn(_ repository: String, projectName: String, in appRoot: String) async throws -> CommandResult { await runGated("addon-get") }
-    func removeAddOn(named name: String, projectName: String, in appRoot: String) async throws -> CommandResult { await runGated("addon-remove") }
-    func config(flags: [String], in appRoot: String) async throws -> CommandResult { await runGated("config-flags") }
-    func applyConfigChange(_ change: DDEVConfigChange, in appRoot: String) async throws -> CommandResult { await runGated("config-change") }
-    func runProjectCommand(arguments: [String], in appRoot: String) async throws -> CommandResult { await runGated("project-command") }
+    func getAddOn(_ repository: String, projectName: String, in appRoot: String) async throws -> CommandResult { try await runGated("addon-get") }
+    func removeAddOn(named name: String, projectName: String, in appRoot: String) async throws -> CommandResult { try await runGated("addon-remove") }
+    func config(flags: [String], in appRoot: String) async throws -> CommandResult { try await runGated("config-flags") }
+    func applyConfigChange(_ change: DDEVConfigChange, in appRoot: String) async throws -> CommandResult { try await runGated("config-change") }
+    func runProjectCommand(arguments: [String], in appRoot: String) async throws -> CommandResult { try await runGated("project-command") }
     func version() async throws -> CommandResult { recorded.append("version"); return runImmediate() }
     func utilityDiagnose(in appRoot: String?) async throws -> CommandResult { recorded.append("diagnose"); return runImmediate() }
     func utilityConfigYAML(omitKeys: [String], in appRoot: String) async throws -> CommandResult { recorded.append("configyaml"); return runImmediate() }
     func utilityCheckCustomConfig(in appRoot: String) async throws -> CommandResult { recorded.append("check-custom-config"); return runImmediate() }
     func utilityCheckDBMatch(in appRoot: String) async throws -> CommandResult { recorded.append("check-db-match"); return runImmediate() }
     func mutagen(_ command: DDEVMutagenCommand, in appRoot: String) async throws -> CommandResult { recorded.append("mutagen"); return runImmediate() }
-    func xhgui(_ command: DDEVXHGuiCommand, in appRoot: String) async throws -> CommandResult { await runGated("xhgui") }
-    func updateWordPressCore(in appRoot: String) async throws -> CommandResult { await runGated("wp-core") }
-    func updateWordPressPlugins(in appRoot: String) async throws -> CommandResult { await runGated("wp-plugins") }
-    func updateWordPressThemes(in appRoot: String) async throws -> CommandResult { await runGated("wp-themes") }
+    func xhgui(_ command: DDEVXHGuiCommand, in appRoot: String) async throws -> CommandResult { try await runGated("xhgui") }
+    func updateWordPressCore(in appRoot: String) async throws -> CommandResult { try await runGated("wp-core") }
+    func updateWordPressPlugins(in appRoot: String) async throws -> CommandResult { try await runGated("wp-plugins") }
+    func updateWordPressThemes(in appRoot: String) async throws -> CommandResult { try await runGated("wp-themes") }
 }
 
 extension DDEVProject {
