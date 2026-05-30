@@ -44,14 +44,6 @@ public protocol DDEVServicing: Sendable {
 
 extension DDEVCommandService: DDEVServicing {}
 
-public struct CommandHistoryEntry: Equatable, Sendable {
-    public let result: CommandResult
-
-    public init(result: CommandResult) {
-        self.result = result
-    }
-}
-
 public enum ProjectSidebarItem: String, CaseIterable, Identifiable, Sendable {
     case projects
     case running

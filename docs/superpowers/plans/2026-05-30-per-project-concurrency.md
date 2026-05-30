@@ -340,8 +340,6 @@ Extract per-project command state into its own value type, and move `CommandHist
 Create `Sources/DDEVUIApp/Models/ProjectCommandState.swift`:
 
 ```swift
-import Foundation
-
 public struct CommandHistoryEntry: Equatable, Sendable {
     public let result: CommandResult
 
@@ -350,7 +348,8 @@ public struct CommandHistoryEntry: Equatable, Sendable {
     }
 }
 
-/// All command state scoped to a single project. Stored per project id in the view model.
+/// All command state scoped to a single project. Stored per project id in the view model's
+/// `commandStates` dictionary (wired up in the per-project mutation/read pipelines).
 public struct ProjectCommandState: Equatable, Sendable {
     /// Lifecycle of an in-flight *mutation* (start/stop/restart/…). Drives the cap, the
     /// row spinner, the single-command-per-project guard, and notifications.
