@@ -138,6 +138,19 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.lastCommandResult?.succeeded, true)
     }
 
+    func testRowActionTargetsGivenProjectNotSelection() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress, .sampleLaravel])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+
+        await viewModel.refresh()
+        XCTAssertEqual(viewModel.selectedProject, .sampleWordPress)
+
+        await viewModel.stop(.sampleLaravel)
+
+        XCTAssertTrue(service.commands.contains("stop:agilebugs"))
+        XCTAssertEqual(viewModel.selectedProject, .sampleWordPress)
+    }
+
     func testDatabaseToolLaunchUsesSelectedProjectFolder() async {
         let service = FakeDDEVService(projects: [.sampleWordPress])
         let viewModel = ProjectDashboardViewModel(ddevService: service)

@@ -99,6 +99,7 @@ public final class ProjectDashboardViewModel: ObservableObject {
     @Published public var selectedSidebarItem: ProjectSidebarItem = .projects
     @Published public var searchText = ""
     @Published public var isRunningCommand = false
+    @Published public var busyProjectIDs: Set<DDEVProject.ID> = []
     @Published public var lastCommandResult: CommandResult?
     @Published public var lastErrorMessage: String?
     @Published public var commandOutputExpansionRequest = 0
@@ -256,25 +257,41 @@ public final class ProjectDashboardViewModel: ObservableObject {
         }
     }
 
+    public func isBusy(_ project: DDEVProject) -> Bool {
+        busyProjectIDs.contains(project.id)
+    }
+
+    public func start(_ project: DDEVProject) async {
+        await runMutation(markingBusy: project) {
+            try await self.ddevService.start(projectName: project.name)
+        }
+    }
+
+    public func stop(_ project: DDEVProject) async {
+        await runMutation(markingBusy: project) {
+            try await self.ddevService.stop(projectName: project.name)
+        }
+    }
+
+    public func restart(_ project: DDEVProject) async {
+        await runMutation(markingBusy: project) {
+            try await self.ddevService.restart(projectName: project.name)
+        }
+    }
+
     public func startSelectedProject() async {
         guard let selectedProject else { return }
-        await runMutation {
-            try await self.ddevService.start(projectName: selectedProject.name)
-        }
+        await start(selectedProject)
     }
 
     public func stopSelectedProject() async {
         guard let selectedProject else { return }
-        await runMutation {
-            try await self.ddevService.stop(projectName: selectedProject.name)
-        }
+        await stop(selectedProject)
     }
 
     public func restartSelectedProject() async {
         guard let selectedProject else { return }
-        await runMutation {
-            try await self.ddevService.restart(projectName: selectedProject.name)
-        }
+        await restart(selectedProject)
     }
 
     public func unlinkSelectedProject() async {
@@ -680,6 +697,12 @@ public final class ProjectDashboardViewModel: ObservableObject {
         } catch {
             lastErrorMessage = String(describing: error)
         }
+    }
+
+    private func runMutation(markingBusy project: DDEVProject, _ operation: @escaping () async throws -> CommandResult) async {
+        busyProjectIDs.insert(project.id)
+        defer { busyProjectIDs.remove(project.id) }
+        await runMutation(operation)
     }
 
     private func runMutation(_ operation: @escaping () async throws -> CommandResult) async {

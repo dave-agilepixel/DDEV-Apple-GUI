@@ -72,7 +72,7 @@ struct ProjectListView: View {
                 List(selection: projectSelection) {
                     Section {
                         ForEach(viewModel.filteredProjects) { project in
-                            ProjectRow(project: project)
+                            ProjectRow(project: project, viewModel: viewModel)
                                 .tag(project.id)
                                 .listRowSeparator(.visible)
                         }
@@ -124,6 +124,7 @@ struct ProjectListView: View {
 
 private struct ProjectRow: View {
     let project: DDEVProject
+    @ObservedObject var viewModel: ProjectDashboardViewModel
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
@@ -161,8 +162,50 @@ private struct ProjectRow: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
+
+            actionControls
+                .frame(width: 52, alignment: .trailing)
         }
         .padding(.vertical, 4)
+    }
+
+    @ViewBuilder
+    private var actionControls: some View {
+        if viewModel.isBusy(project) {
+            ProgressView()
+                .controlSize(.small)
+        } else {
+            HStack(spacing: 2) {
+                if project.status == .running {
+                    actionButton("Restart", systemImage: "arrow.clockwise") {
+                        await viewModel.restart(project)
+                    }
+                    actionButton("Stop", systemImage: "stop.fill") {
+                        await viewModel.stop(project)
+                    }
+                } else {
+                    actionButton("Start", systemImage: "play.fill") {
+                        await viewModel.start(project)
+                    }
+                }
+            }
+        }
+    }
+
+    private func actionButton(
+        _ title: String,
+        systemImage: String,
+        action: @escaping () async -> Void
+    ) -> some View {
+        Button {
+            Task { await action() }
+        } label: {
+            Image(systemName: systemImage)
+        }
+        .buttonStyle(.borderless)
+        .controlSize(.small)
+        .help(title)
+        .disabled(viewModel.isRunningCommand)
     }
 
     private var statusColor: Color {
