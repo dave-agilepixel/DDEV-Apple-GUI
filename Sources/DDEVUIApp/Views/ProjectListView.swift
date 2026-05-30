@@ -164,7 +164,7 @@ private struct ProjectRow: View {
             }
 
             actionControls
-                .frame(width: 52, alignment: .trailing)
+                .frame(minWidth: 52, alignment: .trailing)
         }
         .padding(.vertical, 4)
     }
@@ -175,16 +175,16 @@ private struct ProjectRow: View {
             ProgressView()
                 .controlSize(.small)
         } else {
-            HStack(spacing: 2) {
+            HStack(spacing: 4) {
                 if project.status == .running {
                     actionButton("Restart", systemImage: "arrow.clockwise") {
                         await viewModel.restart(project)
                     }
-                    actionButton("Stop", systemImage: "stop.fill") {
+                    actionButton("Stop", systemImage: "stop.fill", tint: .red) {
                         await viewModel.stop(project)
                     }
                 } else {
-                    actionButton("Start", systemImage: "play.fill") {
+                    actionButton("Start", systemImage: "play.fill", tint: .green) {
                         await viewModel.start(project)
                     }
                 }
@@ -195,15 +195,18 @@ private struct ProjectRow: View {
     private func actionButton(
         _ title: String,
         systemImage: String,
+        tint: Color? = nil,
         action: @escaping () async -> Void
     ) -> some View {
         Button {
             Task { await action() }
         } label: {
             Image(systemName: systemImage)
+                .frame(width: 14, height: 14)
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(.bordered)
         .controlSize(.small)
+        .tint(tint)
         .help(title)
         .disabled(viewModel.isRunningCommand)
     }
