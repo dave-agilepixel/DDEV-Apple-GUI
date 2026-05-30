@@ -90,12 +90,15 @@ public final class ProjectDashboardViewModel: ObservableObject {
     @Published public var selectedProjectID: DDEVProject.ID?
     @Published public var selectedSidebarItem: ProjectSidebarItem = .projects
     @Published public var searchText = ""
-    @Published public var isRunningCommand = false
-    @Published public var busyProjectIDs: Set<DDEVProject.ID> = []
-    @Published public var lastCommandResult: CommandResult?
-    @Published public var lastErrorMessage: String?
-    @Published public var commandOutputExpansionRequest = 0
-    @Published public var commandHistory: [CommandHistoryEntry] = []
+
+    /// Per-project command state, keyed by project id (the project name). The single source
+    /// of truth for busy/queued lifecycle, last result, error, history, and output expansion.
+    @Published public var commandStates: [DDEVProject.ID: ProjectCommandState] = [:]
+
+    /// Busy/error for genuinely project-less operations: global list refresh, global
+    /// diagnostics, and new-project creation (which has no project id yet).
+    @Published public var isRunningGlobalCommand = false
+    @Published public var globalErrorMessage: String?
     @Published public var snapshots: [DDEVSnapshot] = []
     @Published public var projectLogsResult: CommandResult?
     @Published public var projectLogsErrorMessage: String?
@@ -119,18 +122,24 @@ public final class ProjectDashboardViewModel: ObservableObject {
     private let projectCache: ProjectCacheStoring
     private let preferencesStore: AppPreferencesStoring
     private let appAvailability: AppAvailabilityChecking
+    private let scheduler: CommandScheduler
+    private let notifier: NotificationScheduling
     private var selectedProjectFallback: DDEVProject?
 
     public init(
         ddevService: DDEVServicing = DDEVCommandService(),
         projectCache: ProjectCacheStoring = FileProjectCacheStore(),
         preferencesStore: AppPreferencesStoring = UserDefaultsAppPreferencesStore(),
-        appAvailability: AppAvailabilityChecking = WorkspaceAppAvailabilityService()
+        appAvailability: AppAvailabilityChecking = WorkspaceAppAvailabilityService(),
+        scheduler: CommandScheduler = CommandScheduler(maxConcurrent: 3),
+        notifier: NotificationScheduling = NoopNotificationScheduler()
     ) {
         self.ddevService = ddevService
         self.projectCache = projectCache
         self.preferencesStore = preferencesStore
         self.appAvailability = appAvailability
+        self.scheduler = scheduler
+        self.notifier = notifier
         self.preferences = preferencesStore.loadPreferences()
         self.installedEditors = appAvailability.installedEditors()
         self.installedDatabaseTools = appAvailability.installedDatabaseTools()
@@ -216,10 +225,18 @@ public final class ProjectDashboardViewModel: ObservableObject {
         installedDatabaseTools = appAvailability.installedDatabaseTools()
     }
 
+    public func requestNotificationAuthorization() async {
+        await notifier.requestAuthorizationIfNeeded()
+    }
+
     public func refresh() async {
-        await runAndCapture {
-            try await self.refreshProjectsFromDDEV()
-            return nil
+        isRunningGlobalCommand = true
+        globalErrorMessage = nil
+        defer { isRunningGlobalCommand = false }
+        do {
+            try await refreshProjectsFromDDEV()
+        } catch {
+            globalErrorMessage = String(describing: error)
         }
     }
 
@@ -235,38 +252,75 @@ public final class ProjectDashboardViewModel: ObservableObject {
 
     public func setPHPVersionForSelectedProject(_ version: String) async {
         guard let selectedProject else { return }
-        await runAndCapture {
-            let configResult = try await self.ddevService.setPHPVersion(version, in: selectedProject.appRoot)
-            self.recordCommandResult(configResult, requestsOutputExpansion: false)
+        let id = selectedProject.id
+        guard !isBusy(selectedProject) else { return }
 
+        setActivity(.queued, for: id)
+        await scheduler.acquire()
+        setActivity(.running, for: id)
+
+        let outcome = await execute {
+            let configResult = try await self.ddevService.setPHPVersion(version, in: selectedProject.appRoot)
+            self.recordResult(configResult, for: id, expandsOutput: false)
             if selectedProject.status == .running {
                 let restartResult = try await self.ddevService.restart(projectName: selectedProject.name)
-                self.recordCommandResult(restartResult, requestsOutputExpansion: false)
+                self.recordResult(restartResult, for: id, expandsOutput: false)
+                return restartResult
             }
+            return configResult
+        }
+        await scheduler.release()
+        setActivity(.idle, for: id)
 
-            await self.refresh()
-            return self.lastCommandResult
+        switch outcome {
+        case .success(let result):
+            await reDescribe(selectedProject)
+            await notifyIfBackground(project: selectedProject, succeeded: true, summary: summary(result))
+        case .failure(.nonZeroExit(let result)):
+            commandStates[id, default: .init()].lastErrorMessage = "Command failed with exit code \(result.exitCode)."
+            await notifyIfBackground(project: selectedProject, succeeded: false, summary: summary(result))
+        case .failure(.other(let error)):
+            commandStates[id, default: .init()].lastErrorMessage = String(describing: error)
+            await notifyIfBackground(project: selectedProject, succeeded: false, summary: "command failed")
         }
     }
 
+    public func state(for id: DDEVProject.ID) -> ProjectCommandState {
+        commandStates[id] ?? ProjectCommandState()
+    }
+
     public func isBusy(_ project: DDEVProject) -> Bool {
-        busyProjectIDs.contains(project.id)
+        state(for: project.id).isBusy
+    }
+
+    public func isQueued(_ project: DDEVProject) -> Bool {
+        state(for: project.id).activity == .queued
+    }
+
+    /// State of the currently-selected project (empty default when nothing is selected).
+    public var selectedProjectState: ProjectCommandState {
+        guard let selectedProjectID else { return ProjectCommandState() }
+        return state(for: selectedProjectID)
+    }
+
+    public var isSelectedProjectBusy: Bool {
+        selectedProjectState.isBusy
     }
 
     public func start(_ project: DDEVProject) async {
-        await runMutation(markingBusy: project) {
+        await runProjectMutation(project) {
             try await self.ddevService.start(projectName: project.name)
         }
     }
 
     public func stop(_ project: DDEVProject) async {
-        await runMutation(markingBusy: project) {
+        await runProjectMutation(project) {
             try await self.ddevService.stop(projectName: project.name)
         }
     }
 
     public func restart(_ project: DDEVProject) async {
-        await runMutation(markingBusy: project) {
+        await runProjectMutation(project) {
             try await self.ddevService.restart(projectName: project.name)
         }
     }
@@ -288,33 +342,33 @@ public final class ProjectDashboardViewModel: ObservableObject {
 
     public func unlinkSelectedProject() async {
         guard let selectedProject else { return }
-        await runMutation {
+        await runProjectMutation(selectedProject, refresh: .fullList) {
             try await self.ddevService.unlink(projectName: selectedProject.name)
         }
     }
 
     public func deleteSelectedDDEVData() async {
         guard let selectedProject else { return }
-        await runMutation {
+        await runProjectMutation(selectedProject, refresh: .fullList) {
             try await self.ddevService.deleteDDEVData(projectName: selectedProject.name)
         }
     }
 
     public func startProject(atFolder path: String) async {
-        await runMutation {
+        await runGlobalMutation {
             try await self.ddevService.startProject(in: path)
         }
     }
 
     public func configureProject(folder: String, name: String, type: DDEVProjectType, docroot: String) async {
-        await runMutation {
+        await runGlobalMutation {
             try await self.ddevService.configureProject(in: folder, name: name, type: type, docroot: docroot)
         }
     }
 
     public func launchDatabaseTool(_ tool: DDEVDatabaseTool) async {
         guard let selectedProject else { return }
-        await runMutation {
+        await runProjectMutation(selectedProject, refresh: .none) {
             try await self.ddevService.launchDatabaseTool(tool, in: selectedProject.appRoot)
         }
     }
@@ -326,23 +380,21 @@ public final class ProjectDashboardViewModel: ObservableObject {
 
     public func importDatabase(_ options: DDEVDatabaseImportOptions) async {
         guard let selectedProject else { return }
-        await runMutation {
+        await runProjectMutation(selectedProject) {
             try await self.ddevService.importDatabase(options, in: selectedProject.appRoot)
         }
     }
 
     public func exportDatabase(_ options: DDEVDatabaseExportOptions) async {
         guard let selectedProject else { return }
-        await runAndCapture {
-            let result = try await self.ddevService.exportDatabase(options, in: selectedProject.appRoot)
-            self.recordCommandResult(result)
-            return result
+        await runProjectMutation(selectedProject, refresh: .none) {
+            try await self.ddevService.exportDatabase(options, in: selectedProject.appRoot)
         }
     }
 
     public func loadSnapshotsForSelectedProject() async {
         guard let selectedProject else { return }
-        await runAndCapture {
+        await runSelectedProjectRead {
             let result = try await self.ddevService.listSnapshots(in: selectedProject.appRoot)
             self.snapshots = DDEVSnapshot.parseListOutput(result.stdout)
             return nil
@@ -351,9 +403,8 @@ public final class ProjectDashboardViewModel: ObservableObject {
 
     public func createSnapshotForSelectedProject(name: String?) async {
         guard let selectedProject else { return }
-        await runAndCapture {
+        await runProjectMutation(selectedProject, refresh: .none) {
             let result = try await self.ddevService.createSnapshot(name: name, in: selectedProject.appRoot)
-            self.recordCommandResult(result)
             await self.refreshSnapshots(in: selectedProject.appRoot)
             return result
         }
@@ -361,23 +412,22 @@ public final class ProjectDashboardViewModel: ObservableObject {
 
     public func restoreSnapshotForSelectedProject(named snapshotName: String) async {
         guard let selectedProject else { return }
-        await runMutation {
+        await runProjectMutation(selectedProject) {
             try await self.ddevService.restoreSnapshot(named: snapshotName, in: selectedProject.appRoot)
         }
     }
 
     public func restoreLatestSnapshotForSelectedProject() async {
         guard let selectedProject else { return }
-        await runMutation {
+        await runProjectMutation(selectedProject) {
             try await self.ddevService.restoreLatestSnapshot(in: selectedProject.appRoot)
         }
     }
 
     public func cleanupSnapshotsForSelectedProject() async {
         guard let selectedProject else { return }
-        await runAndCapture {
+        await runProjectMutation(selectedProject, refresh: .none) {
             let result = try await self.ddevService.cleanupSnapshots(in: selectedProject.appRoot)
-            self.recordCommandResult(result)
             await self.refreshSnapshots(in: selectedProject.appRoot)
             return result
         }
@@ -385,9 +435,8 @@ public final class ProjectDashboardViewModel: ObservableObject {
 
     public func cleanupSnapshotForSelectedProject(named snapshotName: String) async {
         guard let selectedProject else { return }
-        await runAndCapture {
+        await runProjectMutation(selectedProject, refresh: .none) {
             let result = try await self.ddevService.cleanupSnapshot(named: snapshotName, in: selectedProject.appRoot)
-            self.recordCommandResult(result)
             await self.refreshSnapshots(in: selectedProject.appRoot)
             return result
         }
@@ -395,33 +444,25 @@ public final class ProjectDashboardViewModel: ObservableObject {
 
     public func loadLogsForSelectedProject(_ request: DDEVLogRequest) async {
         guard let selectedProject else { return }
-
-        isRunningCommand = true
-        lastErrorMessage = nil
         projectLogsErrorMessage = nil
-        defer { isRunningCommand = false }
-
-        do {
-            let result = try await ddevService.logs(
-                projectName: selectedProject.name,
-                service: request.service.rawValue,
-                tail: request.tailCount,
-                includeTimestamps: request.includeTimestamps,
-                in: selectedProject.appRoot
-            )
-            projectLogsResult = result
-            recordCommandResult(result, requestsOutputExpansion: false)
-        } catch CommandRunnerError.nonZeroExit(let result) {
-            projectLogsResult = result
-            recordCommandResult(result, requestsOutputExpansion: false)
-            let message = "Command failed with exit code \(result.exitCode)."
-            lastErrorMessage = message
-            projectLogsErrorMessage = message
-        } catch {
-            let message = String(describing: error)
-            lastErrorMessage = message
-            projectLogsErrorMessage = message
+        await runSelectedProjectRead(recordOutput: true) {
+            do {
+                let result = try await self.ddevService.logs(
+                    projectName: selectedProject.name,
+                    service: request.service.rawValue,
+                    tail: request.tailCount,
+                    includeTimestamps: request.includeTimestamps,
+                    in: selectedProject.appRoot
+                )
+                self.projectLogsResult = result
+                return result
+            } catch CommandRunnerError.nonZeroExit(let result) {
+                self.projectLogsResult = result
+                self.projectLogsErrorMessage = "Command failed with exit code \(result.exitCode)."
+                throw CommandRunnerError.nonZeroExit(result)
+            }
         }
+        if projectLogsErrorMessage == nil { projectLogsErrorMessage = selectedProjectState.lastErrorMessage }
     }
 
     public func loadLogsForSelectedProjectIfRunning(_ request: DDEVLogRequest) async {
@@ -437,34 +478,24 @@ public final class ProjectDashboardViewModel: ObservableObject {
 
     public func loadConfigForSelectedProject() async {
         guard let selectedProject else { return }
-
-        isRunningCommand = true
-        lastErrorMessage = nil
         projectConfigErrorMessage = nil
         projectConfig = nil
-        defer { isRunningCommand = false }
-
-        do {
-            let result = try await ddevService.utilityConfigYAML(omitKeys: ["web_environment"], in: selectedProject.appRoot)
-            projectConfig = try DDEVConfig.parseYAML(result.stdout)
-        } catch CommandRunnerError.nonZeroExit(let result) {
-            recordCommandResult(result, requestsOutputExpansion: false)
-            let message = result.stderr.nilIfBlank ?? "Command failed with exit code \(result.exitCode)."
-            lastErrorMessage = message
-            projectConfigErrorMessage = message
-        } catch {
-            let message = String(describing: error)
-            lastErrorMessage = message
-            projectConfigErrorMessage = message
+        await runSelectedProjectRead {
+            do {
+                let result = try await self.ddevService.utilityConfigYAML(omitKeys: ["web_environment"], in: selectedProject.appRoot)
+                self.projectConfig = try DDEVConfig.parseYAML(result.stdout)
+                return nil
+            } catch CommandRunnerError.nonZeroExit(let result) {
+                self.projectConfigErrorMessage = result.stderr.nilIfBlank ?? "Command failed with exit code \(result.exitCode)."
+                throw CommandRunnerError.nonZeroExit(result)
+            }
         }
     }
 
     public func applyConfigChangeForSelectedProject(_ change: DDEVConfigChange) async {
         guard let selectedProject else { return }
-
-        await runAndCapture {
+        await runProjectMutation(selectedProject, refresh: .none) {
             let result = try await self.ddevService.applyConfigChange(change, in: selectedProject.appRoot)
-            self.recordCommandResult(result)
             self.projectConfigRestartRecommended = selectedProject.status == .running
             return result
         }
@@ -476,97 +507,68 @@ public final class ProjectDashboardViewModel: ObservableObject {
 
     public func loadInstalledAddOnsForSelectedProject() async {
         guard let selectedProject else { return }
-
-        isRunningCommand = true
-        lastErrorMessage = nil
         addonErrorMessage = nil
-        defer { isRunningCommand = false }
-
-        do {
-            let result = try await ddevService.listInstalledAddOns(
-                projectName: selectedProject.name,
-                in: selectedProject.appRoot
-            )
-            installedAddOns = try DDEVAddon.parseListOutput(result.stdout)
-            addonRawOutput = installedAddOns.isEmpty ? result.stdout.nilIfBlank : nil
-        } catch CommandRunnerError.nonZeroExit(let result) {
-            recordCommandResult(result, requestsOutputExpansion: false)
-            let message = "Command failed with exit code \(result.exitCode)."
-            lastErrorMessage = message
-            addonErrorMessage = message
-        } catch {
-            let message = String(describing: error)
-            lastErrorMessage = message
-            addonErrorMessage = message
+        await runSelectedProjectRead {
+            do {
+                let result = try await self.ddevService.listInstalledAddOns(
+                    projectName: selectedProject.name, in: selectedProject.appRoot)
+                self.installedAddOns = try DDEVAddon.parseListOutput(result.stdout)
+                self.addonRawOutput = self.installedAddOns.isEmpty ? result.stdout.nilIfBlank : nil
+                return nil
+            } catch CommandRunnerError.nonZeroExit(let result) {
+                self.addonErrorMessage = "Command failed with exit code \(result.exitCode)."
+                throw CommandRunnerError.nonZeroExit(result)
+            }
         }
     }
 
     public func searchAddOnsForSelectedProject(query: String) async {
         guard let selectedProject else { return }
-
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedQuery.isEmpty else {
             addonSearchResults = DDEVAddon.recommendedOfficial
             addonErrorMessage = nil
             return
         }
-
-        isRunningCommand = true
-        lastErrorMessage = nil
         addonErrorMessage = nil
-        defer { isRunningCommand = false }
-
-        do {
-            let result = try await ddevService.searchAddOns(query: trimmedQuery, in: selectedProject.appRoot)
-            let parsedResults = try DDEVAddon.parseListOutput(result.stdout)
-            addonSearchResults = parsedResults.isEmpty ? DDEVAddon.recommendedOfficial : parsedResults
-            addonRawOutput = parsedResults.isEmpty ? result.stdout.nilIfBlank : nil
-        } catch CommandRunnerError.nonZeroExit(let result) {
-            recordCommandResult(result, requestsOutputExpansion: false)
-            let message = "Command failed with exit code \(result.exitCode)."
-            lastErrorMessage = message
-            addonErrorMessage = message
-        } catch {
-            let message = String(describing: error)
-            lastErrorMessage = message
-            addonErrorMessage = message
+        await runSelectedProjectRead {
+            do {
+                let result = try await self.ddevService.searchAddOns(query: trimmedQuery, in: selectedProject.appRoot)
+                let parsedResults = try DDEVAddon.parseListOutput(result.stdout)
+                self.addonSearchResults = parsedResults.isEmpty ? DDEVAddon.recommendedOfficial : parsedResults
+                self.addonRawOutput = parsedResults.isEmpty ? result.stdout.nilIfBlank : nil
+                return nil
+            } catch CommandRunnerError.nonZeroExit(let result) {
+                self.addonErrorMessage = "Command failed with exit code \(result.exitCode)."
+                throw CommandRunnerError.nonZeroExit(result)
+            }
         }
     }
 
     public func installAddOnForSelectedProject(_ repository: String) async {
         guard let selectedProject else { return }
-
         addonErrorMessage = nil
-        await runAndCapture {
+        await runProjectMutation(selectedProject, refresh: .none) {
             let result = try await self.ddevService.getAddOn(
-                repository,
-                projectName: selectedProject.name,
-                in: selectedProject.appRoot
-            )
-            self.recordCommandResult(result)
+                repository, projectName: selectedProject.name, in: selectedProject.appRoot)
             self.addOnRestartRecommended = true
             await self.refreshInstalledAddOns(in: selectedProject.appRoot, projectName: selectedProject.name)
             return result
         }
-        addonErrorMessage = lastErrorMessage
+        addonErrorMessage = selectedProjectState.lastErrorMessage
     }
 
     public func removeAddOnForSelectedProject(named name: String) async {
         guard let selectedProject else { return }
-
         addonErrorMessage = nil
-        await runAndCapture {
+        await runProjectMutation(selectedProject, refresh: .none) {
             let result = try await self.ddevService.removeAddOn(
-                named: name,
-                projectName: selectedProject.name,
-                in: selectedProject.appRoot
-            )
-            self.recordCommandResult(result)
+                named: name, projectName: selectedProject.name, in: selectedProject.appRoot)
             self.addOnRestartRecommended = true
             await self.refreshInstalledAddOns(in: selectedProject.appRoot, projectName: selectedProject.name)
             return result
         }
-        addonErrorMessage = lastErrorMessage
+        addonErrorMessage = selectedProjectState.lastErrorMessage
     }
 
     public func clearAddOnRestartRecommendation() {
@@ -575,21 +577,21 @@ public final class ProjectDashboardViewModel: ObservableObject {
 
     public func updateWordPressCore() async {
         guard let selectedProject, selectedProject.isWordPress else { return }
-        await runMutation {
+        await runProjectMutation(selectedProject) {
             try await self.ddevService.updateWordPressCore(in: selectedProject.appRoot)
         }
     }
 
     public func updateWordPressPlugins() async {
         guard let selectedProject, selectedProject.isWordPress else { return }
-        await runMutation {
+        await runProjectMutation(selectedProject) {
             try await self.ddevService.updateWordPressPlugins(in: selectedProject.appRoot)
         }
     }
 
     public func updateWordPressThemes() async {
         guard let selectedProject, selectedProject.isWordPress else { return }
-        await runMutation {
+        await runProjectMutation(selectedProject) {
             try await self.ddevService.updateWordPressThemes(in: selectedProject.appRoot)
         }
     }
@@ -604,11 +606,8 @@ public final class ProjectDashboardViewModel: ObservableObject {
 
     public func runFrameworkCommandForSelectedProject(_ command: DDEVFrameworkCommand) async {
         guard let selectedProject else { return }
-
-        await runAndCapture {
-            let result = try await self.ddevService.runProjectCommand(arguments: command.arguments, in: selectedProject.appRoot)
-            self.recordCommandResult(result)
-            return result
+        await runProjectMutation(selectedProject) {
+            try await self.ddevService.runProjectCommand(arguments: command.arguments, in: selectedProject.appRoot)
         }
     }
 
@@ -668,8 +667,7 @@ public final class ProjectDashboardViewModel: ObservableObject {
 
     public func enableXHGuiForSelectedProject() async {
         guard let selectedProject else { return }
-
-        await runMutation {
+        await runProjectMutation(selectedProject) {
             try await self.ddevService.xhgui(.on, in: selectedProject.appRoot)
         }
     }
@@ -682,73 +680,168 @@ public final class ProjectDashboardViewModel: ObservableObject {
                 at: URL(fileURLWithPath: selectedProject.appRoot),
                 resultingItemURL: nil
             )
-            projects.removeAll { $0.id == selectedProject.id }
+            let removedID = selectedProject.id
+            projects.removeAll { $0.id == removedID }
+            commandStates[removedID] = nil
             self.selectedProject = projects.first
-            lastCommandResult = nil
-            lastErrorMessage = nil
+            globalErrorMessage = nil
         } catch {
-            lastErrorMessage = String(describing: error)
+            globalErrorMessage = String(describing: error)
         }
     }
 
-    private func runMutation(markingBusy project: DDEVProject, _ operation: @escaping () async throws -> CommandResult) async {
-        busyProjectIDs.insert(project.id)
-        defer { busyProjectIDs.remove(project.id) }
-        await runMutation(operation)
+    enum RefreshScope {
+        case project   // re-describe just the affected project (state changed)
+        case fullList  // re-list everything (project added/removed/renamed)
+        case none      // no refresh (e.g. export writes a file, changes nothing)
     }
 
-    private func runMutation(_ operation: @escaping () async throws -> CommandResult) async {
-        await runAndCapture {
-            let result = try await operation()
-            self.recordCommandResult(result)
-            await self.refresh()
-            return result
+    /// Runs a state-changing command for one project: cap-gated, per-project state, scoped
+    /// refresh, and a notification when the project is not the focused one.
+    private func runProjectMutation(
+        _ project: DDEVProject,
+        refresh: RefreshScope = .project,
+        _ operation: @escaping () async throws -> CommandResult
+    ) async {
+        let id = project.id
+        guard !isBusy(project) else { return } // one command per project at a time
+
+        setActivity(.queued, for: id)
+        await scheduler.acquire()              // resumes on MainActor
+        setActivity(.running, for: id)
+
+        let outcome = await execute(operation)
+        await scheduler.release()              // free the slot before the read-y describe
+        setActivity(.idle, for: id)
+
+        switch outcome {
+        case .success(let result):
+            recordResult(result, for: id)
+            await applyRefresh(refresh, for: project)
+            await notifyIfBackground(project: project, succeeded: true, summary: summary(result))
+        case .failure(.nonZeroExit(let result)):
+            recordResult(result, for: id)
+            commandStates[id, default: .init()].lastErrorMessage =
+                "Command failed with exit code \(result.exitCode)."
+            await notifyIfBackground(project: project, succeeded: false, summary: summary(result))
+        case .failure(.other(let error)):
+            commandStates[id, default: .init()].lastErrorMessage = String(describing: error)
+            await notifyIfBackground(project: project, succeeded: false, summary: "command failed")
         }
     }
 
-    private func runAndCapture(_ operation: @escaping () async throws -> CommandResult?) async {
-        isRunningCommand = true
-        lastErrorMessage = nil
-        defer { isRunningCommand = false }
+    private enum MutationError: Error { case nonZeroExit(CommandResult), other(Error) }
 
+    private func execute(_ operation: () async throws -> CommandResult) async -> Result<CommandResult, MutationError> {
+        do { return .success(try await operation()) }
+        catch CommandRunnerError.nonZeroExit(let result) { return .failure(.nonZeroExit(result)) }
+        catch { return .failure(.other(error)) }
+    }
+
+    private func setActivity(_ activity: ProjectCommandState.Activity, for id: DDEVProject.ID) {
+        commandStates[id, default: .init()].activity = activity
+    }
+
+    private func applyRefresh(_ scope: RefreshScope, for project: DDEVProject) async {
+        switch scope {
+        case .none: return
+        case .fullList: await refreshProjectsFromDDEVInBackground()
+        case .project: await reDescribe(project)
+        }
+    }
+
+    /// Re-describe a single project and patch it into `projects` in place.
+    private func reDescribe(_ project: DDEVProject) async {
+        guard let refreshed = try? await ddevService.describe(projectName: project.name) else { return }
+        guard let index = projects.firstIndex(where: { $0.id == project.id }) else { return }
+        projects[index] = projects[index].applying(details: refreshed)
+        if selectedProjectFallback?.id == project.id {
+            selectedProjectFallback = projects[index]
+        }
+        try? projectCache.saveProjects(projects)
+    }
+
+    private func summary(_ result: CommandResult) -> String {
+        let joined = result.arguments.joined(separator: " ")
+        return joined.isEmpty ? result.executable : "\(result.executable) \(joined)"
+    }
+
+    private func notifyIfBackground(project: DDEVProject, succeeded: Bool, summary: String) async {
+        guard project.id != selectedProjectID else { return }
+        await notifier.notifyCommandFinished(projectName: project.name, summary: summary, succeeded: succeeded)
+    }
+
+    /// Records a per-project result + bounded history. `expandsOutput` mirrors the old
+    /// `requestsOutputExpansion` default of `true` for mutations.
+    private func recordResult(_ result: CommandResult, for id: DDEVProject.ID, expandsOutput: Bool = true) {
+        var state = commandStates[id] ?? .init()
+        state.lastResult = result
+        state.history.append(CommandHistoryEntry(result: Self.bounded(result)))
+        if state.history.count > Self.commandHistoryLimit {
+            state.history.removeFirst(state.history.count - Self.commandHistoryLimit)
+        }
+        if expandsOutput { state.outputExpansionRequest += 1 }
+        commandStates[id] = state
+    }
+
+    /// Pipeline for operations with no single owning project (new-project creation).
+    /// Always full-list refreshes afterward.
+    private func runGlobalMutation(_ operation: @escaping () async throws -> CommandResult) async {
+        isRunningGlobalCommand = true
+        globalErrorMessage = nil
+        defer { isRunningGlobalCommand = false }
         do {
             _ = try await operation()
+            try await refreshProjectsFromDDEV()
         } catch CommandRunnerError.nonZeroExit(let result) {
-            recordCommandResult(result)
-            lastErrorMessage = "Command failed with exit code \(result.exitCode)."
+            globalErrorMessage = "Command failed with exit code \(result.exitCode)."
+            _ = result
         } catch {
-            lastErrorMessage = String(describing: error)
+            globalErrorMessage = String(describing: error)
+        }
+    }
+
+    /// Pipeline for a *read* on the selected project: sets `isReadingData`, records the
+    /// result into per-project state, never blocks lifecycle, never notifies, never caps.
+    private func runSelectedProjectRead(
+        recordOutput: Bool = false,
+        _ operation: @escaping () async throws -> CommandResult?
+    ) async {
+        guard let id = selectedProjectID else { return }
+        commandStates[id, default: .init()].isReadingData = true
+        commandStates[id, default: .init()].lastErrorMessage = nil
+        defer { commandStates[id, default: .init()].isReadingData = false }
+        do {
+            if let result = try await operation(), recordOutput {
+                recordResult(result, for: id, expandsOutput: false)
+            }
+        } catch CommandRunnerError.nonZeroExit(let result) {
+            recordResult(result, for: id, expandsOutput: false)
+            commandStates[id, default: .init()].lastErrorMessage = "Command failed with exit code \(result.exitCode)."
+        } catch {
+            commandStates[id, default: .init()].lastErrorMessage = String(describing: error)
         }
     }
 
     private func runDiagnostics(_ operation: @escaping () async throws -> [DDEVDiagnosticEntry]) async {
-        isRunningCommand = true
-        lastErrorMessage = nil
+        isRunningGlobalCommand = true
         diagnosticsErrorMessage = nil
-        defer { isRunningCommand = false }
+        defer { isRunningGlobalCommand = false }
 
         do {
             let entries = try await operation()
             diagnosticReport = DDEVDiagnosticReport(entries: entries)
-            entries.forEach { recordCommandResult($0.result, requestsOutputExpansion: false) }
         } catch let failure as DiagnosticFailure {
             if let result = failure.result {
-                recordCommandResult(result, requestsOutputExpansion: false)
                 diagnosticReport = DDEVDiagnosticReport(entries: [
                     DDEVDiagnosticEntry(check: failure.check, result: result)
                 ])
-                let message = "Command failed with exit code \(result.exitCode)."
-                lastErrorMessage = message
-                diagnosticsErrorMessage = message
+                diagnosticsErrorMessage = "Command failed with exit code \(result.exitCode)."
             } else {
-                let message = String(describing: failure.underlying)
-                lastErrorMessage = message
-                diagnosticsErrorMessage = message
+                diagnosticsErrorMessage = String(describing: failure.underlying)
             }
         } catch {
-            let message = String(describing: error)
-            lastErrorMessage = message
-            diagnosticsErrorMessage = message
+            diagnosticsErrorMessage = String(describing: error)
         }
     }
 
@@ -762,21 +855,6 @@ public final class ProjectDashboardViewModel: ObservableObject {
             throw DiagnosticFailure(check: check, result: result, underlying: CommandRunnerError.nonZeroExit(result))
         } catch {
             throw DiagnosticFailure(check: check, result: nil, underlying: error)
-        }
-    }
-
-    private func recordCommandResult(_ result: CommandResult, requestsOutputExpansion: Bool = true) {
-        lastCommandResult = result
-        commandHistory.append(CommandHistoryEntry(result: Self.bounded(result)))
-
-        // Keep history bounded so long sessions don't accumulate megabytes of stdout
-        // from `ddev logs`, `import-db`, `utility diagnose`, etc.
-        if commandHistory.count > Self.commandHistoryLimit {
-            commandHistory.removeFirst(commandHistory.count - Self.commandHistoryLimit)
-        }
-
-        if requestsOutputExpansion {
-            commandOutputExpansionRequest += 1
         }
     }
 
@@ -813,7 +891,7 @@ public final class ProjectDashboardViewModel: ObservableObject {
             let result = try await ddevService.listSnapshots(in: appRoot)
             snapshots = DDEVSnapshot.parseListOutput(result.stdout)
         } catch {
-            lastErrorMessage = String(describing: error)
+            globalErrorMessage = String(describing: error)
         }
     }
 
@@ -823,9 +901,7 @@ public final class ProjectDashboardViewModel: ObservableObject {
             installedAddOns = try DDEVAddon.parseListOutput(result.stdout)
             addonRawOutput = installedAddOns.isEmpty ? result.stdout.nilIfBlank : nil
         } catch {
-            let message = String(describing: error)
-            lastErrorMessage = message
-            addonErrorMessage = message
+            addonErrorMessage = String(describing: error)
         }
     }
 
