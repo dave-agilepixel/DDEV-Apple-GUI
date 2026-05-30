@@ -31,6 +31,7 @@ struct ProjectInspectorView: View {
     @State private var showSourceDeleteSheet = false
     @State private var showConfigEditor = false
     @State private var selectedTab: InspectorTab = .overview
+    @State private var hasUnseenLogActivity = false
 
     var body: some View {
         Group {
@@ -111,12 +112,20 @@ struct ProjectInspectorView: View {
             }
         }
         .onChange(of: viewModel.commandOutputExpansionRequest) { _, requestCount in
-            if requestCount > 0 {
-                selectedTab = .logs
+            // New command output arrived. Flag it on the Logs tab unless the user is
+            // already there (in which case there's nothing unseen to announce).
+            if requestCount > 0, selectedTab != .logs {
+                hasUnseenLogActivity = true
+            }
+        }
+        .onChange(of: selectedTab) { _, newTab in
+            if newTab == .logs {
+                hasUnseenLogActivity = false
             }
         }
         .onChange(of: viewModel.selectedProject?.id) { _, _ in
             selectedTab = .overview
+            hasUnseenLogActivity = false
         }
     }
 
@@ -143,6 +152,18 @@ struct ProjectInspectorView: View {
         }
         .pickerStyle(.segmented)
         .labelsHidden()
+        // Logs is the rightmost segment, so a dot at the top-trailing corner sits over it.
+        .overlay(alignment: .topTrailing) {
+            if hasUnseenLogActivity {
+                Circle()
+                    .fill(.red)
+                    .frame(width: 8, height: 8)
+                    .offset(x: 3, y: -3)
+                    .transition(.scale.combined(with: .opacity))
+                    .accessibilityLabel("New log activity")
+            }
+        }
+        .animation(.snappy, value: hasUnseenLogActivity)
     }
 
     @ViewBuilder
