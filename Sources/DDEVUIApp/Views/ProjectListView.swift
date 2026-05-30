@@ -134,14 +134,14 @@ private struct ProjectRow: View {
                 .frame(width: 28, alignment: .center)
 
             VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 8) {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(statusColor)
+                        .frame(width: 8, height: 8)
                     Text(project.name)
                         .font(.headline)
                         .lineLimit(1)
                     Spacer(minLength: 0)
-                    Circle()
-                        .fill(statusColor)
-                        .frame(width: 8, height: 8)
                 }
 
                 HStack(spacing: 8) {
