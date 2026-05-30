@@ -27,7 +27,7 @@ public final class UserNotificationScheduler: NSObject, NotificationScheduling, 
     private var isBundled: Bool { Bundle.main.bundleIdentifier != nil }
 
     // Internal, not part of the protocol: only the concrete type can wire itself as the
-    // delegate. Called from the app's composition root (same module) during Task 8 wiring.
+    // delegate. Called from the app's composition root (ContentView, same module).
     func activateForegroundPresentation() {
         guard isBundled else { return }
         UNUserNotificationCenter.current().delegate = self
