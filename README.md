@@ -8,6 +8,17 @@ A fun side project. I'm using it as an excuse to learn Swift and SwiftUI, and to
 
 That's it. It is not a polished product. It is not officially affiliated with DDEV. There is no roadmap, no support contract, no SLA, no release schedule.
 
+## Screenshots
+
+Click any image to view it full size.
+
+<p align="center">
+  <a href="screenshots/screenshot-1.jpg"><img src="screenshots/screenshot-1.jpg" width="45%" alt="DDEVUI — project overview" /></a>
+  <a href="screenshots/screenshot-2.jpg"><img src="screenshots/screenshot-2.jpg" width="45%" alt="DDEVUI — logs overview" /></a>
+  <a href="screenshots/screenshot-3.jpg"><img src="screenshots/screenshot-3.jpg" width="45%" alt="DDEVUI — manage project features, snapshots and global commands" /></a>
+  <a href="screenshots/screenshot-4.jpg"><img src="screenshots/screenshot-4.jpg" width="45%" alt="DDEVUI — available WordPress commands dropdown" /></a>
+</p>
+
 ## Can I use it?
 
 Yes — anyone is welcome to. **You use it entirely at your own risk.** It manages local development projects, but it can still shell out to `ddev`, start and stop containers, and touch your project state. If it breaks something, that's on you. Back up anything you care about.
