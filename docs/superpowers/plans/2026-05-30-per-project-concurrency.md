@@ -248,7 +248,8 @@ import UserNotifications
 
 /// Surfaces background-project command completions as macOS user notifications.
 public protocol NotificationScheduling: Sendable {
-    /// Requests notification authorization once, if the app is able to (no-op otherwise).
+    /// Requests notification authorization if the app is able to (no-op otherwise). The
+    /// system prompts the user at most once regardless of how often this is called.
     func requestAuthorizationIfNeeded() async
     /// Posts a completion notification for a project command.
     func notifyCommandFinished(projectName: String, summary: String, succeeded: Bool) async
@@ -270,7 +271,9 @@ public struct NoopNotificationScheduler: NotificationScheduling {
 public final class UserNotificationScheduler: NSObject, NotificationScheduling, UNUserNotificationCenterDelegate {
     private var isBundled: Bool { Bundle.main.bundleIdentifier != nil }
 
-    public func activateForegroundPresentation() {
+    // Internal, not part of the protocol: only the concrete type can wire itself as the
+    // delegate. Called from the app's composition root (same module) during Task 8 wiring.
+    func activateForegroundPresentation() {
         guard isBundled else { return }
         UNUserNotificationCenter.current().delegate = self
     }
@@ -303,6 +306,8 @@ public final class UserNotificationScheduler: NSObject, NotificationScheduling, 
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
+        // `.sound` is a no-op for success notifications because their `content.sound` is nil;
+        // only failures (which set `.default`) actually play a sound.
         completionHandler([.banner, .sound])
     }
 }
