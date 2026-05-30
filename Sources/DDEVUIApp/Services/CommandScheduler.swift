@@ -1,5 +1,3 @@
-import Foundation
-
 /// A FIFO async semaphore that bounds how many command operations run at once.
 ///
 /// Has zero DDEV knowledge — it simply hands out a fixed number of permits and releases
@@ -22,6 +20,10 @@ public actor CommandScheduler {
     var waiterCount: Int { waiters.count }
 
     /// Suspends until a permit is free. Queued callers resume strictly FIFO.
+    ///
+    /// - Important: This method does not respond to task cancellation while queued. A
+    ///   cancelled task stays suspended until a permit becomes available. Every caller that
+    ///   acquires a permit must always `release()` it (or use `run(_:)`, which guarantees this).
     public func acquire() async {
         if available > 0 {
             available -= 1
