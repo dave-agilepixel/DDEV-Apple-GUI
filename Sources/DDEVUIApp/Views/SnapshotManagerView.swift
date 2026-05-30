@@ -25,7 +25,7 @@ struct SnapshotManagerView: View {
                 }
                 .labelStyle(.iconOnly)
                 .help("Refresh snapshots")
-                .disabled(viewModel.isRunningCommand)
+                .disabled(viewModel.isSelectedProjectBusy)
             }
 
             HStack(spacing: 8) {
@@ -41,21 +41,21 @@ struct SnapshotManagerView: View {
                 } label: {
                     Label("Create", systemImage: "plus")
                 }
-                .disabled(viewModel.isRunningCommand || snapshotName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .disabled(viewModel.isSelectedProjectBusy || snapshotName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
                 Button {
                     pendingConfirmation = .restoreLatest
                 } label: {
                     Label("Restore Latest", systemImage: "clock.arrow.circlepath")
                 }
-                .disabled(viewModel.isRunningCommand)
+                .disabled(viewModel.isSelectedProjectBusy)
 
                 Button(role: .destructive) {
                     pendingConfirmation = .cleanupAll
                 } label: {
                     Label("Clean Up All", systemImage: "trash")
                 }
-                .disabled(viewModel.isRunningCommand || viewModel.snapshots.isEmpty)
+                .disabled(viewModel.isSelectedProjectBusy || viewModel.snapshots.isEmpty)
 
                 Spacer(minLength: 0)
             }
@@ -157,7 +157,7 @@ struct SnapshotManagerView: View {
         }
         .buttonStyle(.bordered)
         .controlSize(.small)
-        .disabled(viewModel.isRunningCommand)
+        .disabled(viewModel.isSelectedProjectBusy)
     }
 
     private var confirmationBinding: Binding<Bool> {

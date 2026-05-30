@@ -88,7 +88,7 @@ struct DiagnosticsView: View {
                 Spacer(minLength: 0)
             }
             .buttonStyle(.bordered)
-            .disabled(viewModel.isRunningCommand)
+            .disabled(viewModel.isRunningGlobalCommand)
 
             if let selectedProject {
                 HStack(spacing: 8) {
@@ -122,7 +122,7 @@ struct DiagnosticsView: View {
                 }
             }
             .buttonStyle(.bordered)
-            .disabled(viewModel.isRunningCommand)
+            .disabled(viewModel.isRunningGlobalCommand)
         }
     }
 

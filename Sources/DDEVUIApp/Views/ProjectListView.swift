@@ -48,7 +48,7 @@ struct ProjectListView: View {
 
     private var contentBody: some View {
         Group {
-            if let errorMessage = viewModel.lastErrorMessage, viewModel.projects.isEmpty {
+            if let errorMessage = viewModel.globalErrorMessage, viewModel.projects.isEmpty {
                 ContentUnavailableView {
                     Label("DDEV Projects Unavailable", systemImage: "exclamationmark.triangle")
                 } description: {
@@ -174,6 +174,8 @@ private struct ProjectRow: View {
         if viewModel.isBusy(project) {
             ProgressView()
                 .controlSize(.small)
+                .help(viewModel.isQueued(project) ? "Queued" : "Running")
+                .opacity(viewModel.isQueued(project) ? 0.5 : 1)
         } else {
             HStack(spacing: 4) {
                 if project.status == .running {
@@ -208,7 +210,7 @@ private struct ProjectRow: View {
         .controlSize(.small)
         .tint(tint)
         .help(title)
-        .disabled(viewModel.isRunningCommand)
+        .disabled(viewModel.isBusy(project))
     }
 
     private var statusColor: Color {

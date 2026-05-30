@@ -37,7 +37,7 @@ struct DatabaseOperationsView: View {
             .buttonStyle(.bordered)
             .controlSize(.regular)
             .labelStyle(.titleAndIcon)
-            .disabled(viewModel.isRunningCommand)
+            .disabled(viewModel.isSelectedProjectBusy)
         }
         .sheet(item: $importDraft) { draft in
             DatabaseImportSheet(project: project, draft: draft, viewModel: viewModel)

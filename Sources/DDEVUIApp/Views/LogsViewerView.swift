@@ -57,7 +57,7 @@ struct LogsViewerView: View {
             }
             .buttonStyle(.bordered)
             .controlSize(.regular)
-            .disabled(viewModel.isRunningCommand)
+            .disabled(viewModel.isSelectedProjectBusy)
 
             if project.status != .running {
                 Label("Start the project before refreshing logs.", systemImage: "pause.circle")
@@ -71,7 +71,7 @@ struct LogsViewerView: View {
                     .foregroundStyle(.red)
             }
 
-            if viewModel.isRunningCommand {
+            if viewModel.selectedProjectState.isReadingData {
                 ProgressView("Loading logs...")
                     .controlSize(.small)
             } else if logText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -100,7 +100,7 @@ struct LogsViewerView: View {
     }
 
     private var canRefresh: Bool {
-        project.status == .running && !viewModel.isRunningCommand
+        project.status == .running && !viewModel.selectedProjectState.isReadingData
     }
 
     private var logText: String {

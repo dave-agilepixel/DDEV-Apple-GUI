@@ -46,7 +46,7 @@ struct FrameworkCommandLauncherView: View {
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
-                        .disabled(viewModel.isRunningCommand)
+                        .disabled(viewModel.isSelectedProjectBusy)
                     }
                     Spacer(minLength: 0)
                 }

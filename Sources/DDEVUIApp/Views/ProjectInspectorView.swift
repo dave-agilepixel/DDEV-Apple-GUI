@@ -74,7 +74,7 @@ struct ProjectInspectorView: View {
                         } label: {
                             Label("More", systemImage: "ellipsis.circle")
                         }
-                        .disabled(viewModel.isRunningCommand)
+                        .disabled(viewModel.isSelectedProjectBusy)
                     }
                 }
             } else {
@@ -111,7 +111,7 @@ struct ProjectInspectorView: View {
                 ProjectConfigEditorView(project: project, viewModel: viewModel)
             }
         }
-        .onChange(of: viewModel.commandOutputExpansionRequest) { _, requestCount in
+        .onChange(of: viewModel.selectedProjectState.outputExpansionRequest) { _, requestCount in
             // New command output arrived. Flag it on the Logs tab unless the user is
             // already there (in which case there's nothing unseen to announce).
             if requestCount > 0, selectedTab != .logs {
@@ -278,7 +278,7 @@ struct ProjectInspectorView: View {
         }
         .labelStyle(.titleAndIcon)
         .buttonStyle(.bordered)
-        .disabled(viewModel.isRunningCommand)
+        .disabled(viewModel.isSelectedProjectBusy)
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
         .glassEffect(in: .rect(cornerRadius: 14))
@@ -453,7 +453,7 @@ private struct OverviewTabContent: View {
                         }
                         .menuStyle(.borderlessButton)
                         .fixedSize()
-                        .disabled(viewModel.isRunningCommand)
+                        .disabled(viewModel.isSelectedProjectBusy)
                     }
                 })
 
@@ -485,7 +485,7 @@ private struct OverviewTabContent: View {
                         Label("Edit Config", systemImage: "slider.horizontal.3")
                     }
                     .buttonStyle(.bordered)
-                    .disabled(viewModel.isRunningCommand)
+                    .disabled(viewModel.isSelectedProjectBusy)
                 }
             }
         }
@@ -574,10 +574,10 @@ private struct LogsTabContent: View {
 
     var body: some View {
         let hasAnyActivity =
-            viewModel.lastCommandResult != nil ||
-            viewModel.lastErrorMessage != nil ||
-            viewModel.isRunningCommand ||
-            !viewModel.commandHistory.isEmpty
+            viewModel.selectedProjectState.lastResult != nil ||
+            viewModel.selectedProjectState.lastErrorMessage != nil ||
+            viewModel.isSelectedProjectBusy ||
+            !viewModel.selectedProjectState.history.isEmpty
 
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
@@ -595,16 +595,16 @@ private struct LogsTabContent: View {
     }
 
     private var commandHistorySection: some View {
-        InspectorSection(viewModel.commandHistory.count > 1 ? "Command History" : "Last Command") {
+        InspectorSection(viewModel.selectedProjectState.history.count > 1 ? "Command History" : "Last Command") {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 10) {
-                    if viewModel.isRunningCommand {
+                    if viewModel.isSelectedProjectBusy {
                         ProgressView()
                             .controlSize(.small)
-                    } else if viewModel.lastErrorMessage != nil {
+                    } else if viewModel.selectedProjectState.lastErrorMessage != nil {
                         Image(systemName: "xmark.octagon.fill")
                             .foregroundStyle(.red)
-                    } else if let result = viewModel.lastCommandResult {
+                    } else if let result = viewModel.selectedProjectState.lastResult {
                         Image(systemName: result.succeeded ? "checkmark.circle.fill" : "xmark.octagon.fill")
                             .foregroundStyle(result.succeeded ? .green : .red)
                     }
@@ -612,9 +612,9 @@ private struct LogsTabContent: View {
                 }
 
                 CommandOutputView(
-                    result: viewModel.lastCommandResult,
-                    history: viewModel.commandHistory,
-                    errorMessage: viewModel.lastErrorMessage
+                    result: viewModel.selectedProjectState.lastResult,
+                    history: viewModel.selectedProjectState.history,
+                    errorMessage: viewModel.selectedProjectState.lastErrorMessage
                 )
             }
         }

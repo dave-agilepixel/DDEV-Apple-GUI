@@ -23,7 +23,7 @@ struct AddonManagerView: View {
                 }
                 .labelStyle(.iconOnly)
                 .help("Refresh installed add-ons")
-                .disabled(viewModel.isRunningCommand)
+                .disabled(viewModel.isSelectedProjectBusy)
             }
 
             if viewModel.addOnRestartRecommended {
@@ -70,7 +70,7 @@ struct AddonManagerView: View {
                 Spacer(minLength: 0)
             }
             .buttonStyle(.bordered)
-            .disabled(viewModel.isRunningCommand)
+            .disabled(viewModel.isSelectedProjectBusy)
 
             if let addonErrorMessage = viewModel.addonErrorMessage {
                 Label(addonErrorMessage, systemImage: "xmark.octagon.fill")
@@ -122,7 +122,7 @@ struct AddonManagerView: View {
                 AddonRow(addon: addon) {
                     pendingRemoval = addon
                 }
-                .disabled(viewModel.isRunningCommand)
+                .disabled(viewModel.isSelectedProjectBusy)
             }
         }
     }
@@ -163,7 +163,7 @@ private struct AddonSearchSheet: View {
                 } label: {
                     Label("Search", systemImage: "magnifyingglass")
                 }
-                .disabled(viewModel.isRunningCommand)
+                .disabled(viewModel.isSelectedProjectBusy)
             }
 
             if let addonErrorMessage = viewModel.addonErrorMessage {
@@ -185,7 +185,7 @@ private struct AddonSearchSheet: View {
                             addon: addon,
                             actionTitle: installedRepositories.contains(addon.repository) ? "Installed" : "Install",
                             actionSystemImage: installedRepositories.contains(addon.repository) ? "checkmark" : "plus",
-                            actionDisabled: installedRepositories.contains(addon.repository) || viewModel.isRunningCommand
+                            actionDisabled: installedRepositories.contains(addon.repository) || viewModel.isSelectedProjectBusy
                         ) {
                             pendingInstall = addon
                         }
