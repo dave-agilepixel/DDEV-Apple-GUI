@@ -2,8 +2,51 @@ import SwiftUI
 
 struct ProjectListView: View {
     @ObservedObject var viewModel: ProjectDashboardViewModel
+    @FocusState private var searchFocused: Bool
 
     var body: some View {
+        VStack(spacing: 0) {
+            if !viewModel.projects.isEmpty {
+                searchBar
+                Divider()
+            }
+            contentBody
+        }
+        .navigationTitle(viewModel.selectedSidebarItem.title)
+    }
+
+    private var searchBar: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            TextField("Filter projects", text: $viewModel.searchText)
+                .textFieldStyle(.plain)
+                .focused($searchFocused)
+                .onSubmit { searchFocused = false }
+            if !viewModel.searchText.isEmpty {
+                Button {
+                    viewModel.searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.tertiary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear search")
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(.quaternary, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background {
+            Button("") { searchFocused = true }
+                .keyboardShortcut("f", modifiers: .command)
+                .hidden()
+        }
+    }
+
+    private var contentBody: some View {
         Group {
             if let errorMessage = viewModel.lastErrorMessage, viewModel.projects.isEmpty {
                 ContentUnavailableView {
@@ -47,8 +90,6 @@ struct ProjectListView: View {
                 .listStyle(.inset)
             }
         }
-        .navigationTitle(viewModel.selectedSidebarItem.title)
-        .searchable(text: $viewModel.searchText, placement: .toolbar, prompt: "Filter projects")
     }
 
     private var projectSelection: Binding<DDEVProject.ID?> {
