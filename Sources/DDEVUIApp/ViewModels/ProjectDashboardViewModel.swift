@@ -261,6 +261,7 @@ public final class ProjectDashboardViewModel: ObservableObject {
 
         let outcome = await execute {
             let configResult = try await self.ddevService.setPHPVersion(version, in: selectedProject.appRoot)
+            // PHP changes surface via the re-describe, not the Logs-tab output badge (matches prior behavior).
             self.recordResult(configResult, for: id, expandsOutput: false)
             if selectedProject.status == .running {
                 let restartResult = try await self.ddevService.restart(projectName: selectedProject.name)
@@ -272,17 +273,7 @@ public final class ProjectDashboardViewModel: ObservableObject {
         await scheduler.release()
         setActivity(.idle, for: id)
 
-        switch outcome {
-        case .success(let result):
-            await reDescribe(selectedProject)
-            await notifyIfBackground(project: selectedProject, succeeded: true, summary: summary(result))
-        case .failure(.nonZeroExit(let result)):
-            commandStates[id, default: .init()].lastErrorMessage = "Command failed with exit code \(result.exitCode)."
-            await notifyIfBackground(project: selectedProject, succeeded: false, summary: summary(result))
-        case .failure(.other(let error)):
-            commandStates[id, default: .init()].lastErrorMessage = String(describing: error)
-            await notifyIfBackground(project: selectedProject, succeeded: false, summary: "command failed")
-        }
+        await finish(outcome, for: selectedProject, refresh: .project, recordResultOnComplete: false)
     }
 
     public func state(for id: DDEVProject.ID) -> ProjectCommandState {
@@ -707,6 +698,7 @@ public final class ProjectDashboardViewModel: ObservableObject {
         guard !isBusy(project) else { return } // one command per project at a time
 
         setActivity(.queued, for: id)
+        // Manual acquire/release (not scheduler.run) so the permit frees before the re-describe read.
         await scheduler.acquire()              // resumes on MainActor
         setActivity(.running, for: id)
 
@@ -714,15 +706,26 @@ public final class ProjectDashboardViewModel: ObservableObject {
         await scheduler.release()              // free the slot before the read-y describe
         setActivity(.idle, for: id)
 
+        await finish(outcome, for: project, refresh: refresh)
+    }
+
+    /// Shared tail for mutation pipelines: records the result (unless the caller already
+    /// recorded each step), applies the refresh scope, and fires a background notification.
+    private func finish(
+        _ outcome: Result<CommandResult, MutationError>,
+        for project: DDEVProject,
+        refresh: RefreshScope,
+        recordResultOnComplete: Bool = true
+    ) async {
+        let id = project.id
         switch outcome {
         case .success(let result):
-            recordResult(result, for: id)
+            if recordResultOnComplete { recordResult(result, for: id) }
             await applyRefresh(refresh, for: project)
             await notifyIfBackground(project: project, succeeded: true, summary: summary(result))
         case .failure(.nonZeroExit(let result)):
-            recordResult(result, for: id)
-            commandStates[id, default: .init()].lastErrorMessage =
-                "Command failed with exit code \(result.exitCode)."
+            if recordResultOnComplete { recordResult(result, for: id) }
+            commandStates[id, default: .init()].lastErrorMessage = "Command failed with exit code \(result.exitCode)."
             await notifyIfBackground(project: project, succeeded: false, summary: summary(result))
         case .failure(.other(let error)):
             commandStates[id, default: .init()].lastErrorMessage = String(describing: error)
@@ -795,7 +798,6 @@ public final class ProjectDashboardViewModel: ObservableObject {
             try await refreshProjectsFromDDEV()
         } catch CommandRunnerError.nonZeroExit(let result) {
             globalErrorMessage = "Command failed with exit code \(result.exitCode)."
-            _ = result
         } catch {
             globalErrorMessage = String(describing: error)
         }
