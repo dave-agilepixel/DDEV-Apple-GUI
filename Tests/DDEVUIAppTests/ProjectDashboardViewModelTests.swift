@@ -11,7 +11,7 @@ final class ProjectDashboardViewModelTests: XCTestCase {
 
         XCTAssertEqual(viewModel.projects, [.sampleWordPress])
         XCTAssertEqual(viewModel.selectedProject, .sampleWordPress)
-        XCTAssertNil(viewModel.lastErrorMessage)
+        XCTAssertNil(viewModel.globalErrorMessage)
     }
 
     func testSearchFiltersProjectsByNamePathAndType() {
@@ -92,8 +92,8 @@ final class ProjectDashboardViewModelTests: XCTestCase {
 
         XCTAssertEqual(viewModel.projects, [.sampleWordPress])
         XCTAssertEqual(viewModel.selectedProject, .sampleWordPress)
-        XCTAssertNil(viewModel.lastErrorMessage)
-        XCTAssertFalse(viewModel.isRunningCommand)
+        XCTAssertNil(viewModel.globalErrorMessage)
+        XCTAssertFalse(viewModel.isRunningGlobalCommand)
     }
 
     func testInitialRefreshFailureSurfacesErrorWhenNoCacheExists() async {
@@ -104,8 +104,8 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         await viewModel.loadCachedProjectsThenRefresh()
 
         XCTAssertTrue(viewModel.projects.isEmpty)
-        XCTAssertNotNil(viewModel.lastErrorMessage)
-        XCTAssertFalse(viewModel.isRunningCommand)
+        XCTAssertNotNil(viewModel.globalErrorMessage)
+        XCTAssertFalse(viewModel.isRunningGlobalCommand)
     }
 
     func testRefreshPreservesSelectedProjectWhenCurrentSelectionIsFilteredOut() async {
@@ -134,8 +134,8 @@ final class ProjectDashboardViewModelTests: XCTestCase {
 
         await viewModel.startSelectedProject()
 
-        XCTAssertEqual(service.commands, ["start:aqua-pura", "list", "describe:aqua-pura"])
-        XCTAssertEqual(viewModel.lastCommandResult?.succeeded, true)
+        XCTAssertEqual(service.commands, ["start:aqua-pura", "describe:aqua-pura"])
+        XCTAssertEqual(viewModel.selectedProjectState.lastResult?.succeeded, true)
     }
 
     func testRowActionTargetsGivenProjectNotSelection() async {
@@ -159,9 +159,7 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         await viewModel.launchDatabaseTool(.tablePlus)
 
         XCTAssertEqual(service.commands, [
-            "db:tableplus:/Users/dave/Development/agilepixel/aqua-pura",
-            "list",
-            "describe:aqua-pura"
+            "db:tableplus:/Users/dave/Development/agilepixel/aqua-pura"
         ])
     }
 
@@ -188,9 +186,7 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         await viewModel.launchDefaultDatabaseTool()
 
         XCTAssertEqual(service.commands, [
-            "db:tableplus:/Users/dave/Development/agilepixel/aqua-pura",
-            "list",
-            "describe:aqua-pura"
+            "db:tableplus:/Users/dave/Development/agilepixel/aqua-pura"
         ])
     }
 
@@ -239,13 +235,10 @@ final class ProjectDashboardViewModelTests: XCTestCase {
 
         XCTAssertEqual(service.commands, [
             "wp-core:/Users/dave/Development/agilepixel/aqua-pura",
-            "list",
             "describe:aqua-pura",
             "wp-plugins:/Users/dave/Development/agilepixel/aqua-pura",
-            "list",
             "describe:aqua-pura",
             "wp-themes:/Users/dave/Development/agilepixel/aqua-pura",
-            "list",
             "describe:aqua-pura"
         ])
     }
@@ -278,11 +271,12 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         await viewModel.runFrameworkCommandForSelectedProject(command)
 
         XCTAssertEqual(service.commands, [
-            "project-command:/Users/dave/Development/agilepixel/agilebugs:artisan,cache:clear"
+            "project-command:/Users/dave/Development/agilepixel/agilebugs:artisan,cache:clear",
+            "describe:agilebugs"
         ])
-        XCTAssertEqual(viewModel.lastCommandResult?.arguments, ["artisan", "cache:clear"])
-        XCTAssertEqual(viewModel.commandHistory.map(\.result.arguments), [["artisan", "cache:clear"]])
-        XCTAssertEqual(viewModel.commandOutputExpansionRequest, 1)
+        XCTAssertEqual(viewModel.selectedProjectState.lastResult?.arguments, ["artisan", "cache:clear"])
+        XCTAssertEqual(viewModel.selectedProjectState.history.map(\.result.arguments), [["artisan", "cache:clear"]])
+        XCTAssertEqual(viewModel.selectedProjectState.outputExpansionRequest, 1)
     }
 
     func testDeleteDDEVDataRefreshesAfterCommand() async {
@@ -319,7 +313,6 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertEqual(service.commands, [
             "php:8.3:/Users/dave/Development/agilepixel/aqua-pura",
             "restart:aqua-pura",
-            "list",
             "describe:aqua-pura"
         ])
     }
@@ -331,11 +324,11 @@ final class ProjectDashboardViewModelTests: XCTestCase {
 
         await viewModel.setPHPVersionForSelectedProject("8.3")
 
-        XCTAssertEqual(viewModel.commandHistory.map(\.result.arguments), [
+        XCTAssertEqual(viewModel.selectedProjectState.history.map(\.result.arguments), [
             ["config", "--php-version=8.3"],
             ["restart", "aqua-pura"]
         ])
-        XCTAssertEqual(viewModel.lastCommandResult?.arguments, ["restart", "aqua-pura"])
+        XCTAssertEqual(viewModel.selectedProjectState.lastResult?.arguments, ["restart", "aqua-pura"])
     }
 
     func testSetPHPVersionDoesNotRestartPausedProject() async {
@@ -347,7 +340,6 @@ final class ProjectDashboardViewModelTests: XCTestCase {
 
         XCTAssertEqual(service.commands, [
             "php:8.2:/Users/dave/Development/agilepixel/agilebugs",
-            "list",
             "describe:agilebugs"
         ])
     }
@@ -367,11 +359,10 @@ final class ProjectDashboardViewModelTests: XCTestCase {
 
         XCTAssertEqual(service.commands, [
             "import:/Users/dave/Development/agilepixel/aqua-pura:/Users/dave/Downloads/db.sql.gz:legacy::false",
-            "list",
             "describe:aqua-pura"
         ])
-        XCTAssertEqual(viewModel.lastCommandResult?.succeeded, true)
-        XCTAssertEqual(viewModel.commandOutputExpansionRequest, 1)
+        XCTAssertEqual(viewModel.selectedProjectState.lastResult?.succeeded, true)
+        XCTAssertEqual(viewModel.selectedProjectState.outputExpansionRequest, 1)
     }
 
     func testExportDatabaseUsesSelectedProjectFolderWithoutRefreshing() async {
@@ -390,8 +381,8 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertEqual(service.commands, [
             "export:/Users/dave/Development/agilepixel/aqua-pura:/Users/dave/Backups/db.sql.xz:legacy:xz"
         ])
-        XCTAssertEqual(viewModel.lastCommandResult?.succeeded, true)
-        XCTAssertEqual(viewModel.commandOutputExpansionRequest, 1)
+        XCTAssertEqual(viewModel.selectedProjectState.lastResult?.succeeded, true)
+        XCTAssertEqual(viewModel.selectedProjectState.outputExpansionRequest, 1)
     }
 
     func testFailedImportKeepsCommandOutputVisible() async {
@@ -412,9 +403,9 @@ final class ProjectDashboardViewModelTests: XCTestCase {
 
         await viewModel.importDatabase(DDEVDatabaseImportOptions(filePath: "/Users/dave/Downloads/bad.sql"))
 
-        XCTAssertEqual(viewModel.lastCommandResult, failure)
-        XCTAssertEqual(viewModel.lastErrorMessage, "Command failed with exit code 1.")
-        XCTAssertEqual(viewModel.commandOutputExpansionRequest, 1)
+        XCTAssertEqual(viewModel.selectedProjectState.lastResult, failure)
+        XCTAssertEqual(viewModel.selectedProjectState.lastErrorMessage, "Command failed with exit code 1.")
+        XCTAssertEqual(viewModel.selectedProjectState.outputExpansionRequest, 1)
     }
 
     func testEachCompletedCommandRequestsOutputExpansion() async {
@@ -425,7 +416,7 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         await viewModel.exportDatabase(DDEVDatabaseExportOptions(outputPath: "/Users/dave/Backups/first.sql.gz"))
         await viewModel.exportDatabase(DDEVDatabaseExportOptions(outputPath: "/Users/dave/Backups/second.sql.gz"))
 
-        XCTAssertEqual(viewModel.commandOutputExpansionRequest, 2)
+        XCTAssertEqual(viewModel.selectedProjectState.outputExpansionRequest, 2)
     }
 
     func testFailedImportIsRecordedInCommandHistory() async {
@@ -446,7 +437,7 @@ final class ProjectDashboardViewModelTests: XCTestCase {
 
         await viewModel.importDatabase(DDEVDatabaseImportOptions(filePath: "/Users/dave/Downloads/bad.sql"))
 
-        XCTAssertEqual(viewModel.commandHistory.map(\.result), [failure])
+        XCTAssertEqual(viewModel.selectedProjectState.history.map(\.result), [failure])
     }
 
     func testLoadSnapshotsUsesSelectedProjectFolder() async {
@@ -479,8 +470,8 @@ final class ProjectDashboardViewModelTests: XCTestCase {
             "snapshot:/Users/dave/Development/agilepixel/aqua-pura:before-upgrade",
             "snapshot-list:/Users/dave/Development/agilepixel/aqua-pura"
         ])
-        XCTAssertEqual(viewModel.lastCommandResult?.arguments, ["snapshot"])
-        XCTAssertEqual(viewModel.commandOutputExpansionRequest, 1)
+        XCTAssertEqual(viewModel.selectedProjectState.lastResult?.arguments, ["snapshot"])
+        XCTAssertEqual(viewModel.selectedProjectState.outputExpansionRequest, 1)
         XCTAssertEqual(viewModel.snapshots.count, 1)
     }
 
@@ -493,12 +484,11 @@ final class ProjectDashboardViewModelTests: XCTestCase {
 
         XCTAssertEqual(service.commands, [
             "snapshot-restore:/Users/dave/Development/agilepixel/aqua-pura:before-upgrade",
-            "list",
             "describe:aqua-pura"
         ])
-        XCTAssertEqual(viewModel.lastCommandResult?.arguments, ["snapshot", "restore", "before-upgrade"])
-        XCTAssertEqual(viewModel.commandOutputExpansionRequest, 1)
-        XCTAssertEqual(viewModel.commandHistory.map(\.result.arguments), [["snapshot", "restore", "before-upgrade"]])
+        XCTAssertEqual(viewModel.selectedProjectState.lastResult?.arguments, ["snapshot", "restore", "before-upgrade"])
+        XCTAssertEqual(viewModel.selectedProjectState.outputExpansionRequest, 1)
+        XCTAssertEqual(viewModel.selectedProjectState.history.map(\.result.arguments), [["snapshot", "restore", "before-upgrade"]])
     }
 
     func testRestoreLatestSnapshotUsesExplicitServiceMethodAndRefreshes() async {
@@ -510,10 +500,9 @@ final class ProjectDashboardViewModelTests: XCTestCase {
 
         XCTAssertEqual(service.commands, [
             "snapshot-restore-latest:/Users/dave/Development/agilepixel/aqua-pura",
-            "list",
             "describe:aqua-pura"
         ])
-        XCTAssertEqual(viewModel.lastCommandResult?.arguments, ["snapshot", "restore", "--latest"])
+        XCTAssertEqual(viewModel.selectedProjectState.lastResult?.arguments, ["snapshot", "restore", "--latest"])
     }
 
     func testCleanupSnapshotsUsesExplicitCleanupMethodAndRefreshesSnapshotList() async {
@@ -527,7 +516,7 @@ final class ProjectDashboardViewModelTests: XCTestCase {
             "snapshot-cleanup:/Users/dave/Development/agilepixel/aqua-pura",
             "snapshot-list:/Users/dave/Development/agilepixel/aqua-pura"
         ])
-        XCTAssertEqual(viewModel.lastCommandResult?.arguments, ["snapshot", "--cleanup", "-y"])
+        XCTAssertEqual(viewModel.selectedProjectState.lastResult?.arguments, ["snapshot", "--cleanup", "-y"])
     }
 
     func testCleanupSingleSnapshotUsesNamedCleanupMethod() async {
@@ -541,7 +530,7 @@ final class ProjectDashboardViewModelTests: XCTestCase {
             "snapshot-cleanup-one:/Users/dave/Development/agilepixel/aqua-pura:before-upgrade",
             "snapshot-list:/Users/dave/Development/agilepixel/aqua-pura"
         ])
-        XCTAssertEqual(viewModel.lastCommandResult?.arguments, ["snapshot", "--cleanup", "--name=before-upgrade", "-y"])
+        XCTAssertEqual(viewModel.selectedProjectState.lastResult?.arguments, ["snapshot", "--cleanup", "--name=before-upgrade", "-y"])
     }
 
     func testLoadLogsUsesSelectedProjectAndStoresOutputWithoutExpandingCommandPanel() async {
@@ -557,9 +546,9 @@ final class ProjectDashboardViewModelTests: XCTestCase {
             "logs:/Users/dave/Development/agilepixel/aqua-pura:aqua-pura:db:250:true"
         ])
         XCTAssertEqual(viewModel.projectLogsResult?.stdout, "web_1  | ready\n")
-        XCTAssertEqual(viewModel.lastCommandResult?.arguments, ["logs", "aqua-pura"])
-        XCTAssertEqual(viewModel.commandHistory.map(\.result.arguments), [["logs", "aqua-pura"]])
-        XCTAssertEqual(viewModel.commandOutputExpansionRequest, 0)
+        XCTAssertEqual(viewModel.selectedProjectState.lastResult?.arguments, ["logs", "aqua-pura"])
+        XCTAssertEqual(viewModel.selectedProjectState.history.map(\.result.arguments), [["logs", "aqua-pura"]])
+        XCTAssertEqual(viewModel.selectedProjectState.outputExpansionRequest, 0)
     }
 
     func testAutoLoadLogsLoadsForRunningSelectedProject() async {
@@ -615,7 +604,7 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.projectConfig?.phpVersion, "8.4")
         XCTAssertEqual(viewModel.projectConfig?.databaseType, .mariadb)
         XCTAssertNil(viewModel.projectConfigErrorMessage)
-        XCTAssertNil(viewModel.lastCommandResult)
+        XCTAssertNil(viewModel.selectedProjectState.lastResult)
     }
 
     func testApplyProjectConfigChangeRecordsCommandAndPromptsRestartForRunningProject() async {
@@ -628,8 +617,8 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertEqual(service.commands, [
             "config-change:/Users/dave/Development/agilepixel/aqua-pura:--nodejs-version=22"
         ])
-        XCTAssertEqual(viewModel.lastCommandResult?.arguments, ["config", "--nodejs-version=22"])
-        XCTAssertEqual(viewModel.commandOutputExpansionRequest, 1)
+        XCTAssertEqual(viewModel.selectedProjectState.lastResult?.arguments, ["config", "--nodejs-version=22"])
+        XCTAssertEqual(viewModel.selectedProjectState.outputExpansionRequest, 1)
         XCTAssertTrue(viewModel.projectConfigRestartRecommended)
     }
 
@@ -699,9 +688,9 @@ final class ProjectDashboardViewModelTests: XCTestCase {
             "addon-remove:/Users/dave/Development/agilepixel/aqua-pura:aqua-pura:ddev-redis",
             "addon-list:/Users/dave/Development/agilepixel/aqua-pura:aqua-pura"
         ])
-        XCTAssertEqual(viewModel.lastCommandResult?.arguments, ["add-on", "remove", "ddev-redis"])
+        XCTAssertEqual(viewModel.selectedProjectState.lastResult?.arguments, ["add-on", "remove", "ddev-redis"])
         XCTAssertTrue(viewModel.addOnRestartRecommended)
-        XCTAssertEqual(viewModel.commandOutputExpansionRequest, 2)
+        XCTAssertEqual(viewModel.selectedProjectState.outputExpansionRequest, 2)
     }
 
     func testAddOnCommandFailuresSurfacePanelError() async {
@@ -727,7 +716,7 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         await viewModel.searchAddOnsForSelectedProject(query: "redis")
 
         XCTAssertEqual(viewModel.addonErrorMessage, "Command failed with exit code 1.")
-        XCTAssertEqual(viewModel.lastCommandResult?.stderr, "GitHub API rate limit exceeded")
+        XCTAssertEqual(viewModel.selectedProjectState.lastResult?.stderr, "GitHub API rate limit exceeded")
     }
 
     func testGlobalDiagnosticsRunWithoutSelectedProject() async {
@@ -775,7 +764,7 @@ final class ProjectDashboardViewModelTests: XCTestCase {
             "mutagen:/Users/dave/Development/agilepixel/aqua-pura:reset"
         ])
         XCTAssertEqual(viewModel.diagnosticReport.entries.map(\.check), [.mutagenReset])
-        XCTAssertEqual(viewModel.lastCommandResult?.arguments, ["mutagen", "reset"])
+        XCTAssertEqual(viewModel.diagnosticReport.entries.first?.result.arguments, ["mutagen", "reset"])
     }
 
     func testEnableXHGuiRunsInSelectedProjectAndRefreshes() async {
@@ -787,10 +776,9 @@ final class ProjectDashboardViewModelTests: XCTestCase {
 
         XCTAssertEqual(service.commands, [
             "xhgui:/Users/dave/Development/agilepixel/aqua-pura:on",
-            "list",
             "describe:aqua-pura"
         ])
-        XCTAssertEqual(viewModel.lastCommandResult?.arguments, ["xhgui", "on"])
+        XCTAssertEqual(viewModel.selectedProjectState.lastResult?.arguments, ["xhgui", "on"])
     }
 }
 
