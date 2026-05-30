@@ -85,16 +85,20 @@ final class CommandSchedulerTests: XCTestCase {
 
         await scheduler.acquire()              // take the only permit
 
-        // Queue three waiters in a known order.
-        let waiters = (0..<3).map { index in
-            Task {
+        // Enqueue three waiters in a *deterministic* order. Unstructured `Task {}` start
+        // order is not guaranteed, so we only launch waiter N+1 once waiter N has actually
+        // been appended to the scheduler's queue (observed via `waiterCount`).
+        var waiters: [Task<Void, Never>] = []
+        for index in 0..<3 {
+            waiters.append(Task {
                 await scheduler.acquire()
                 await order.record(index)
                 await scheduler.release()
-            }
+            })
+            while await scheduler.waiterCount < index + 1 { await Task.yield() }
         }
-        // Give the waiters time to enqueue, then release one at a time.
-        for _ in 0..<10 { await Task.yield() }
+
+        // One release hands the permit to waiter 0, which cascades FIFO through 1 then 2.
         await scheduler.release()
         for waiter in waiters { _ = await waiter.value }
 
@@ -176,6 +180,10 @@ public actor CommandScheduler {
         self.maxConcurrent = maxConcurrent
         self.available = maxConcurrent
     }
+
+    /// Number of callers currently suspended waiting for a permit. Exposed for tests so
+    /// they can enqueue waiters in a deterministic order.
+    var waiterCount: Int { waiters.count }
 
     /// Suspends until a permit is free. Queued callers resume strictly FIFO.
     public func acquire() async {
