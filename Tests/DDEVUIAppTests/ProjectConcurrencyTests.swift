@@ -283,6 +283,7 @@ private actor GatedDDEVService: DDEVServicing {
     func utilityCheckDBMatch(in appRoot: String) async throws -> CommandResult { recorded.append("check-db-match"); return runImmediate() }
     func mutagen(_ command: DDEVMutagenCommand, in appRoot: String) async throws -> CommandResult { recorded.append("mutagen"); return runImmediate() }
     func xhgui(_ command: DDEVXHGuiCommand, in appRoot: String) async throws -> CommandResult { try await runGated("xhgui") }
+    func xdebug(_ command: DDEVXdebugCommand, in appRoot: String) async throws -> CommandResult { try await runGated("xdebug") }
     func updateWordPressCore(in appRoot: String) async throws -> CommandResult { try await runGated("wp-core") }
     func updateWordPressPlugins(in appRoot: String) async throws -> CommandResult { try await runGated("wp-plugins") }
     func updateWordPressThemes(in appRoot: String) async throws -> CommandResult { try await runGated("wp-themes") }

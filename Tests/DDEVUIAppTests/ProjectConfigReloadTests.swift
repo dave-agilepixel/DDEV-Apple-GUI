@@ -90,6 +90,7 @@ private final class SuspendedConfigDDEVService: DDEVServicing, @unchecked Sendab
     func utilityCheckDBMatch(in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
     func mutagen(_ command: DDEVMutagenCommand, in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
     func xhgui(_ command: DDEVXHGuiCommand, in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
+    func xdebug(_ command: DDEVXdebugCommand, in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
     func updateWordPressCore(in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
     func updateWordPressPlugins(in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
     func updateWordPressThemes(in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }

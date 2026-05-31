@@ -417,6 +417,21 @@ final class DDEVCommandServiceTests: XCTestCase {
         XCTAssertTrue(runner.commands.isEmpty)
     }
 
+    func testXdebugCommandsRunInProjectDirectory() async throws {
+        let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
+        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
+
+        _ = try await service.xdebug(.on, in: "/Users/dave/site")
+        _ = try await service.xdebug(.off, in: "/Users/dave/site")
+        _ = try await service.xdebug(.status, in: "/Users/dave/site")
+
+        XCTAssertEqual(runner.commands, [
+            CommandSpec(executable: "ddev", arguments: ["xdebug", "on"], workingDirectory: "/Users/dave/site"),
+            CommandSpec(executable: "ddev", arguments: ["xdebug", "off"], workingDirectory: "/Users/dave/site"),
+            CommandSpec(executable: "ddev", arguments: ["xdebug", "status"], workingDirectory: "/Users/dave/site")
+        ])
+    }
+
     func testXHGuiCommandsRunInProjectDirectory() async throws {
         let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
         let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
