@@ -46,9 +46,11 @@ struct ProjectInspectorView: View {
                 }
                 .task(id: project.id) {
                     // Pull the live describe detail (Xdebug, DB info, services) and run the DB-drift
-                    // check once per selection, independent of which tab is showing.
-                    await viewModel.loadDetailsForSelectedProject()
-                    await viewModel.checkDBMatchForSelectedProject()
+                    // check once per selection, independent of which tab is showing. The two are
+                    // independent subprocesses, so run them concurrently to keep selection snappy.
+                    async let details: Void = viewModel.loadDetailsForSelectedProject()
+                    async let driftCheck: Void = viewModel.checkDBMatchForSelectedProject()
+                    _ = await (details, driftCheck)
                 }
                 .toolbar {
                     ToolbarItem(placement: .primaryAction) {
