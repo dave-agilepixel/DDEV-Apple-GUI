@@ -12,10 +12,7 @@ struct DatabaseOperationsView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("Database")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                    .kerning(0.5)
+                    .sectionHeaderStyle()
                 Spacer()
             }
 

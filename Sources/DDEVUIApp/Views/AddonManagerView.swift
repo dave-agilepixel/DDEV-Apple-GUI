@@ -11,10 +11,7 @@ struct AddonManagerView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("Add-ons")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                    .kerning(0.5)
+                    .sectionHeaderStyle()
                 Spacer()
                 Button {
                     Task { await viewModel.loadInstalledAddOnsForSelectedProject() }
@@ -97,14 +94,7 @@ struct AddonManagerView: View {
         }
         .confirmationDialog(
             "Remove add-on?",
-            isPresented: Binding(
-                get: { pendingRemoval != nil },
-                set: { isPresented in
-                    if !isPresented {
-                        pendingRemoval = nil
-                    }
-                }
-            ),
+            isPresented: .isPresent($pendingRemoval),
             presenting: pendingRemoval
         ) { addon in
             Button("Remove \(addon.repository)", role: .destructive) {
@@ -204,14 +194,7 @@ private struct AddonSearchSheet: View {
         .frame(width: 640, height: 560)
         .confirmationDialog(
             "Install add-on?",
-            isPresented: Binding(
-                get: { pendingInstall != nil },
-                set: { isPresented in
-                    if !isPresented {
-                        pendingInstall = nil
-                    }
-                }
-            ),
+            isPresented: .isPresent($pendingInstall),
             presenting: pendingInstall
         ) { addon in
             Button("Install \(addon.repository)") {

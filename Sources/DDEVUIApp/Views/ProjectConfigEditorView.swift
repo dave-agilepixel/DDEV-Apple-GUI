@@ -362,10 +362,7 @@ private struct ConfigEditorSection<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(title)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-                .kerning(0.5)
+                .sectionHeaderStyle()
 
             VStack(spacing: 10) {
                 content

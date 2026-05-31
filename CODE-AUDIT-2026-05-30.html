@@ -660,7 +660,7 @@ ForEach(results) { entry <span class="tok-k">in</span> ... }</code></pre>
     </div>
   </details>
 
-  <details class="finding" data-sev="LOW">
+  <details class="finding done" data-sev="LOW">
     <summary>
       <span class="badge LOW">LOW</span>
       <span>
@@ -670,6 +670,7 @@ ForEach(results) { entry <span class="tok-k">in</span> ... }</code></pre>
       </span>
     </summary>
     <div class="body">
+      <div class="resolution"><b>RESOLVED 2026-05-31</b> — New <code>Views/ViewHelpers.swift</code> adds three shared helpers: <code>Pasteboard.copy(_:)</code> (replaces 3 clearContents/setString blocks), <code>Binding.isPresent(_:)</code> (replaces 4 <code>get:{x != nil}/set:{if !$0 {x = nil}}</code> confirmation bindings), and a <code>sectionHeaderStyle()</code> <code>View</code> modifier now used at the 10 subheadline section-header sites. The 3 caption-sized header variants are intentionally left as a distinct (smaller) style.</div>
       <h4>What's wrong &amp; why</h4>
       <p>Three patterns are copy-pasted across many views: the <code>NSPasteboard.general.clearContents()/setString</code> block; the uppercase section-header treatment (<code>.font(.subheadline.weight(.semibold)).foregroundStyle(.secondary).textCase(.uppercase).kerning(0.5)</code>, ~10 sites, plus two near-identical <code>InspectorSection</code>/<code>ConfigEditorSection</code> wrappers); and the <code>Binding(get: { x != nil }, set: { if !$0 { x = nil } })</code> confirmation boilerplate.</p>
       <h4>Suggested fix</h4>

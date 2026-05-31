@@ -352,10 +352,7 @@ private struct InspectorSection<Content: View>: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text(title)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                    .kerning(0.5)
+                    .sectionHeaderStyle()
                 Spacer()
             }
             content

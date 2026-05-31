@@ -24,10 +24,7 @@ struct FrameworkCommandLauncherView: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     Text("Commands")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
-                        .kerning(0.5)
+                        .sectionHeaderStyle()
                     Spacer()
                 }
 
@@ -53,14 +50,7 @@ struct FrameworkCommandLauncherView: View {
             }
             .confirmationDialog(
                 pendingCommand?.title ?? "Run Command?",
-                isPresented: Binding(
-                    get: { pendingCommand != nil },
-                    set: { isPresented in
-                        if !isPresented {
-                            pendingCommand = nil
-                        }
-                    }
-                ),
+                isPresented: .isPresent($pendingCommand),
                 presenting: pendingCommand
             ) { command in
                 Button("Run", role: command.risk == .destructive ? .destructive : nil) {

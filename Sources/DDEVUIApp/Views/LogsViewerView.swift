@@ -16,10 +16,7 @@ struct LogsViewerView: View {
         return VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("Logs")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                    .kerning(0.5)
+                    .sectionHeaderStyle()
                 Spacer()
                 Button {
                     Task { await refreshLogs() }
@@ -137,8 +134,7 @@ struct LogsViewerView: View {
     }
 
     private func copyLogsToPasteboard() {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(logText, forType: .string)
+        Pasteboard.copy(logText)
     }
 }
 

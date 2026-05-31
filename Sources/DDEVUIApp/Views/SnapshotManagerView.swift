@@ -12,10 +12,7 @@ struct SnapshotManagerView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("Snapshots")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                    .kerning(0.5)
+                    .sectionHeaderStyle()
                 Spacer()
                 Button {
                     Task { await viewModel.loadSnapshotsForSelectedProject() }
@@ -153,14 +150,7 @@ struct SnapshotManagerView: View {
     }
 
     private var confirmationBinding: Binding<Bool> {
-        Binding(
-            get: { pendingConfirmation != nil },
-            set: { isPresented in
-                if !isPresented {
-                    pendingConfirmation = nil
-                }
-            }
-        )
+        .isPresent($pendingConfirmation)
     }
 
     private var confirmationTitle: String {
