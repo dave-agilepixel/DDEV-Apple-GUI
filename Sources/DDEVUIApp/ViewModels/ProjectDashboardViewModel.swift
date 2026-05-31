@@ -258,7 +258,12 @@ public final class ProjectDashboardViewModel: ObservableObject {
         guard !isBusy(selectedProject) else { return }
 
         setActivity(.queued, for: id)
-        await scheduler.acquire()
+        do {
+            try await scheduler.acquire()
+        } catch {
+            setActivity(.idle, for: id) // cancelled while queued (audit L4)
+            return
+        }
         setActivity(.running, for: id)
 
         let outcome = await execute {
@@ -712,7 +717,12 @@ public final class ProjectDashboardViewModel: ObservableObject {
 
         setActivity(.queued, for: id)
         // Manual acquire/release (not scheduler.run) so the permit frees before the re-describe read.
-        await scheduler.acquire()              // resumes on MainActor
+        do {
+            try await scheduler.acquire()      // resumes on MainActor
+        } catch {
+            setActivity(.idle, for: id)        // cancelled while queued (audit L4)
+            return
+        }
         setActivity(.running, for: id)
 
         let outcome = await execute(operation)

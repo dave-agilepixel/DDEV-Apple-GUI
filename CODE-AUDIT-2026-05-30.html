@@ -533,7 +533,7 @@ ForEach(results) { entry <span class="tok-k">in</span> ... }</code></pre>
     </div>
   </details>
 
-  <details class="finding" data-sev="LOW">
+  <details class="finding done" data-sev="LOW">
     <summary>
       <span class="badge LOW">LOW</span>
       <span>
@@ -543,6 +543,7 @@ ForEach(results) { entry <span class="tok-k">in</span> ... }</code></pre>
       </span>
     </summary>
     <div class="body">
+      <div class="resolution"><b>RESOLVED 2026-05-31</b> — <code>acquire()</code> is now <code>async throws</code> and cancellation-aware: a cancelled queued caller is removed from the FIFO queue (tracked by waiter id) and throws <code>CancellationError</code> rather than parking forever (actor isolation + remove-before-resume prevents a double-resume race). This gives true end-to-end cancellation alongside H2. The VM keeps its intentional manual acquire/release (frees the permit before the re-describe read) but now resets the row to idle if the queued acquire is cancelled. Covered by a new cancelled-waiter test.</div>
       <h4>What's wrong &amp; why</h4>
       <p>Documented by design: a queued caller cannot be cancelled and stays parked until a permit frees. The safe <code>run(_:)</code> wrapper <code>defer</code>s release, but the VM uses manual <code>acquire()</code>/<code>release()</code> around <code>execute</code>; a future edit that adds an early return/throw between them permanently leaks a permit and lowers the concurrency cap until restart.</p>
       <h4>Suggested fix</h4>

@@ -9,7 +9,7 @@ final class CommandSchedulerTests: XCTestCase {
         await withTaskGroup(of: Void.self) { group in
             for _ in 0..<6 {
                 group.addTask {
-                    await scheduler.acquire()
+                    try? await scheduler.acquire()
                     await tracker.enter()
                     // Yield a few times so overlapping work would be observed if the cap leaked.
                     for _ in 0..<5 { await Task.yield() }
@@ -27,7 +27,7 @@ final class CommandSchedulerTests: XCTestCase {
         let scheduler = CommandScheduler(maxConcurrent: 1)
         let order = OrderRecorder()
 
-        await scheduler.acquire()              // take the only permit
+        try? await scheduler.acquire()         // take the only permit
 
         // Enqueue three waiters in a *deterministic* order. Unstructured `Task {}` start
         // order is not guaranteed, so we only launch waiter N+1 once waiter N has actually
@@ -35,7 +35,7 @@ final class CommandSchedulerTests: XCTestCase {
         var waiters: [Task<Void, Never>] = []
         for index in 0..<3 {
             waiters.append(Task {
-                await scheduler.acquire()
+                try? await scheduler.acquire()
                 await order.record(index)
                 await scheduler.release()
             })
@@ -62,8 +62,29 @@ final class CommandSchedulerTests: XCTestCase {
         }
 
         // If the permit leaked, this acquire would hang forever; wrap in a timeout guard.
-        let acquired = await withTimeout(seconds: 1) { await scheduler.acquire(); return true } ?? false
+        let acquired = await withTimeout(seconds: 1) { (try? await scheduler.acquire()) != nil } ?? false
         XCTAssertTrue(acquired, "Permit was released despite the thrown operation")
+    }
+
+    func testCancelledQueuedAcquireThrowsAndFreesQueue() async {
+        let scheduler = CommandScheduler(maxConcurrent: 1)
+        try? await scheduler.acquire() // take the only permit
+
+        let waiter = Task { () -> Bool in
+            do { try await scheduler.acquire(); return false }
+            catch is CancellationError { return true }
+            catch { return false }
+        }
+        while await scheduler.waiterCount < 1 { await Task.yield() }
+
+        waiter.cancel()
+        let threwCancellation = await waiter.value
+        XCTAssertTrue(threwCancellation, "A cancelled queued acquire throws CancellationError")
+
+        // The cancelled waiter left the queue, so the scheduler still hands out permits.
+        await scheduler.release()
+        let reacquired = await withTimeout(seconds: 1) { (try? await scheduler.acquire()) != nil } ?? false
+        XCTAssertTrue(reacquired, "Scheduler is not deadlocked by a cancelled waiter")
     }
 }
 
