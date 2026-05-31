@@ -395,7 +395,7 @@ commandStates = commandStates.filter { liveIDs.contains($0.key) || $0.value.isBu
     </div>
   </details>
 
-  <details class="finding" data-sev="MEDIUM">
+  <details class="finding done" data-sev="MEDIUM">
     <summary>
       <span class="badge MEDIUM">MEDIUM</span>
       <span>
@@ -405,6 +405,7 @@ commandStates = commandStates.filter { liveIDs.contains($0.key) || $0.value.isBu
       </span>
     </summary>
     <div class="body">
+      <div class="resolution"><b>RESOLVED 2026-05-31</b> — Removed the racy second sync path (<code>.onChange(of: projectConfig)</code>). Sync now happens only inside <code>.task(id: project.id)</code>, guarded by <code>!Task.isCancelled</code> and a <code>selectedProject?.id == loadingProjectID</code> check, so a config that resolves after a fast project switch can't splice project A's values into project B's fields. On a successful apply the baseline now advances only the applied field via a new, tested <code>DDEVConfig.applying(_:)</code> instead of being rebuilt from a full draft — so other rows' "changed" indicators stay accurate. Covered by <code>DDEVConfigApplyingTests</code>.</div>
       <h4>What's wrong</h4>
       <p>The editor syncs from the shared <code>@Published viewModel.projectConfig</code> via <b>both</b> a <code>.task(id: project.id)</code> and a <code>.onChange(of: projectConfig)</code>. Because <code>loadConfigForSelectedProject</code> sets <code>projectConfig = nil</code> then repopulates, both paths can fire <code>syncState</code>, and switching projects quickly can sync project A's config into project B's fields. On Apply, success is inferred from shared <code>lastErrorMessage == nil</code> and <code>loadedConfig</code> is replaced with a draft rebuilt from <i>all</i> current fields, so unrelated rows' "changed" indicators clear incorrectly.</p>
       <h4>Why it matters</h4>
