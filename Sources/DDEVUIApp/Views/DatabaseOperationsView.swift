@@ -3,7 +3,7 @@ import SwiftUI
 
 struct DatabaseOperationsView: View {
     let project: DDEVProject
-    @ObservedObject var viewModel: ProjectDashboardViewModel
+    var viewModel: ProjectDashboardViewModel
 
     @State private var importDraft: DatabaseImportDraft?
     @State private var exportDraft: DatabaseExportDraft?
@@ -72,7 +72,7 @@ private struct DatabaseExportDraft: Identifiable {
 private struct DatabaseImportSheet: View {
     let project: DDEVProject
     let draft: DatabaseImportDraft
-    @ObservedObject var viewModel: ProjectDashboardViewModel
+    var viewModel: ProjectDashboardViewModel
     @Environment(\.dismiss) private var dismiss
 
     @State private var database = "db"
@@ -169,7 +169,7 @@ private struct DatabaseImportSheet: View {
 private struct DatabaseExportSheet: View {
     let project: DDEVProject
     let draft: DatabaseExportDraft
-    @ObservedObject var viewModel: ProjectDashboardViewModel
+    var viewModel: ProjectDashboardViewModel
     @Environment(\.dismiss) private var dismiss
 
     @State private var database = "db"

@@ -3,7 +3,7 @@ import SwiftUI
 
 struct LogsViewerView: View {
     let project: DDEVProject
-    @ObservedObject var viewModel: ProjectDashboardViewModel
+    var viewModel: ProjectDashboardViewModel
 
     @State private var service: DDEVLogRequest.Service = .web
     @State private var tailCount = 100

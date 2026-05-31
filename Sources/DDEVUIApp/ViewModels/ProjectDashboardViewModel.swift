@@ -1,5 +1,5 @@
-import Combine
 import Foundation
+import Observation
 
 public protocol DDEVServicing: Sendable {
     func listProjects() async throws -> [DDEVProject]
@@ -83,37 +83,38 @@ public enum ProjectSidebarItem: String, CaseIterable, Identifiable, Sendable {
 }
 
 @MainActor
-public final class ProjectDashboardViewModel: ObservableObject {
-    @Published public var projects: [DDEVProject] = []
-    @Published public var selectedProjectID: DDEVProject.ID?
-    @Published public var selectedSidebarItem: ProjectSidebarItem = .projects
-    @Published public var searchText = ""
+@Observable
+public final class ProjectDashboardViewModel {
+    public var projects: [DDEVProject] = []
+    public var selectedProjectID: DDEVProject.ID?
+    public var selectedSidebarItem: ProjectSidebarItem = .projects
+    public var searchText = ""
 
     /// Per-project command state, keyed by project id (the project name). The single source
     /// of truth for busy/queued lifecycle, last result, error, history, and output expansion.
-    @Published public var commandStates: [DDEVProject.ID: ProjectCommandState] = [:]
+    public var commandStates: [DDEVProject.ID: ProjectCommandState] = [:]
 
     /// Busy/error for genuinely project-less operations: global list refresh, global
     /// diagnostics, and new-project creation (which has no project id yet).
-    @Published public var isRunningGlobalCommand = false
-    @Published public var globalErrorMessage: String?
-    @Published public var snapshots: [DDEVSnapshot] = []
-    @Published public var snapshotErrorMessage: String?
-    @Published public var projectLogsResult: CommandResult?
-    @Published public var projectLogsErrorMessage: String?
-    @Published public var projectConfig: DDEVConfig?
-    @Published public var projectConfigErrorMessage: String?
-    @Published public var projectConfigRestartRecommended = false
-    @Published public var installedAddOns: [DDEVAddon] = []
-    @Published public var addonSearchResults: [DDEVAddon] = DDEVAddon.recommendedOfficial
-    @Published public var addonErrorMessage: String?
-    @Published public var addOnRestartRecommended = false
-    @Published public var addonRawOutput: String?
-    @Published public var diagnosticReport = DDEVDiagnosticReport()
-    @Published public var diagnosticsErrorMessage: String?
-    @Published public private(set) var preferences: AppPreferences
-    @Published public private(set) var installedEditors: [EditorChoice]
-    @Published public private(set) var installedDatabaseTools: [DDEVDatabaseTool]
+    public var isRunningGlobalCommand = false
+    public var globalErrorMessage: String?
+    public var snapshots: [DDEVSnapshot] = []
+    public var snapshotErrorMessage: String?
+    public var projectLogsResult: CommandResult?
+    public var projectLogsErrorMessage: String?
+    public var projectConfig: DDEVConfig?
+    public var projectConfigErrorMessage: String?
+    public var projectConfigRestartRecommended = false
+    public var installedAddOns: [DDEVAddon] = []
+    public var addonSearchResults: [DDEVAddon] = DDEVAddon.recommendedOfficial
+    public var addonErrorMessage: String?
+    public var addOnRestartRecommended = false
+    public var addonRawOutput: String?
+    public var diagnosticReport = DDEVDiagnosticReport()
+    public var diagnosticsErrorMessage: String?
+    public private(set) var preferences: AppPreferences
+    public private(set) var installedEditors: [EditorChoice]
+    public private(set) var installedDatabaseTools: [DDEVDatabaseTool]
 
     public let supportedPHPVersions = ["8.4", "8.3", "8.2", "8.1", "8.0", "7.4"]
 
@@ -124,8 +125,8 @@ public final class ProjectDashboardViewModel: ObservableObject {
     private let scheduler: CommandScheduler
     private let notifier: NotificationScheduling
     private var selectedProjectFallback: DDEVProject?
-    /// Guards `refreshProjectsFromDDEV` against overlapping runs (audit M4). Not `@Published`
-    /// — it's internal serialization, not UI state (`isRunningGlobalCommand` drives the spinner).
+    /// Guards `refreshProjectsFromDDEV` against overlapping runs (audit M4). Internal
+    /// serialization only — `isRunningGlobalCommand` is what drives the UI spinner.
     private var isRefreshInFlight = false
 
     public init(

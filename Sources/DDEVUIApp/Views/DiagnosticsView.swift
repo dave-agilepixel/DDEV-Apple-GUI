@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 struct DiagnosticsView: View {
-    @ObservedObject var viewModel: ProjectDashboardViewModel
+    var viewModel: ProjectDashboardViewModel
     @State private var confirmMutagenReset = false
 
     private var selectedProject: DDEVProject? {

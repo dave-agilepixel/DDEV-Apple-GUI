@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 struct PrerequisiteSheet: View {
-    @ObservedObject var monitor: PrerequisiteMonitor
+    var monitor: PrerequisiteMonitor
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {

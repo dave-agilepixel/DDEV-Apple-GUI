@@ -2,7 +2,7 @@ import SwiftUI
 
 struct ProjectConfigEditorView: View {
     let project: DDEVProject
-    @ObservedObject var viewModel: ProjectDashboardViewModel
+    var viewModel: ProjectDashboardViewModel
     @Environment(\.dismiss) private var dismiss
 
     @State private var loadedConfig: DDEVConfig?

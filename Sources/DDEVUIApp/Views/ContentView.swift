@@ -1,22 +1,21 @@
 import SwiftUI
 
 struct ContentView: View {
-    @StateObject private var viewModel: ProjectDashboardViewModel
-    @StateObject private var prerequisites: PrerequisiteMonitor
+    @State private var viewModel: ProjectDashboardViewModel
+    @State private var prerequisites: PrerequisiteMonitor
     @State private var folderToConfigure: FolderToConfigure?
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
-        // Autoclosed by StateObject(wrappedValue:), so this is evaluated once, lazily.
-        _viewModel = StateObject(wrappedValue: ProjectDashboardViewModel(notifier: ContentView.makeNotifier()))
-        _prerequisites = StateObject(wrappedValue: PrerequisiteMonitor())
+        _viewModel = State(initialValue: ProjectDashboardViewModel(notifier: ContentView.makeNotifier()))
+        _prerequisites = State(initialValue: PrerequisiteMonitor())
     }
 
     /// Injecting initializer for previews/tests, so they can pass stub services instead of the
     /// real ones that spawn ddev/docker subprocesses and start the poll loop (audit L12).
     init(viewModel: ProjectDashboardViewModel, prerequisites: PrerequisiteMonitor) {
-        _viewModel = StateObject(wrappedValue: viewModel)
-        _prerequisites = StateObject(wrappedValue: prerequisites)
+        _viewModel = State(initialValue: viewModel)
+        _prerequisites = State(initialValue: prerequisites)
     }
 
     private static func makeNotifier() -> NotificationScheduling {
@@ -203,7 +202,7 @@ private struct PreviewCommandRunner: CommandRunning {
 }
 
 private struct SettingsView: View {
-    @ObservedObject var viewModel: ProjectDashboardViewModel
+    var viewModel: ProjectDashboardViewModel
 
     var body: some View {
         Form {
@@ -258,7 +257,7 @@ private struct SettingsView: View {
 
 private struct AddProjectSheet: View {
     let folder: URL
-    @ObservedObject var viewModel: ProjectDashboardViewModel
+    var viewModel: ProjectDashboardViewModel
     @Environment(\.dismiss) private var dismiss
 
     @State private var projectName: String

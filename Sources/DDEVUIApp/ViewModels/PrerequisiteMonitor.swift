@@ -1,15 +1,16 @@
 import Foundation
-import SwiftUI
+import Observation
 
 @MainActor
-public final class PrerequisiteMonitor: ObservableObject {
-    @Published public private(set) var state: PrerequisiteState = .initial
-    @Published public private(set) var isLaunching = false
-    @Published public private(set) var launchErrorMessage: String?
+@Observable
+public final class PrerequisiteMonitor {
+    public private(set) var state: PrerequisiteState = .initial
+    public private(set) var isLaunching = false
+    public private(set) var launchErrorMessage: String?
 
     public let pollInterval: Duration
     private let service: PrerequisiteChecking
-    private var pollTask: Task<Void, Never>?
+    @ObservationIgnored private var pollTask: Task<Void, Never>?
 
     public init(
         service: PrerequisiteChecking = WorkspacePrerequisiteService(),

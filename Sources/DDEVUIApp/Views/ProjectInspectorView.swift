@@ -24,7 +24,7 @@ enum InspectorTab: Hashable, CaseIterable {
 }
 
 struct ProjectInspectorView: View {
-    @ObservedObject var viewModel: ProjectDashboardViewModel
+    var viewModel: ProjectDashboardViewModel
     private let workspaceOpener = MacWorkspaceOpener()
     @State private var confirmUnlink = false
     @State private var confirmDeleteDDEVData = false
@@ -417,7 +417,7 @@ private struct InspectorChipLabelStyle: LabelStyle {
 
 private struct OverviewTabContent: View {
     let project: DDEVProject
-    @ObservedObject var viewModel: ProjectDashboardViewModel
+    var viewModel: ProjectDashboardViewModel
     let workspaceOpener: MacWorkspaceOpener
     @Binding var showConfigEditor: Bool
 
@@ -545,7 +545,7 @@ private struct OverviewTabContent: View {
 
 private struct ManageTabContent: View {
     let project: DDEVProject
-    @ObservedObject var viewModel: ProjectDashboardViewModel
+    var viewModel: ProjectDashboardViewModel
 
     var body: some View {
         ScrollView {
@@ -567,7 +567,7 @@ private struct ManageTabContent: View {
 
 private struct LogsTabContent: View {
     let project: DDEVProject
-    @ObservedObject var viewModel: ProjectDashboardViewModel
+    var viewModel: ProjectDashboardViewModel
 
     var body: some View {
         let hasAnyActivity =
@@ -696,7 +696,7 @@ private struct FlowLayout: Layout {
 
 private struct SourceFolderDeleteSheet: View {
     let project: DDEVProject
-    @ObservedObject var viewModel: ProjectDashboardViewModel
+    var viewModel: ProjectDashboardViewModel
     @Environment(\.dismiss) private var dismiss
     @State private var confirmationText = ""
 

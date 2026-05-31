@@ -2,7 +2,7 @@ import SwiftUI
 
 struct AddonManagerView: View {
     let project: DDEVProject
-    @ObservedObject var viewModel: ProjectDashboardViewModel
+    var viewModel: ProjectDashboardViewModel
 
     @State private var showSearchSheet = false
     @State private var pendingRemoval: DDEVAddon?
@@ -120,7 +120,7 @@ struct AddonManagerView: View {
 
 private struct AddonSearchSheet: View {
     let project: DDEVProject
-    @ObservedObject var viewModel: ProjectDashboardViewModel
+    var viewModel: ProjectDashboardViewModel
     @Environment(\.dismiss) private var dismiss
 
     @State private var query = ""

@@ -2,7 +2,7 @@ import SwiftUI
 
 struct FrameworkCommandLauncherView: View {
     let project: DDEVProject
-    @ObservedObject var viewModel: ProjectDashboardViewModel
+    var viewModel: ProjectDashboardViewModel
     @State private var pendingCommand: DDEVFrameworkCommand?
 
     private var commands: [DDEVFrameworkCommand] {

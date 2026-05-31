@@ -2,7 +2,7 @@ import SwiftUI
 
 struct SnapshotManagerView: View {
     let project: DDEVProject
-    @ObservedObject var viewModel: ProjectDashboardViewModel
+    var viewModel: ProjectDashboardViewModel
 
     @State private var snapshotName = ""
     @State private var lastSuggestedSnapshotName = ""
