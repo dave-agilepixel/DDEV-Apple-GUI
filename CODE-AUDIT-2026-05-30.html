@@ -619,7 +619,7 @@ ForEach(results) { entry <span class="tok-k">in</span> ... }</code></pre>
     </div>
   </details>
 
-  <details class="finding" data-sev="LOW">
+  <details class="finding done" data-sev="LOW">
     <summary>
       <span class="badge LOW">LOW</span>
       <span>
@@ -629,6 +629,7 @@ ForEach(results) { entry <span class="tok-k">in</span> ... }</code></pre>
       </span>
     </summary>
     <div class="body">
+      <div class="resolution"><b>RESOLVED 2026-05-31</b> — All seven raw URL fields now go through <code>DDEVProject.validatedURL(_:)</code>, which trims whitespace and requires a scheme + host via <code>URLComponents</code> before constructing the URL — blank/whitespace/garbage values become <code>nil</code> instead of a broken non-nil URL. Covered by <code>DDEVProjectURLValidationTests</code>.</div>
       <h4>What's wrong &amp; why</h4>
       <p>Raw URL strings from <code>ddev list -j</code> are wrapped with <code>URL(string:)</code>. Empty yields nil (fine), but whitespace/odd values can yield a non-nil but broken URL; "open in browser" then opens something unexpected or no-ops.</p>
       <h4>Suggested fix</h4>
