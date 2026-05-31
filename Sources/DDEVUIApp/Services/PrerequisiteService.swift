@@ -9,12 +9,14 @@ public protocol PrerequisiteChecking: Sendable {
 public final class WorkspacePrerequisiteService: PrerequisiteChecking, @unchecked Sendable {
     private let commandRunner: CommandRunning
     private let ddevResolver: DDEVExecutableResolver
+    private let dockerResolver: DockerExecutableResolver
     private let installedRuntimeLookup: @Sendable (DockerRuntime) -> Bool
     private let runningRuntimeLookup: @Sendable (DockerRuntime) -> Bool
 
     public init(
         commandRunner: CommandRunning = ProcessCommandRunner(),
         ddevResolver: DDEVExecutableResolver = DDEVExecutableResolver(),
+        dockerResolver: DockerExecutableResolver = DockerExecutableResolver(),
         installedRuntimeLookup: @escaping @Sendable (DockerRuntime) -> Bool = { runtime in
             NSWorkspace.shared.urlForApplication(withBundleIdentifier: runtime.bundleIdentifier) != nil
         },
@@ -24,6 +26,7 @@ public final class WorkspacePrerequisiteService: PrerequisiteChecking, @unchecke
     ) {
         self.commandRunner = commandRunner
         self.ddevResolver = ddevResolver
+        self.dockerResolver = dockerResolver
         self.installedRuntimeLookup = installedRuntimeLookup
         self.runningRuntimeLookup = runningRuntimeLookup
     }
@@ -60,7 +63,7 @@ public final class WorkspacePrerequisiteService: PrerequisiteChecking, @unchecke
         do {
             _ = try await commandRunner.run(
                 CommandSpec(
-                    executable: "docker",
+                    executable: dockerResolver.resolve(),
                     arguments: ["info", "--format", "{{.ServerVersion}}"],
                     timeout: .seconds(15)
                 )

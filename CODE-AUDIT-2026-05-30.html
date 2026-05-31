@@ -375,7 +375,7 @@ commandStates = commandStates.filter { liveIDs.contains($0.key) || $0.value.isBu
     </div>
   </details>
 
-  <details class="finding" data-sev="MEDIUM">
+  <details class="finding done" data-sev="MEDIUM">
     <summary>
       <span class="badge MEDIUM">MEDIUM</span>
       <span>
@@ -385,6 +385,7 @@ commandStates = commandStates.filter { liveIDs.contains($0.key) || $0.value.isBu
       </span>
     </summary>
     <div class="body">
+      <div class="resolution"><b>RESOLVED 2026-05-31</b> — Added <code>DockerExecutableResolver</code> mirroring the DDEV one, probing <code>/opt/homebrew/bin</code>, <code>/usr/local/bin</code>, <code>/Applications/Docker.app/Contents/Resources/bin</code>, <code>~/.docker/bin</code> and OrbStack's <code>~/.orbstack/bin</code> — known-good locations first (so it's S3-correct from the start) then PATH — and wired its absolute path into <code>dockerDaemonReady()</code>. This fixes the false "Docker missing" under a minimal LaunchServices PATH / non-standard install. The proposed <code>.launchFailed</code> vs <code>.nonZeroExit</code> split was judged unnecessary: every command runs via <code>/usr/bin/env</code> (so a missing binary surfaces as a non-zero exit, not a launch throw), and the UI's CLI-missing-vs-daemon-down distinction already comes from the installed/running runtime-app lookup (<code>.missing</code> vs <code>.notRunning</code>/<code>.starting</code>). Covered by <code>DockerExecutableResolverTests</code> (5 cases incl. hostile-PATH ordering).</div>
       <h4>What's wrong</h4>
       <p><code>dockerDaemonReady()</code> runs <code>docker info</code> by <b>bare name</b> (<code>executable: "docker"</code>), relying entirely on the hardcoded PATH in <code>environmentForGUIApp()</code>. Unlike <code>ddev</code> (which has <code>DDEVExecutableResolver</code> probing known locations), there is no <code>docker</code> resolver. And any throw — launch failure (binary not found) <i>or</i> non-zero exit (daemon down) — is collapsed into the same "not ready".</p>
       <h4>Why it matters</h4>
