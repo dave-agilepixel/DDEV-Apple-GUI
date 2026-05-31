@@ -2,10 +2,53 @@ import SwiftUI
 
 struct ProjectListView: View {
     @ObservedObject var viewModel: ProjectDashboardViewModel
+    @FocusState private var searchFocused: Bool
 
     var body: some View {
+        VStack(spacing: 0) {
+            if !viewModel.projects.isEmpty {
+                searchBar
+                Divider()
+            }
+            contentBody
+        }
+        .navigationTitle(viewModel.selectedSidebarItem.title)
+    }
+
+    private var searchBar: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            TextField("Filter projects", text: $viewModel.searchText)
+                .textFieldStyle(.plain)
+                .focused($searchFocused)
+                .onSubmit { searchFocused = false }
+            if !viewModel.searchText.isEmpty {
+                Button {
+                    viewModel.searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.tertiary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear search")
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(.quaternary, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background {
+            Button("") { searchFocused = true }
+                .keyboardShortcut("f", modifiers: .command)
+                .hidden()
+        }
+    }
+
+    private var contentBody: some View {
         Group {
-            if let errorMessage = viewModel.lastErrorMessage, viewModel.projects.isEmpty {
+            if let errorMessage = viewModel.globalErrorMessage, viewModel.projects.isEmpty {
                 ContentUnavailableView {
                     Label("DDEV Projects Unavailable", systemImage: "exclamationmark.triangle")
                 } description: {
@@ -29,7 +72,7 @@ struct ProjectListView: View {
                 List(selection: projectSelection) {
                     Section {
                         ForEach(viewModel.filteredProjects) { project in
-                            ProjectRow(project: project)
+                            ProjectRow(project: project, viewModel: viewModel)
                                 .tag(project.id)
                                 .listRowSeparator(.visible)
                         }
@@ -47,8 +90,6 @@ struct ProjectListView: View {
                 .listStyle(.inset)
             }
         }
-        .navigationTitle(viewModel.selectedSidebarItem.title)
-        .searchable(text: $viewModel.searchText, placement: .toolbar, prompt: "Filter projects")
     }
 
     private var projectSelection: Binding<DDEVProject.ID?> {
@@ -83,6 +124,7 @@ struct ProjectListView: View {
 
 private struct ProjectRow: View {
     let project: DDEVProject
+    @ObservedObject var viewModel: ProjectDashboardViewModel
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
@@ -92,14 +134,14 @@ private struct ProjectRow: View {
                 .frame(width: 28, alignment: .center)
 
             VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 8) {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(statusColor)
+                        .frame(width: 8, height: 8)
                     Text(project.name)
                         .font(.headline)
                         .lineLimit(1)
                     Spacer(minLength: 0)
-                    Circle()
-                        .fill(statusColor)
-                        .frame(width: 8, height: 8)
                 }
 
                 HStack(spacing: 8) {
@@ -120,8 +162,55 @@ private struct ProjectRow: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
+
+            actionControls
+                .frame(minWidth: 52, alignment: .trailing)
         }
         .padding(.vertical, 4)
+    }
+
+    @ViewBuilder
+    private var actionControls: some View {
+        if viewModel.isBusy(project) {
+            ProgressView()
+                .controlSize(.small)
+                .help(viewModel.isQueued(project) ? "Queued" : "Running")
+                .opacity(viewModel.isQueued(project) ? 0.5 : 1)
+        } else {
+            HStack(spacing: 4) {
+                if project.status == .running {
+                    actionButton("Restart", systemImage: "arrow.clockwise") {
+                        await viewModel.restart(project)
+                    }
+                    actionButton("Stop", systemImage: "stop.fill", tint: .red) {
+                        await viewModel.stop(project)
+                    }
+                } else {
+                    actionButton("Start", systemImage: "play.fill", tint: .green) {
+                        await viewModel.start(project)
+                    }
+                }
+            }
+        }
+    }
+
+    private func actionButton(
+        _ title: String,
+        systemImage: String,
+        tint: Color? = nil,
+        action: @escaping () async -> Void
+    ) -> some View {
+        Button {
+            Task { await action() }
+        } label: {
+            Image(systemName: systemImage)
+                .frame(width: 14, height: 14)
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .tint(tint)
+        .help(title)
+        .disabled(viewModel.isBusy(project))
     }
 
     private var statusColor: Color {

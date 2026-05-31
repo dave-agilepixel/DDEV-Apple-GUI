@@ -81,7 +81,7 @@ struct ProjectConfigEditorView: View {
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(24)
-        } else if loadedConfig == nil || viewModel.isRunningCommand && viewModel.projectConfig == nil {
+        } else if loadedConfig == nil || viewModel.isSelectedProjectBusy && viewModel.projectConfig == nil {
             VStack(spacing: 12) {
                 ProgressView()
                 Text("Loading DDEV config")
@@ -131,7 +131,7 @@ struct ProjectConfigEditorView: View {
                         Label("Restart", systemImage: "arrow.clockwise")
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(viewModel.isRunningCommand)
+                    .disabled(viewModel.isSelectedProjectBusy)
                 }
             }
             .padding(12)
@@ -259,7 +259,7 @@ struct ProjectConfigEditorView: View {
 
     @ViewBuilder
     private var commandSummary: some View {
-        if let result = viewModel.lastCommandResult, result.arguments.first == "config" {
+        if let result = viewModel.selectedProjectState.lastResult, result.arguments.first == "config" {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("Last command")
                     .foregroundStyle(.secondary)
@@ -312,7 +312,7 @@ struct ProjectConfigEditorView: View {
             } label: {
                 Label("Apply", systemImage: "checkmark")
             }
-            .disabled(!hasChanges || viewModel.isRunningCommand)
+            .disabled(!hasChanges || viewModel.isSelectedProjectBusy)
         }
         .font(.callout)
     }
@@ -320,7 +320,7 @@ struct ProjectConfigEditorView: View {
     private func apply(_ change: DDEVConfigChange) async {
         await viewModel.applyConfigChangeForSelectedProject(change)
 
-        if viewModel.lastErrorMessage == nil, let updatedConfig = draftConfig {
+        if viewModel.selectedProjectState.lastErrorMessage == nil, let updatedConfig = draftConfig {
             loadedConfig = updatedConfig
         }
     }

@@ -1,9 +1,17 @@
 import SwiftUI
 
 struct ContentView: View {
-    @StateObject private var viewModel = ProjectDashboardViewModel()
+    @StateObject private var viewModel = ProjectDashboardViewModel(
+        notifier: ContentView.makeNotifier()
+    )
     @StateObject private var prerequisites = PrerequisiteMonitor()
     @State private var folderToConfigure: FolderToConfigure?
+
+    private static func makeNotifier() -> NotificationScheduling {
+        let scheduler = UserNotificationScheduler()
+        scheduler.activateForegroundPresentation()
+        return scheduler
+    }
 
     var body: some View {
         NavigationSplitView {
@@ -42,6 +50,7 @@ struct ContentView: View {
             }
         }
         .task {
+            await viewModel.requestNotificationAuthorization()
             await viewModel.loadCachedProjectsThenRefresh()
         }
         .toolbar {
@@ -56,14 +65,14 @@ struct ContentView: View {
                 Button {
                     Task { await viewModel.refresh() }
                 } label: {
-                    if viewModel.isRunningCommand {
+                    if viewModel.isRunningGlobalCommand {
                         ProgressView().controlSize(.small)
                     } else {
                         Label("Refresh", systemImage: "arrow.clockwise")
                     }
                 }
                 .help("Reload DDEV project list")
-                .disabled(viewModel.isRunningCommand)
+                .disabled(viewModel.isRunningGlobalCommand)
             }
         }
         .sheet(item: $folderToConfigure) { folder in
