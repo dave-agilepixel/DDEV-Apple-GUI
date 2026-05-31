@@ -755,7 +755,7 @@ ForEach(results) { entry <span class="tok-k">in</span> ... }</code></pre>
     </div>
   </details>
 
-  <details class="finding" data-sev="SECURITY">
+  <details class="finding done" data-sev="SECURITY">
     <summary>
       <span class="badge SECURITY">SEC</span>
       <span>
@@ -765,6 +765,7 @@ ForEach(results) { entry <span class="tok-k">in</span> ... }</code></pre>
       </span>
     </summary>
     <div class="body">
+      <div class="resolution"><b>RESOLVED 2026-05-31</b> — <code>pathCandidates()</code> now returns <code>knownLocations + pathExecutables</code> (was the reverse), so the Homebrew/system locations are probed before any PATH entry and a hostile PATH can't shadow <code>ddev</code>. The new <code>DockerExecutableResolver</code> (M6) uses the same known-good-first ordering. Covered by <code>testPrefersKnownLocationOverHostilePathEntry</code> on both resolvers.</div>
       <h4>What's wrong &amp; why</h4>
       <p>The resolver probes user-PATH entries before the known Homebrew/system locations, so a hostile <code>PATH</code> could point <code>ddev</code> at an attacker-controlled binary. The <code>/usr/bin/env</code> fallback makes this mostly moot today, but the ordering is the wrong default.</p>
       <h4>Suggested fix</h4>
