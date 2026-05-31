@@ -687,7 +687,7 @@ ForEach(results) { entry <span class="tok-k">in</span> ... }</code></pre>
     </div>
   </details>
 
-  <details class="finding" data-sev="LOW">
+  <details class="finding done" data-sev="LOW">
     <summary>
       <span class="badge LOW">LOW</span>
       <span>
@@ -697,6 +697,7 @@ ForEach(results) { entry <span class="tok-k">in</span> ... }</code></pre>
       </span>
     </summary>
     <div class="body">
+      <div class="resolution"><b>RESOLVED 2026-05-31</b> — <code>WorkspaceOpening</code> and <code>MacWorkspaceOpener</code> are now <code>@MainActor</code> (dropping <code>@unchecked Sendable</code>), so the compiler enforces that the NSWorkspace calls stay on the main actor. All call sites are SwiftUI views already on the MainActor; builds clean.</div>
       <h4>What's wrong &amp; why</h4>
       <p>It wraps <code>NSWorkspace</code> (main-thread-affine) and is called from view button closures. Calls are on the main actor today so it's safe, but <code>@unchecked Sendable</code> suppresses the compiler's ability to catch a future off-main call.</p>
       <h4>Suggested fix</h4>

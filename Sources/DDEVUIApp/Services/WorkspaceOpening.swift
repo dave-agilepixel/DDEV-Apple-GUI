@@ -33,12 +33,17 @@ public enum EditorChoice: String, CaseIterable, Codable, Identifiable, Sendable 
     }
 }
 
+// NSWorkspace is main-thread-affine, so the opener is MainActor-isolated. This lets the
+// compiler verify all call sites are on the main actor instead of suppressing the check with
+// `@unchecked Sendable` (audit L13). All callers are SwiftUI views, already on the MainActor.
+@MainActor
 public protocol WorkspaceOpening: Sendable {
     func openURL(_ url: URL)
     func openFolder(_ path: String, editor: EditorChoice)
 }
 
-public final class MacWorkspaceOpener: WorkspaceOpening, @unchecked Sendable {
+@MainActor
+public final class MacWorkspaceOpener: WorkspaceOpening {
     public init() {}
 
     public func openURL(_ url: URL) {
