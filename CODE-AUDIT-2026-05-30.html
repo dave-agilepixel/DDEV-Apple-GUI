@@ -172,6 +172,11 @@
     <p>Ship-worthy. Fix <b>H1</b> and <b>H2</b> first — they're the literal subject of the brief and they compound into a real "Docker hangs → app slowly stalls" failure mode. Then prune <b>M2</b> and move file I/O off-main (<b>M3</b>). The god-object view model (<b>M9</b>) is the highest-leverage structural refactor but it is maintainability debt, not a defect — schedule it, don't panic about it.</p>
   </div>
 
+  <div class="callout good">
+    <h3>✓ Remediation pass — 2026-05-31</h3>
+    <p>All 29 findings have been worked through on branch <code>feat/per-project-concurrency</code> with atomic, per-finding commits and a green test suite at every step (149 → 180 tests, 0 failures). Each finding below carries a green <b>RESOLVED</b> note describing exactly what changed. Notable calls: <b>H1</b> was <i>reframed</i> (its "no <code>stop()</code>" headline was inaccurate; the real lifecycle defect was fixed); <b>L14(a)</b> was a verified no-op (<code>.glassEffect</code> is fine at the macOS 26 target); <b>L3</b> was reviewed and kept by design; and <b>M9</b> delivered the <code>@Observable</code> migration plus a <code>PreferencesModel</code> extraction, with the deeper command-pipeline split left as documented follow-up debt. New regression tests were added throughout (process cancel/timeout, poll-loop lifecycle, commandStates pruning, refresh re-entrancy, bounded fan-out, output cap, error presenter, resolvers, redaction, URL/path validation, scheduler cancellation, and more).</p>
+  </div>
+
   <h2 id="findings">Findings</h2>
   <p>Click any finding to expand. Use the filter to focus by severity.</p>
 
@@ -441,7 +446,7 @@ ForEach(results) { entry <span class="tok-k">in</span> ... }</code></pre>
     </div>
   </details>
 
-  <details class="finding" data-sev="MEDIUM">
+  <details class="finding done" data-sev="MEDIUM">
     <summary>
       <span class="badge MEDIUM">MEDIUM</span>
       <span>
@@ -451,6 +456,7 @@ ForEach(results) { entry <span class="tok-k">in</span> ... }</code></pre>
       </span>
     </summary>
     <div class="body">
+      <div class="resolution"><b>RESOLVED 2026-05-31</b> — Two parts: <b>(1)</b> <code>ProjectDashboardViewModel</code> and <code>PrerequisiteMonitor</code> migrated from <code>ObservableObject</code>/<code>@Published</code> to the <code>@Observable</code> macro, so views get field-level invalidation and only re-render on the properties they actually read — the primary cost this finding cites. <b>(2)</b> The self-contained preferences/installed-apps concern was extracted into a focused <code>@Observable PreferencesModel</code> the view model owns and forwards to. The remaining detail concerns (snapshots/logs/config/add-ons/diagnostics) all share the per-project command pipeline (scheduler, <code>execute</code>, <code>recordResult</code>, <code>commandStates</code>) and selection state; a clean further split requires first extracting that shared pipeline, so it's left as the deliberately-scheduled structural debt the finding itself recommends — tracked as a follow-up rather than bundled into this fix PR. All 180 tests stayed green throughout.</div>
       <h4>What's wrong</h4>
       <p>A single <code>ObservableObject</code> owns project list, selection, search, per-project command state, snapshots, logs, config, add-ons, diagnostics, preferences, and installed apps. With <code>ObservableObject</code>/<code>@Published</code>, <i>any</i> change invalidates <i>every</i> view observing the object.</p>
       <h4>Why it matters</h4>
