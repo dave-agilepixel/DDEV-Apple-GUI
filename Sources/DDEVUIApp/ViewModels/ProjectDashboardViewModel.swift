@@ -27,7 +27,6 @@ public protocol DDEVServicing: Sendable {
     func searchAddOns(query: String, in appRoot: String) async throws -> CommandResult
     func getAddOn(_ repository: String, projectName: String, in appRoot: String) async throws -> CommandResult
     func removeAddOn(named name: String, projectName: String, in appRoot: String) async throws -> CommandResult
-    func config(flags: [String], in appRoot: String) async throws -> CommandResult
     func applyConfigChange(_ change: DDEVConfigChange, in appRoot: String) async throws -> CommandResult
     func runProjectCommand(arguments: [String], in appRoot: String) async throws -> CommandResult
     func version() async throws -> CommandResult

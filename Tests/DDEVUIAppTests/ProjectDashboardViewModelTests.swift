@@ -1078,11 +1078,6 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
         return commandResult(arguments: ["add-on", "remove", name], workingDirectory: appRoot)
     }
 
-    func config(flags: [String], in appRoot: String) async throws -> CommandResult {
-        record("config-flags:\(appRoot):\(flags.joined(separator: ","))")
-        return commandResult(arguments: ["config"] + flags, workingDirectory: appRoot)
-    }
-
     func applyConfigChange(_ change: DDEVConfigChange, in appRoot: String) async throws -> CommandResult {
         record("config-change:\(appRoot):\(change.ddevFlags.joined(separator: ","))")
         return commandResult(arguments: ["config"] + change.ddevFlags, workingDirectory: appRoot)

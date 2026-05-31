@@ -314,24 +314,6 @@ final class DDEVCommandServiceTests: XCTestCase {
         ])
     }
 
-    func testConfigCommandAcceptsValidatedFlagsInProjectDirectory() async throws {
-        let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
-        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
-
-        _ = try await service.config(
-            flags: ["--nodejs-version=24", "--webserver-type=apache-fpm", "--performance-mode=mutagen"],
-            in: "/Users/dave/site"
-        )
-
-        XCTAssertEqual(runner.commands, [
-            CommandSpec(
-                executable: "ddev",
-                arguments: ["config", "--nodejs-version=24", "--webserver-type=apache-fpm", "--performance-mode=mutagen"],
-                workingDirectory: "/Users/dave/site"
-            )
-        ])
-    }
-
     func testProjectConfigChangesRunInProjectDirectory() async throws {
         let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
         let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")

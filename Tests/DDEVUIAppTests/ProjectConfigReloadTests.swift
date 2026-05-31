@@ -83,7 +83,6 @@ private final class SuspendedConfigDDEVService: DDEVServicing, @unchecked Sendab
     func searchAddOns(query: String, in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
     func getAddOn(_ repository: String, projectName: String, in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
     func removeAddOn(named name: String, projectName: String, in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
-    func config(flags: [String], in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
     func applyConfigChange(_ change: DDEVConfigChange, in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
     func runProjectCommand(arguments: [String], in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
     func version() async throws -> CommandResult { throw UnexpectedCallError() }

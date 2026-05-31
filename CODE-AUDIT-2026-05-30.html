@@ -602,7 +602,7 @@ ForEach(results) { entry <span class="tok-k">in</span> ... }</code></pre>
     </div>
   </details>
 
-  <details class="finding" data-sev="LOW">
+  <details class="finding done" data-sev="LOW">
     <summary>
       <span class="badge LOW">LOW</span>
       <span>
@@ -612,6 +612,7 @@ ForEach(results) { entry <span class="tok-k">in</span> ... }</code></pre>
       </span>
     </summary>
     <div class="body">
+      <div class="resolution"><b>RESOLVED 2026-05-31</b> — Removed the public arbitrary-flag <code>config(flags:)</code> entry point (no callers), the misleading <code>isValidDDEVConfigFlag</code> "control" (it accepted <code>--</code> + anything), and the now-unused <code>.invalidConfigFlags</code> error case. <code>applyConfigChange</code> runs <code>change.ddevFlags</code> directly — flags come only from the closed <code>DDEVConfigChange</code> enum, so there's no untrusted input to validate. Removed from the protocol and three test doubles.</div>
       <h4>What's wrong &amp; why</h4>
       <p><code>isValidDDEVConfigFlag</code> is just <code>hasPrefix("--") &amp;&amp; count &gt; 2</code> — it accepts <code>--</code> + anything. In practice all flags come from the closed <code>DDEVConfigChange</code> enum, so the public arbitrary-flag entry point is unused; the check reads like a security control but isn't one.</p>
       <h4>Suggested fix</h4>

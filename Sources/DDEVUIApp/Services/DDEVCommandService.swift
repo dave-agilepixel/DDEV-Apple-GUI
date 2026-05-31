@@ -212,17 +212,12 @@ public final class DDEVCommandService: Sendable {
     }
 
     @discardableResult
-    public func config(flags: [String], in appRoot: String) async throws -> CommandResult {
-        guard flags.allSatisfy(\.isValidDDEVConfigFlag) else {
-            throw DDEVCommandValidationError.invalidConfigFlags(flags)
-        }
-
-        return try await runDDEV(["config"] + flags, workingDirectory: appRoot)
-    }
-
-    @discardableResult
     public func applyConfigChange(_ change: DDEVConfigChange, in appRoot: String) async throws -> CommandResult {
-        try await config(flags: change.ddevFlags, in: appRoot)
+        // Flags come exclusively from the closed DDEVConfigChange enum, so there is no untrusted
+        // input to validate — the old isValidDDEVConfigFlag check was false safety (it accepted
+        // "--" + anything) and the public arbitrary-flag config(flags:) entry point had no callers,
+        // so both were removed (audit L8).
+        try await runDDEV(["config"] + change.ddevFlags, workingDirectory: appRoot)
     }
 
     @discardableResult
@@ -359,13 +354,6 @@ public enum DDEVXHGuiCommand: String, CaseIterable, Sendable {
 }
 
 public enum DDEVCommandValidationError: Error, Equatable, Sendable {
-    case invalidConfigFlags([String])
     case emptyProjectCommand
     case dashPrefixedArgument(field: String, value: String)
-}
-
-private extension String {
-    var isValidDDEVConfigFlag: Bool {
-        hasPrefix("--") && count > 2
-    }
 }
