@@ -457,7 +457,7 @@ ForEach(results) { entry <span class="tok-k">in</span> ... }</code></pre>
     </div>
   </details>
 
-  <details class="finding" data-sev="MEDIUM">
+  <details class="finding done" data-sev="MEDIUM">
     <summary>
       <span class="badge MEDIUM">MEDIUM</span>
       <span>
@@ -467,6 +467,7 @@ ForEach(results) { entry <span class="tok-k">in</span> ... }</code></pre>
       </span>
     </summary>
     <div class="body">
+      <div class="resolution"><b>RESOLVED 2026-05-31</b> — New <code>Error.presentableMessage</code> presenter extracts <code>stderr.nilIfBlank ?? "exit code N"</code> for <code>CommandRunnerError</code> (and friendly text for <code>.timedOut</code>/cancellation) instead of dumping the struct; every bare <code>String(describing: error)</code> catch now routes through it. <code>refreshSnapshots</code> failures now set a new snapshot-scoped <code>snapshotErrorMessage</code> (shown in <code>SnapshotManagerView</code>) instead of the list-level <code>globalErrorMessage</code>. Covered by a presenter test and a snapshot-routing test.</div>
       <h4>What's wrong</h4>
       <p>Several catch sites set a user-facing message to <code>String(describing: error)</code>. For <code>CommandRunnerError.nonZeroExit(CommandResult(...))</code> that dumps the entire result struct (stdout, stderr, timestamps, args) into the banner. <code>refreshSnapshots(in:)</code> additionally routes a post-mutation refresh failure into <code>globalErrorMessage</code> — the wrong surface (a list-level banner for a snapshot-scoped failure).</p>
       <h4>Why it matters</h4>

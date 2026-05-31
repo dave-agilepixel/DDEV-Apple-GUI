@@ -100,6 +100,7 @@ public final class ProjectDashboardViewModel: ObservableObject {
     @Published public var isRunningGlobalCommand = false
     @Published public var globalErrorMessage: String?
     @Published public var snapshots: [DDEVSnapshot] = []
+    @Published public var snapshotErrorMessage: String?
     @Published public var projectLogsResult: CommandResult?
     @Published public var projectLogsErrorMessage: String?
     @Published public var projectConfig: DDEVConfig?
@@ -239,7 +240,7 @@ public final class ProjectDashboardViewModel: ObservableObject {
         do {
             try await refreshProjectsFromDDEV()
         } catch {
-            globalErrorMessage = String(describing: error)
+            globalErrorMessage = error.presentableMessage
         }
     }
 
@@ -388,6 +389,7 @@ public final class ProjectDashboardViewModel: ObservableObject {
 
     public func loadSnapshotsForSelectedProject() async {
         guard let selectedProject else { return }
+        snapshotErrorMessage = nil
         await runSelectedProjectRead {
             let result = try await self.ddevService.listSnapshots(in: selectedProject.appRoot)
             self.snapshots = DDEVSnapshot.parseListOutput(result.stdout)
@@ -680,7 +682,7 @@ public final class ProjectDashboardViewModel: ObservableObject {
             self.selectedProject = projects.first
             globalErrorMessage = nil
         } catch {
-            globalErrorMessage = String(describing: error)
+            globalErrorMessage = error.presentableMessage
         }
     }
 
@@ -731,7 +733,7 @@ public final class ProjectDashboardViewModel: ObservableObject {
             commandStates[id, default: .init()].lastErrorMessage = "Command failed with exit code \(result.exitCode)."
             await notifyIfBackground(project: project, succeeded: false, summary: summary(result))
         case .failure(.other(let error)):
-            commandStates[id, default: .init()].lastErrorMessage = String(describing: error)
+            commandStates[id, default: .init()].lastErrorMessage = error.presentableMessage
             await notifyIfBackground(project: project, succeeded: false, summary: "command failed")
         }
     }
@@ -802,7 +804,7 @@ public final class ProjectDashboardViewModel: ObservableObject {
         } catch CommandRunnerError.nonZeroExit(let result) {
             globalErrorMessage = "Command failed with exit code \(result.exitCode)."
         } catch {
-            globalErrorMessage = String(describing: error)
+            globalErrorMessage = error.presentableMessage
         }
     }
 
@@ -824,7 +826,7 @@ public final class ProjectDashboardViewModel: ObservableObject {
             recordResult(result, for: id, expandsOutput: false)
             commandStates[id, default: .init()].lastErrorMessage = "Command failed with exit code \(result.exitCode)."
         } catch {
-            commandStates[id, default: .init()].lastErrorMessage = String(describing: error)
+            commandStates[id, default: .init()].lastErrorMessage = error.presentableMessage
         }
     }
 
@@ -843,10 +845,10 @@ public final class ProjectDashboardViewModel: ObservableObject {
                 ])
                 diagnosticsErrorMessage = "Command failed with exit code \(result.exitCode)."
             } else {
-                diagnosticsErrorMessage = String(describing: failure.underlying)
+                diagnosticsErrorMessage = failure.underlying.presentableMessage
             }
         } catch {
-            diagnosticsErrorMessage = String(describing: error)
+            diagnosticsErrorMessage = error.presentableMessage
         }
     }
 
@@ -895,8 +897,10 @@ public final class ProjectDashboardViewModel: ObservableObject {
         do {
             let result = try await ddevService.listSnapshots(in: appRoot)
             snapshots = DDEVSnapshot.parseListOutput(result.stdout)
+            snapshotErrorMessage = nil
         } catch {
-            globalErrorMessage = String(describing: error)
+            // Snapshot-scoped surface, not the list-level global banner (audit M10).
+            snapshotErrorMessage = error.presentableMessage
         }
     }
 
@@ -906,7 +910,7 @@ public final class ProjectDashboardViewModel: ObservableObject {
             installedAddOns = try DDEVAddon.parseListOutput(result.stdout)
             addonRawOutput = installedAddOns.isEmpty ? result.stdout.nilIfBlank : nil
         } catch {
-            addonErrorMessage = String(describing: error)
+            addonErrorMessage = error.presentableMessage
         }
     }
 

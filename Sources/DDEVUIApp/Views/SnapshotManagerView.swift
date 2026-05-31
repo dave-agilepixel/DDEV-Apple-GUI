@@ -63,6 +63,19 @@ struct SnapshotManagerView: View {
             .controlSize(.regular)
             .labelStyle(.titleAndIcon)
 
+            if let snapshotErrorMessage = viewModel.snapshotErrorMessage {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.red)
+                    Text(snapshotErrorMessage)
+                        .foregroundStyle(.red)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(10)
+                .background(RoundedRectangle(cornerRadius: 8).fill(.red.opacity(0.08)))
+            }
+
             if viewModel.snapshots.isEmpty {
                 ContentUnavailableView(
                     "No Snapshots",

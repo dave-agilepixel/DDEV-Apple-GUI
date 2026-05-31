@@ -781,6 +781,39 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.selectedProjectState.lastResult?.arguments, ["xhgui", "on"])
     }
 
+    // MARK: - M10: error presentation + snapshot error surface
+
+    func testPresentableMessagePrefersStderrThenExitCodeAndNeverDumpsStruct() {
+        let withStderr = CommandResult(executable: "ddev", arguments: ["start"], workingDirectory: nil,
+                                       exitCode: 7, stdout: "", stderr: "daemon unreachable",
+                                       startedAt: Date(), finishedAt: Date(), wasCancelled: false)
+        XCTAssertEqual(CommandRunnerError.nonZeroExit(withStderr).presentableMessage, "daemon unreachable")
+        XCTAssertFalse(CommandRunnerError.nonZeroExit(withStderr).presentableMessage.contains("CommandResult"),
+                       "Never dumps the internal result struct into a user-facing message")
+
+        let noStderr = CommandResult(executable: "ddev", arguments: ["start"], workingDirectory: nil,
+                                     exitCode: 3, stdout: "", stderr: "  ",
+                                     startedAt: Date(), finishedAt: Date(), wasCancelled: false)
+        XCTAssertEqual(CommandRunnerError.nonZeroExit(noStderr).presentableMessage, "Command failed with exit code 3.")
+        XCTAssertEqual(CommandRunnerError.timedOut(noStderr).presentableMessage, "Command timed out.")
+    }
+
+    func testSnapshotRefreshFailureRoutesToSnapshotSurfaceNotGlobalBanner() async {
+        let failure = CommandResult(executable: "ddev", arguments: ["snapshot", "--list"], workingDirectory: nil,
+                                    exitCode: 1, stdout: "", stderr: "snapshot dir unreadable",
+                                    startedAt: Date(), finishedAt: Date(), wasCancelled: false)
+        let service = FakeDDEVService(projects: [.sampleWordPress],
+                                      snapshotListError: CommandRunnerError.nonZeroExit(failure))
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.createSnapshotForSelectedProject(name: "snap")
+
+        XCTAssertEqual(viewModel.snapshotErrorMessage, "snapshot dir unreadable",
+                       "Snapshot-list refresh failure surfaces on the snapshot-scoped property")
+        XCTAssertNil(viewModel.globalErrorMessage, "…not the list-level global banner")
+    }
+
     // MARK: - M2: commandStates pruning
 
     func testApplyProjectsPrunesStaleCommandStates() async {
@@ -818,6 +851,7 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
     private let listError: Error?
     private let importError: Error?
     private let snapshotListOutput: String
+    private let snapshotListError: Error?
     private let logsOutput: String
     private let configYAMLOutput: String
     private let addonListOutput: String
@@ -837,6 +871,7 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
         listError: Error? = nil,
         importError: Error? = nil,
         snapshotListOutput: String = "",
+        snapshotListError: Error? = nil,
         logsOutput: String = "",
         configYAMLOutput: String = "",
         addonListOutput: String = "",
@@ -850,6 +885,7 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
         self.listError = listError
         self.importError = importError
         self.snapshotListOutput = snapshotListOutput
+        self.snapshotListError = snapshotListError
         self.logsOutput = logsOutput
         self.configYAMLOutput = configYAMLOutput
         self.addonListOutput = addonListOutput
@@ -959,6 +995,7 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
 
     func listSnapshots(in appRoot: String) async throws -> CommandResult {
         record("snapshot-list:\(appRoot)")
+        if let snapshotListError { throw snapshotListError }
         return commandResult(arguments: ["snapshot", "--list"], workingDirectory: appRoot, stdout: snapshotListOutput)
     }
 
