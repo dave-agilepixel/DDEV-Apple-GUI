@@ -518,7 +518,7 @@ ForEach(results) { entry <span class="tok-k">in</span> ... }</code></pre>
     </div>
   </details>
 
-  <details class="finding" data-sev="LOW">
+  <details class="finding done" data-sev="LOW">
     <summary>
       <span class="badge LOW">LOW</span>
       <span>
@@ -528,6 +528,7 @@ ForEach(results) { entry <span class="tok-k">in</span> ... }</code></pre>
       </span>
     </summary>
     <div class="body">
+      <div class="resolution"><b>RESOLVED 2026-05-31 (reviewed — accepted)</b> — As the finding itself notes, this is the conventional SwiftUI "kick off VM work" pattern and the VM owns the real lifecycle. The remediation here strengthened those guarantees: re-entrancy is guarded per-project by <code>isBusy</code> and globally by the new <code>isRefreshInFlight</code> (M4), and true cancellation now exists at the layers that matter — subprocess termination (H2) and cancellable scheduler queueing (L4). The worst case for these handlers is therefore wasted work after dismissal, not a crash or leak. Converting button-tap actions to <code>.task(id:)</code> doesn't fit their semantics, so the pattern is kept by design.</div>
       <h4>What's wrong &amp; why</h4>
       <p>Row actions and several buttons spawn raw unstructured <code>Task { await viewModel.… }</code>. They aren't cancelled when the view/sheet disappears and can run after dismissal. This is the conventional SwiftUI "kick off VM work" pattern and the VM owns the real lifecycle (re-entrancy guarded by <code>isBusy</code>), so it's acceptable — flagged only because uncancellable detached tasks are the brief's focus. Worst case is wasted work after dismissal, not a crash or leak.</p>
       <h4>Suggested fix</h4>
