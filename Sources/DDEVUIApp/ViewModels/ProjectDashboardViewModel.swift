@@ -961,26 +961,22 @@ public final class ProjectDashboardViewModel: ObservableObject {
 
     private func enrichProjectsWithDetails(_ projects: [DDEVProject]) async -> [DDEVProject] {
         // Each describe is an independent subprocess; running them in parallel turns an
-        // O(N × describe-latency) freeze into roughly O(slowest-describe).
-        await withTaskGroup(of: (Int, DDEVProject).self) { group in
-            for (index, project) in projects.enumerated() {
-                group.addTask { [ddevService] in
-                    do {
-                        let details = try await ddevService.describe(projectName: project.name)
-                        return (index, project.applying(details: details))
-                    } catch {
-                        return (index, project)
-                    }
-                }
+        // O(N × describe-latency) freeze into roughly O(slowest-describe). Bounded to
+        // maxConcurrentDescribes so a large workspace can't put N blocking describes in
+        // flight at once and pressure the global dispatch pool (audit M1).
+        let ddevService = self.ddevService
+        return await concurrentMap(projects, limit: Self.maxConcurrentDescribes) { project in
+            do {
+                let details = try await ddevService.describe(projectName: project.name)
+                return project.applying(details: details)
+            } catch {
+                return project
             }
-
-            var collected = Array<DDEVProject?>(repeating: nil, count: projects.count)
-            for await (index, project) in group {
-                collected[index] = project
-            }
-            return collected.compactMap { $0 }
         }
     }
+
+    /// Cap on concurrent `describe` subprocesses during a refresh fan-out (audit M1).
+    private static let maxConcurrentDescribes = 4
 }
 
 private struct DiagnosticFailure: Error {

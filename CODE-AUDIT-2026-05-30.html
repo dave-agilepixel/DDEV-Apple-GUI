@@ -268,7 +268,7 @@ self.pollTask = nil  <span class="tok-c">// allow start() to relaunch when the u
 
   <!-- ===================== MEDIUM ===================== -->
 
-  <details class="finding" data-sev="MEDIUM">
+  <details class="finding done" data-sev="MEDIUM">
     <summary>
       <span class="badge MEDIUM">MEDIUM</span>
       <span>
@@ -278,6 +278,7 @@ self.pollTask = nil  <span class="tok-c">// allow start() to relaunch when the u
       </span>
     </summary>
     <div class="body">
+      <div class="resolution"><b>RESOLVED 2026-05-31</b> — The describe fan-out (the only N-way read burst) is now bounded by a new order-preserving <code>concurrentMap(_:limit:)</code> helper at <code>maxConcurrentDescribes&nbsp;=&nbsp;4</code>; mutations remain capped at 3 via <code>CommandScheduler</code>. The remaining reads (logs/config/snapshot-list/addon-list) are user-driven single-shots tied to selecting one project, not bursts, so they don't create N concurrent threads. Covered by <code>ConcurrentMapTests</code> (peak ≤ limit, order preserved).</div>
       <h4>What's wrong</h4>
       <p>Each <code>run</code> dispatches a fully-blocking body (<code>run</code> + <code>waitUntilExit</code> + <code>group.wait</code>) onto <code>DispatchQueue.global</code> and holds that thread for the whole subprocess. <code>enrichProjectsWithDetails</code> fans out one <code>describe</code> per project via <code>TaskGroup</code> with <b>no concurrency cap</b>, and reads (logs/config/snapshots/add-ons) bypass <code>CommandScheduler</code> entirely. Only <i>mutations</i> are capped (max 3).</p>
       <h4>Why it matters</h4>
