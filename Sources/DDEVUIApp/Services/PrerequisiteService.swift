@@ -59,7 +59,11 @@ public final class WorkspacePrerequisiteService: PrerequisiteChecking, @unchecke
     private func dockerDaemonReady() async -> Bool {
         do {
             _ = try await commandRunner.run(
-                CommandSpec(executable: "docker", arguments: ["info", "--format", "{{.ServerVersion}}"])
+                CommandSpec(
+                    executable: "docker",
+                    arguments: ["info", "--format", "{{.ServerVersion}}"],
+                    timeout: .seconds(15)
+                )
             )
             return true
         } catch {
@@ -71,7 +75,7 @@ public final class WorkspacePrerequisiteService: PrerequisiteChecking, @unchecke
         let path = ddevResolver.resolve()
         do {
             let result = try await commandRunner.run(
-                CommandSpec(executable: path, arguments: ["version", "--json-output"])
+                CommandSpec(executable: path, arguments: ["version", "--json-output"], timeout: .seconds(15))
             )
             return .ok(version: Self.parseDDEVVersion(from: result.stdout))
         } catch {

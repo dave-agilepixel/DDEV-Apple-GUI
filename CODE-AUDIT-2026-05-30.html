@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DDEVUI — Code Quality &amp; Concurrency Audit · 2026-05-30</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --panel-2: #1d212b;
+    --ink: #e6e9ef;
+    --ink-dim: #a3acbd;
+    --ink-faint: #6f7991;
+    --line: #2a2f3a;
+    --accent: #5b9dff;
+    --crit: #ff5c5c;
+    --high: #ff9f43;
+    --med: #ffd23f;
+    --low: #4cd4b0;
+    --sec: #b98bff;
+    --good: #4cd4b0;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: var(--sans); line-height: 1.6; font-size: 15px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px 120px; }
+  header.hero {
+    padding: 56px 24px 40px; border-bottom: 1px solid var(--line);
+    background: radial-gradient(1200px 400px at 20% -10%, rgba(91,157,255,.12), transparent 60%);
+  }
+  header.hero .inner { max-width: 1080px; margin: 0 auto; }
+  .eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); margin: 0 0 10px; }
+  h1 { font-size: 34px; line-height: 1.15; margin: 0 0 14px; font-weight: 700; letter-spacing: -.01em; }
+  .sub { color: var(--ink-dim); max-width: 720px; font-size: 16px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 22px; font-size: 13px; color: var(--ink-faint); font-family: var(--mono); }
+  .meta b { color: var(--ink-dim); font-weight: 600; }
+
+  h2 { font-size: 22px; margin: 52px 0 14px; padding-top: 8px; letter-spacing: -.01em; }
+  h3 { font-size: 16px; margin: 28px 0 10px; color: var(--ink-dim); }
+  p { color: var(--ink-dim); }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code { font-family: var(--mono); font-size: .86em; background: var(--panel-2); padding: 1px 6px; border-radius: 5px; color: #d7def0; }
+
+  /* summary cards */
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 24px 0 8px; }
+  .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
+  .stat .n { font-size: 30px; font-weight: 700; line-height: 1; font-family: var(--mono); }
+  .stat .l { font-size: 12px; color: var(--ink-faint); text-transform: uppercase; letter-spacing: .08em; margin-top: 8px; }
+  .stat.crit .n { color: var(--crit); } .stat.high .n { color: var(--high); }
+  .stat.med .n { color: var(--med); } .stat.low .n { color: var(--low); }
+  .stat.sec .n { color: var(--sec); }
+
+  .callout { border: 1px solid var(--line); border-left: 3px solid var(--accent); background: var(--panel); border-radius: 10px; padding: 16px 20px; margin: 22px 0; }
+  .callout.good { border-left-color: var(--good); }
+  .callout h3 { margin: 0 0 6px; color: var(--ink); }
+  .callout p { margin: 6px 0 0; }
+
+  /* filter bar */
+  .filterbar { position: sticky; top: 0; z-index: 5; background: rgba(15,17,21,.86); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); padding: 12px 0; margin: 36px 0 6px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .filterbar .lab { font-size: 12px; color: var(--ink-faint); font-family: var(--mono); margin-right: 4px; }
+  .chip { cursor: pointer; user-select: none; border: 1px solid var(--line); background: var(--panel); color: var(--ink-dim); padding: 5px 12px; border-radius: 999px; font-size: 12.5px; font-family: var(--mono); transition: .15s; }
+  .chip:hover { border-color: var(--ink-faint); }
+  .chip.active { color: #0f1115; font-weight: 700; }
+  .chip[data-sev="ALL"].active { background: var(--ink); border-color: var(--ink); }
+  .chip[data-sev="HIGH"].active { background: var(--high); border-color: var(--high); }
+  .chip[data-sev="MEDIUM"].active { background: var(--med); border-color: var(--med); }
+  .chip[data-sev="LOW"].active { background: var(--low); border-color: var(--low); }
+  .chip[data-sev="SECURITY"].active { background: var(--sec); border-color: var(--sec); }
+
+  /* finding cards */
+  .finding { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; margin: 16px 0; overflow: hidden; }
+  .finding > summary { list-style: none; cursor: pointer; padding: 16px 20px; display: flex; gap: 14px; align-items: flex-start; }
+  .finding > summary::-webkit-details-marker { display: none; }
+  .finding > summary:hover { background: var(--panel-2); }
+  .badge { flex: none; font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: .04em; padding: 3px 9px; border-radius: 6px; margin-top: 2px; }
+  .badge.HIGH { background: rgba(255,159,67,.16); color: var(--high); }
+  .badge.MEDIUM { background: rgba(255,210,63,.14); color: var(--med); }
+  .badge.LOW { background: rgba(76,212,176,.14); color: var(--low); }
+  .badge.SECURITY { background: rgba(185,139,255,.16); color: var(--sec); }
+  .stitle { font-weight: 650; color: var(--ink); font-size: 15.5px; }
+  .smeta { font-size: 12.5px; color: var(--ink-faint); margin-top: 3px; font-family: var(--mono); }
+  .smeta .id { color: var(--ink-dim); }
+  .cat { display: inline-block; font-size: 11px; font-family: var(--mono); color: var(--ink-faint); border: 1px solid var(--line); border-radius: 5px; padding: 1px 7px; margin-left: 8px; }
+  .body { padding: 4px 22px 22px; border-top: 1px solid var(--line); }
+  .body h4 { margin: 18px 0 6px; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-faint); font-family: var(--mono); }
+  .body p { margin: 0; color: var(--ink-dim); }
+  .loc { font-family: var(--mono); font-size: 12.5px; color: var(--accent); }
+  pre { background: #0b0d11; border: 1px solid var(--line); border-radius: 9px; padding: 14px 16px; overflow-x: auto; margin: 8px 0 0; }
+  pre code { background: none; padding: 0; font-size: 12.5px; line-height: 1.55; color: #cdd6e6; }
+  .tok-c { color: #6f7991; font-style: italic; } /* comment */
+  .tok-k { color: #ff9f9f; } /* keyword-ish */
+  .tok-bad { color: var(--high); }
+  .tok-good { color: var(--good); }
+
+  ol.plan { counter-reset: step; list-style: none; padding: 0; }
+  ol.plan li { position: relative; padding: 14px 16px 14px 56px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); margin: 10px 0; }
+  ol.plan li::before { counter-increment: step; content: counter(step); position: absolute; left: 14px; top: 14px; width: 28px; height: 28px; border-radius: 50%; background: var(--panel-2); border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-weight: 700; color: var(--accent); }
+  ol.plan li b { color: var(--ink); }
+  ol.plan li .why { display: block; color: var(--ink-faint); font-size: 13px; margin-top: 4px; }
+
+  ul.clean { list-style: none; padding: 0; }
+  ul.clean li { padding: 9px 0 9px 26px; position: relative; border-bottom: 1px solid var(--line); color: var(--ink-dim); }
+  ul.clean li::before { content: "✓"; position: absolute; left: 0; color: var(--good); font-weight: 700; }
+  ul.dot li { color: var(--ink-dim); }
+
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13.5px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--ink-faint); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; font-family: var(--mono); }
+  td code { font-size: 12px; }
+  .foot { margin-top: 60px; padding-top: 20px; border-top: 1px solid var(--line); color: var(--ink-faint); font-size: 13px; }
+  .hide { display: none !important; }
+
+  /* remediation tracking (added 2026-05-31 during fix pass) */
+  .finding.done > summary { opacity: .82; }
+  .finding.done .stitle::before { content: "✓ "; color: var(--good); font-weight: 800; }
+  .badge.done { background: rgba(76,212,176,.16); color: var(--good); }
+  .resolution { border: 1px solid var(--good); border-left: 3px solid var(--good); background: rgba(76,212,176,.06); border-radius: 8px; padding: 10px 14px; margin: 0 0 4px; font-size: 13.5px; color: var(--ink-dim); }
+  .resolution b { color: var(--good); font-family: var(--mono); font-size: 12px; letter-spacing: .04em; }
+  .resolution code { background: var(--panel-2); }
+  .resolution.reframed { border-color: var(--med); border-left-color: var(--med); background: rgba(255,210,63,.06); }
+  .resolution.reframed b { color: var(--med); }
+  .resolution.noop { border-color: var(--ink-faint); border-left-color: var(--ink-faint); background: rgba(111,121,145,.08); }
+  .resolution.noop b { color: var(--ink-faint); }
+</style>
+</head>
+<body>
+<header class="hero">
+  <div class="inner">
+    <p class="eyebrow">Code Quality · Concurrency · Lifecycle Audit</p>
+    <h1>DDEVUI — Rock-Solid Review</h1>
+    <p class="sub">A read-only audit focused on long-running / looping tasks and their teardown, retain cycles &amp; garbage collection, unguarded code, code smells, and performance hot paths. No code was changed. Every finding includes a concrete suggested fix.</p>
+    <div class="meta">
+      <span><b>Date:</b> 2026-05-30</span>
+      <span><b>Branch:</b> feat/per-project-concurrency</span>
+      <span><b>Scope:</b> Sources/DDEVUIApp (~6.0k LOC, 29 files)</span>
+      <span><b>Method:</b> 3 parallel focused reviewers + source verification</span>
+      <span><b>Toolchain:</b> Swift 6.2 · SwiftUI · macOS</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <h2 id="summary">Executive summary</h2>
+  <p>The codebase is in genuinely good shape. The single <b>CRITICAL</b> from the previous review (<code>2026-05-28</code> — the subprocess pipe-deadlock + main-thread block) has been <b>properly fixed</b>: <code>ProcessCommandRunner</code> now drains stdout/stderr concurrently before <code>waitUntilExit()</code> and runs off the main thread. There is <b>no outstanding CRITICAL</b>, no retain cycle, no force-unwrap (<code>!</code>/<code>try!</code>/<code>as!</code>) in the audited code, and the one long-lived task uses <code>[weak self]</code> with a <code>deinit</code> cancel.</p>
+
+  <p>The outstanding work clusters around two themes the brief asked about directly: <b>(1)</b> a background poll loop that runs for the entire app session with no off-switch, and <b>(2)</b> subprocesses that cannot be cancelled or time out. Together these are the closest thing to a "task that runs forever / hangs and holds a resource" in the app. Everything else is medium/low: thread-pool pressure, a slowly-growing state dictionary, main-thread file I/O, and a healthy backlog of view-layer performance and code-smell cleanups.</p>
+
+  <div class="cards">
+    <div class="stat"><div class="n">0</div><div class="l">Critical (open)</div></div>
+    <div class="stat high"><div class="n">2</div><div class="l">High</div></div>
+    <div class="stat med"><div class="n">10</div><div class="l">Medium</div></div>
+    <div class="stat low"><div class="n">14</div><div class="l">Low</div></div>
+    <div class="stat sec"><div class="n">3</div><div class="l">Security / Hardening</div></div>
+  </div>
+
+  <div class="callout good">
+    <h3>✓ Already fixed since the 2026-05-28 review</h3>
+    <p>Verified present in the current source: subprocess pipe-drain + off-main execution (<code>CommandRunning.swift</code>); parallel <code>describe</code> via <code>TaskGroup</code>; <code>commandHistory</code> capped at 50 entries &amp; 32&nbsp;KiB/entry; <code>nilIfBlank</code> consolidated into one extension; YAML comment-in-quotes handling; per-project concurrency model (<code>commandStates</code> + <code>CommandScheduler</code>). These are <b>not</b> re-reported below.</p>
+  </div>
+
+  <div class="callout">
+    <h3>The one-paragraph verdict</h3>
+    <p>Ship-worthy. Fix <b>H1</b> and <b>H2</b> first — they're the literal subject of the brief and they compound into a real "Docker hangs → app slowly stalls" failure mode. Then prune <b>M2</b> and move file I/O off-main (<b>M3</b>). The god-object view model (<b>M9</b>) is the highest-leverage structural refactor but it is maintainability debt, not a defect — schedule it, don't panic about it.</p>
+  </div>
+
+  <h2 id="findings">Findings</h2>
+  <p>Click any finding to expand. Use the filter to focus by severity.</p>
+
+  <div class="filterbar">
+    <span class="lab">FILTER:</span>
+    <span class="chip active" data-sev="ALL">All</span>
+    <span class="chip" data-sev="HIGH">High</span>
+    <span class="chip" data-sev="MEDIUM">Medium</span>
+    <span class="chip" data-sev="LOW">Low</span>
+    <span class="chip" data-sev="SECURITY">Security</span>
+  </div>
+
+  <!-- ===================== HIGH ===================== -->
+
+  <details class="finding" data-sev="HIGH" open>
+    <summary>
+      <span class="badge HIGH">HIGH</span>
+      <span>
+        <span class="stitle">H1 · Prerequisite poll loop never stops — it spawns subprocesses every 5&nbsp;s for the entire app session</span>
+        <span class="cat">Long-running task</span>
+        <div class="smeta"><span class="id">CWE-noise</span> · <span class="loc">PrerequisiteMonitor.swift:21–31</span> &nbsp;·&nbsp; <span class="loc">ContentView.swift:88–90</span></div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What's wrong</h4>
+      <p><code>PrerequisiteMonitor.start()</code> launches an infinite <code>while !Task.isCancelled</code> loop that calls <code>service.check()</code> (which shells out to <code>docker&nbsp;info</code> + <code>ddev&nbsp;version</code>) and sleeps 5&nbsp;s. It is started from <code>ContentView</code>'s <code>.task { prerequisites.start() }</code> but there is <b>no matching <code>stop()</code></b> anywhere — no <code>.onDisappear</code>, no <code>scenePhase</code> observation, no "satisfied → stop" condition. The loop only ends when the <code>@StateObject</code> is deallocated (<code>deinit</code> cancels it), which for this single-window app is effectively app quit.</p>
+      <pre><code><span class="tok-k">public func</span> start() {
+    <span class="tok-k">guard</span> pollTask == nil <span class="tok-k">else</span> { <span class="tok-k">return</span> }
+    pollTask = Task { [<span class="tok-good">weak self</span>] <span class="tok-k">in</span>
+        <span class="tok-k">guard let</span> self <span class="tok-k">else</span> { <span class="tok-k">return</span> }
+        <span class="tok-k">while</span> !Task.isCancelled {            <span class="tok-c">// ← never exits on success</span>
+            <span class="tok-k">await</span> self.refresh()              <span class="tok-c">// docker info + ddev version</span>
+            <span class="tok-k">guard</span> !Task.isCancelled <span class="tok-k">else</span> { <span class="tok-k">return</span> }
+            <span class="tok-k">try?</span> <span class="tok-k">await</span> Task.sleep(for: self.pollInterval)
+        }
+    }
+}</code></pre>
+      <h4>Why it matters</h4>
+      <p>This is exactly the "looping task that isn't cleaned up" the brief targets. It is <b>not a memory leak</b> (the <code>[weak self]</code> capture and <code>deinit</code> cancel are correct), but it is an unbounded-duration background loop doing real work forever: ~12 <code>docker&nbsp;info</code> + 12 <code>ddev&nbsp;version</code> process spawns per minute, indefinitely, even after Docker/DDEV are confirmed healthy and the blocking sheet is dismissed. On a laptop that's continuous wake-ups and battery drain for zero benefit once prerequisites pass. It also amplifies <b>H2</b>: if the Docker daemon hangs, every 5&nbsp;s the loop launches another <code>docker&nbsp;info</code> that never returns (see H2).</p>
+      <h4>Suggested fix</h4>
+      <p>Back off or stop once satisfied, and tie the lifecycle to scene phase. Minimal change — make the loop self-terminate when prerequisites are met and offer a cheap re-arm:</p>
+      <pre><code><span class="tok-c">// Option A — stop polling once everything is satisfied; re-arm on demand.</span>
+<span class="tok-k">while</span> !Task.isCancelled {
+    <span class="tok-k">await</span> self.refresh()
+    <span class="tok-k">if</span> self.state.allSatisfied { <span class="tok-k">break</span> }   <span class="tok-c">// idle until re-armed</span>
+    <span class="tok-k">guard</span> !Task.isCancelled <span class="tok-k">else</span> { <span class="tok-k">return</span> }
+    <span class="tok-k">try?</span> <span class="tok-k">await</span> Task.sleep(for: self.pollInterval)
+}
+self.pollTask = nil  <span class="tok-c">// allow start() to relaunch when the user reopens the sheet</span></code></pre>
+      <pre><code><span class="tok-c">// Option B — also pause in the background, in ContentView:</span>
+@Environment(\.scenePhase) <span class="tok-k">private var</span> scenePhase
+<span class="tok-c">// ...</span>
+.onChange(of: scenePhase) { _, phase <span class="tok-k">in</span>
+    phase == .active ? prerequisites.start() : prerequisites.stop()
+}</code></pre>
+      <p>Both leave the existing <code>start()</code> idempotency guard and <code>deinit</code> cancel intact.</p>
+    </div>
+  </details>
+
+  <details class="finding done" data-sev="HIGH" open>
+    <summary>
+      <span class="badge HIGH">HIGH</span>
+      <span>
+        <span class="stitle">H2 · Subprocesses ignore task cancellation and have no timeout — a hung child blocks forever and pins a thread</span>
+        <span class="cat">Cancellation / hang</span>
+        <div class="smeta"><span class="loc">CommandRunning.swift:26–95</span></div>
+      </span>
+    </summary>
+    <div class="body">
+      <div class="resolution"><b>RESOLVED 2026-05-31</b> — <code>ProcessCommandRunner.run</code> now wraps execution in <code>withTaskCancellationHandler</code> and shares the child via a lock-guarded <code>ProcessController</code>: task cancellation throws <code>CancellationError</code> after SIGTERM→SIGKILL, and a new <code>CommandSpec.timeout</code> drives a watchdog that terminates a wedged child (surfaced as a new <code>CommandRunnerError.timedOut</code>). The prerequisite poll's <code>docker&nbsp;info</code> + <code>ddev&nbsp;version</code> now run with a 15&nbsp;s cap, closing the H1×H2 thread-exhaustion path. Covered by <code>ProcessCommandRunnerTests</code> (cancel terminates in ~0.3&nbsp;s, timeout in ~1&nbsp;s).</div>
+      <h4>What's wrong</h4>
+      <p><code>ProcessCommandRunner.executeBlocking</code> calls <code>process.run()</code> then <code>process.waitUntilExit()</code> with no <code>withTaskCancellationHandler</code> and no watchdog. When the owning Swift <code>Task</code> is cancelled (view dismissed, project switched, app quitting) the child <code>ddev</code>/<code>docker</code> process keeps running to completion. If the child <i>hangs</i> (a <code>ddev&nbsp;start</code> stuck on Docker, a <code>docker&nbsp;info</code> against an unresponsive daemon), the continuation never resumes and one <code>DispatchQueue.global</code> thread is pinned permanently.</p>
+      <h4>Why it matters</h4>
+      <p>Long operations (<code>ddev start</code>/<code>restart</code> routinely take 10–60&nbsp;s) cannot be aborted at all — there is no cancellation path end-to-end. Worse, this combines with <b>H1</b>: a stalled Docker daemon means the 5&nbsp;s poll loop launches a fresh <code>docker&nbsp;info</code> every cycle, each one hanging and consuming another global-queue thread. Over a few minutes that exhausts the (small, ~64-thread) GCD pool and the whole app's async machinery stalls. This is the most serious latent failure mode in the app.</p>
+      <h4>Suggested fix</h4>
+      <p>Adopt cancellation + a timeout watchdog in the runner. <code>process.terminate()</code> (SIGTERM), escalate to SIGKILL after a grace period:</p>
+      <pre><code><span class="tok-k">return try await</span> withTaskCancellationHandler {
+    <span class="tok-k">try await</span> withCheckedThrowingContinuation { cont <span class="tok-k">in</span>
+        DispatchQueue.global(qos: .userInitiated).async {
+            <span class="tok-c">// ... existing pipe-drain + run ...</span>
+            <span class="tok-c">// watchdog:</span>
+            <span class="tok-k">let</span> deadline = DispatchTime.now() + .seconds(maxSeconds)
+            <span class="tok-k">if</span> readQueue.sync(execute: ...) { /* timed out */ process.terminate() }
+        }
+    }
+} onCancel: {
+    process.terminate()                 <span class="tok-c">// SIGTERM on Task cancel</span>
+    <span class="tok-c">// optionally schedule SIGKILL after grace</span>
+}</code></pre>
+      <p>Add a per-command timeout cap (e.g. 120&nbsp;s for mutations, 15&nbsp;s for the poll's <code>docker&nbsp;info</code>) so a wedged daemon can never pin a thread indefinitely. This is the listed "L4" follow-up from the prior review, promoted to HIGH because of the H1 interaction.</p>
+    </div>
+  </details>
+
+  <!-- ===================== MEDIUM ===================== -->
+
+  <details class="finding" data-sev="MEDIUM">
+    <summary>
+      <span class="badge MEDIUM">MEDIUM</span>
+      <span>
+        <span class="stitle">M1 · Every command pins a GCD thread for its full lifetime; describe/read fan-out is uncapped</span>
+        <span class="cat">Thread-pool pressure</span>
+        <div class="smeta"><span class="loc">CommandRunning.swift:28</span> &nbsp;·&nbsp; <span class="loc">ProjectDashboardViewModel.swift · enrichProjectsWithDetails</span></div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What's wrong</h4>
+      <p>Each <code>run</code> dispatches a fully-blocking body (<code>run</code> + <code>waitUntilExit</code> + <code>group.wait</code>) onto <code>DispatchQueue.global</code> and holds that thread for the whole subprocess. <code>enrichProjectsWithDetails</code> fans out one <code>describe</code> per project via <code>TaskGroup</code> with <b>no concurrency cap</b>, and reads (logs/config/snapshots/add-ons) bypass <code>CommandScheduler</code> entirely. Only <i>mutations</i> are capped (max 3).</p>
+      <h4>Why it matters</h4>
+      <p>A workspace with many projects can put N blocked threads in flight at once (N describes + uncapped reads + the poll loop), pressuring the global pool and risking priority inversion / starvation for other async work. The cap that exists (mutations) doesn't protect the most common burst (a refresh that describes every project).</p>
+      <h4>Suggested fix</h4>
+      <p>Run blocking process work on a dedicated bounded queue owned by <code>ProcessCommandRunner</code> (or an <code>OperationQueue</code> with <code>maxConcurrentOperationCount</code>), and cap the <code>describe</code> fan-out — e.g. chunk the <code>TaskGroup</code> to ~4 in flight, or route reads through the same scheduler with a separate permit pool.</p>
+    </div>
+  </details>
+
+  <details class="finding" data-sev="MEDIUM">
+    <summary>
+      <span class="badge MEDIUM">MEDIUM</span>
+      <span>
+        <span class="stitle">M2 · <code>commandStates</code> dictionary is not pruned on the refresh path — slow unbounded growth</span>
+        <span class="cat">Unbounded growth / GC</span>
+        <div class="smeta"><span class="loc">ProjectDashboardViewModel.swift:931–942 (applyProjects)</span></div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What's wrong</h4>
+      <p>Per-project history is correctly bounded (50 entries × 32&nbsp;KiB). The <i>explicit trash</i> action prunes its entry (<code>commandStates[removedID] = nil</code>). But <code>applyProjects(_:)</code> — the path used whenever a project disappears via a list refresh (deleted/unlinked in-app, or removed outside the app) — only reassigns <code>self.projects</code> and recomputes selection. It never prunes <code>commandStates</code>.</p>
+      <pre><code><span class="tok-k">private func</span> applyProjects(_ projects: [DDEVProject]) {
+    self.projects = projects
+    <span class="tok-c">// ↑ commandStates entries for vanished projects are never removed here</span>
+    <span class="tok-k">if let</span> selectedProjectID, ... { ... } <span class="tok-k">else</span> { ... }
+}</code></pre>
+      <h4>Why it matters</h4>
+      <p>Bounded per key, unbounded in key count. Over a long session with project churn, stale entries accumulate (each up to ~50×32&nbsp;KiB of retained command history). It's a slow leak, not a crash, but it's exactly the "not correctly garbage collected" pattern flagged in the brief.</p>
+      <h4>Suggested fix</h4>
+      <p>Prune to live keys at the end of <code>applyProjects</code> (keep busy entries so an in-flight command that briefly drops from the list isn't lost):</p>
+      <pre><code><span class="tok-k">let</span> liveIDs = Set(projects.map(\.id))
+commandStates = commandStates.filter { liveIDs.contains($0.key) || $0.value.isBusy }</code></pre>
+    </div>
+  </details>
+
+  <details class="finding" data-sev="MEDIUM">
+    <summary>
+      <span class="badge MEDIUM">MEDIUM</span>
+      <span>
+        <span class="stitle">M3 · Project cache JSON is read/written synchronously on the MainActor</span>
+        <span class="cat">Main-thread I/O</span>
+        <div class="smeta"><span class="loc">ProjectCacheStore.swift</span> &nbsp;·&nbsp; called from <span class="loc">ProjectDashboardViewModel (loadCachedProjects / refreshProjectsFromDDEV)</span></div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What's wrong</h4>
+      <p><code>FileProjectCacheStore.loadProjects()</code> / <code>saveProjects()</code> do synchronous <code>Data(contentsOf:)</code> / <code>data.write(to:)</code> plus JSON encode/decode, and are called from the <code>@MainActor</code> view model on every refresh and re-describe.</p>
+      <h4>Why it matters</h4>
+      <p>For a large project list this blocks the main thread on disk I/O during the hot refresh path — a stutter source. Disk I/O on the UI actor is the kind of thing that's invisible on an SSD with 3 projects and very visible with 40 on a busy machine.</p>
+      <h4>Suggested fix</h4>
+      <p>Make <code>ProjectCacheStoring</code> <code>async</code> and perform encode/decode + file I/O off the main actor (a detached task or a small dedicated I/O actor). The cache is a cold-start hint, so eventual consistency is fine.</p>
+    </div>
+  </details>
+
+  <details class="finding" data-sev="MEDIUM">
+    <summary>
+      <span class="badge MEDIUM">MEDIUM</span>
+      <span>
+        <span class="stitle">M4 · <code>refresh()</code> has no in-flight guard — overlapping full refreshes can stack</span>
+        <span class="cat">Re-entrancy</span>
+        <div class="smeta"><span class="loc">ProjectDashboardViewModel.swift · refresh / loadCachedProjectsThenRefresh</span></div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What's wrong</h4>
+      <p><code>refresh()</code> sets <code>isRunningGlobalCommand = true</code> but does not early-return when already running. The toolbar button is disabled while running (UI mitigation), but <code>loadCachedProjectsThenRefresh()</code> (from <code>.task</code> on appear) and a refresh triggered by a <code>.fullList</code> mutation can run two <code>listProjects</code> + N-project <code>describe</code> fan-outs at once.</p>
+      <h4>Why it matters</h4>
+      <p>Last-writer-wins on <code>projects</code>, so no corruption — but doubled subprocess load and a possible flicker. Combined with M1 (uncapped describes) this is how a "refresh storm" gets created.</p>
+      <h4>Suggested fix</h4>
+      <p>Guard the entry points (<code>guard !isRunningGlobalCommand else { return }</code>), or hold the in-flight refresh in a stored <code>Task</code> and <code>await</code> it instead of spawning a second one.</p>
+    </div>
+  </details>
+
+  <details class="finding" data-sev="MEDIUM">
+    <summary>
+      <span class="badge MEDIUM">MEDIUM</span>
+      <span>
+        <span class="stitle">M5 · <code>PipeBuffer</code> accumulates unbounded output in memory before truncation</span>
+        <span class="cat">Memory spike</span>
+        <div class="smeta"><span class="loc">CommandRunning.swift:99–110</span></div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What's wrong</h4>
+      <p>stdout/stderr are read fully into a <code>Data</code> via <code>readDataToEndOfFile()</code> with no size cap, then converted to <code>String</code>. The deadlock is fixed, but the in-memory buffer is unbounded. History storage is capped at 32&nbsp;KiB — but only <i>after</i> the entire buffer already exists in RAM.</p>
+      <h4>Why it matters</h4>
+      <p>A runaway <code>ddev logs</code> with a huge tail, a verbose <code>utility diagnose</code>, or <code>import-db</code> progress can briefly hold hundreds of MB (Data + its String copy) and spike RSS.</p>
+      <h4>Suggested fix</h4>
+      <p>Read in chunks (<code>readData(ofLength:)</code> loop or <code>readabilityHandler</code>) and stop appending past a cap (e.g. a few MB), marking the result truncated — mirroring the existing history bound but applied at the source.</p>
+    </div>
+  </details>
+
+  <details class="finding" data-sev="MEDIUM">
+    <summary>
+      <span class="badge MEDIUM">MEDIUM</span>
+      <span>
+        <span class="stitle">M6 · No Docker executable resolver; daemon-down and CLI-missing are indistinguishable</span>
+        <span class="cat">Robustness</span>
+        <div class="smeta"><span class="loc">PrerequisiteService.swift:59–68</span></div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What's wrong</h4>
+      <p><code>dockerDaemonReady()</code> runs <code>docker info</code> by <b>bare name</b> (<code>executable: "docker"</code>), relying entirely on the hardcoded PATH in <code>environmentForGUIApp()</code>. Unlike <code>ddev</code> (which has <code>DDEVExecutableResolver</code> probing known locations), there is no <code>docker</code> resolver. And any throw — launch failure (binary not found) <i>or</i> non-zero exit (daemon down) — is collapsed into the same "not ready".</p>
+      <h4>Why it matters</h4>
+      <p>A GUI app launched by LaunchServices inherits a minimal PATH. Docker installed under a non-standard prefix (custom Homebrew, OrbStack, <code>~/.docker/bin</code>) yields a false "Docker missing", and the user gets a misleading prerequisite screen with no way to tell "install Docker" from "start Docker".</p>
+      <h4>Suggested fix</h4>
+      <p>Add a <code>DockerExecutableResolver</code> mirroring the DDEV one (probe <code>/opt/homebrew/bin</code>, <code>/usr/local/bin</code>, <code>/Applications/Docker.app/Contents/Resources/bin</code>, OrbStack paths) and pass the absolute path. Split <code>CommandRunnerError</code> into <code>.launchFailed</code> vs <code>.nonZeroExit</code> so the UI can show a distinct "Docker CLI not found" state.</p>
+    </div>
+  </details>
+
+  <details class="finding" data-sev="MEDIUM">
+    <summary>
+      <span class="badge MEDIUM">MEDIUM</span>
+      <span>
+        <span class="stitle">M7 · Config editor races on shared <code>projectConfig</code> and can overwrite in-progress edits</span>
+        <span class="cat">State / correctness</span>
+        <div class="smeta"><span class="loc">ProjectConfigEditorView.swift:34–44, 84, 320–326</span></div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What's wrong</h4>
+      <p>The editor syncs from the shared <code>@Published viewModel.projectConfig</code> via <b>both</b> a <code>.task(id: project.id)</code> and a <code>.onChange(of: projectConfig)</code>. Because <code>loadConfigForSelectedProject</code> sets <code>projectConfig = nil</code> then repopulates, both paths can fire <code>syncState</code>, and switching projects quickly can sync project A's config into project B's fields. On Apply, success is inferred from shared <code>lastErrorMessage == nil</code> and <code>loadedConfig</code> is replaced with a draft rebuilt from <i>all</i> current fields, so unrelated rows' "changed" indicators clear incorrectly.</p>
+      <h4>Why it matters</h4>
+      <p>Silent data confusion in a config editor — the user can see the wrong project's values or lose the visual cue that another field still has unsaved changes.</p>
+      <h4>Suggested fix</h4>
+      <p>Drive the editor from a single source of truth: have the VM call <i>return</i> the loaded config into a local <code>@State</code> rather than going through shared <code>@Published</code> state, and guard <code>syncState</code> against a stale <code>project.id</code>. After a successful apply, reload from DDEV (or update only the applied field) instead of trusting the local draft.</p>
+    </div>
+  </details>
+
+  <details class="finding" data-sev="MEDIUM">
+    <summary>
+      <span class="badge MEDIUM">MEDIUM</span>
+      <span>
+        <span class="stitle">M8 · Command-history <code>ForEach</code> keyed on array index — view identity bug under the sliding window</span>
+        <span class="cat">SwiftUI identity</span>
+        <div class="smeta"><span class="loc">CommandOutputView.swift:35</span></div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What's wrong</h4>
+      <p>The history list is <code>ForEach(Array(results.enumerated()), id: \.offset)</code>. Because history is append-with-cap (<code>removeFirst</code> once over 50), the same <code>offset</code> maps to a <i>different</i> command as the window slides.</p>
+      <h4>Why it matters</h4>
+      <p>SwiftUI reuses view identity by <code>id</code>, so a new command can inherit the previous row's view state and animations — flicker, wrong scroll/expansion state, mis-animated inserts.</p>
+      <h4>Suggested fix</h4>
+      <p>Give <code>CommandHistoryEntry</code> a stable <code>id</code> (a <code>UUID</code> set at creation, or <code>result.startedAt</code> + args hash) and key the <code>ForEach</code> on it.</p>
+      <pre><code><span class="tok-k">public struct</span> CommandHistoryEntry: Identifiable, Equatable, Sendable {
+    <span class="tok-k">public let</span> id = UUID()
+    <span class="tok-k">public let</span> result: CommandResult
+}
+<span class="tok-c">// view:</span>
+ForEach(results) { entry <span class="tok-k">in</span> ... }</code></pre>
+    </div>
+  </details>
+
+  <details class="finding" data-sev="MEDIUM">
+    <summary>
+      <span class="badge MEDIUM">MEDIUM</span>
+      <span>
+        <span class="stitle">M9 · God-object view model — ~972 lines, ~22 <code>@Published</code> properties, ~40 methods</span>
+        <span class="cat">Architecture / perf</span>
+        <div class="smeta"><span class="loc">ProjectDashboardViewModel.swift (whole file)</span></div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What's wrong</h4>
+      <p>A single <code>ObservableObject</code> owns project list, selection, search, per-project command state, snapshots, logs, config, add-ons, diagnostics, preferences, and installed apps. With <code>ObservableObject</code>/<code>@Published</code>, <i>any</i> change invalidates <i>every</i> view observing the object.</p>
+      <h4>Why it matters</h4>
+      <p>Two costs: (1) broad, unnecessary re-renders (a snapshot list update re-evaluates the diagnostics view's body); (2) it's hard to reason about concurrency when ~40 async methods all touch shared <code>@Published</code> state on one actor — it's the substrate that makes M4/M7/M2 easy to introduce.</p>
+      <h4>Suggested fix</h4>
+      <p>Split into focused observable sub-models (<code>ProjectListModel</code>, <code>SelectedProjectDetailModel</code>, <code>DiagnosticsModel</code>, <code>PreferencesModel</code>), or migrate to the <code>@Observable</code> macro, which gives field-level invalidation so views only re-render on the properties they actually read. This is the single highest-leverage refactor — schedule it, but it's debt, not a bug.</p>
+    </div>
+  </details>
+
+  <details class="finding" data-sev="MEDIUM">
+    <summary>
+      <span class="badge MEDIUM">MEDIUM</span>
+      <span>
+        <span class="stitle">M10 · Raw <code>String(describing: error)</code> leaks internal structs into UI banners; wrong error surface</span>
+        <span class="cat">Error handling</span>
+        <div class="smeta"><span class="loc">ProjectDashboardViewModel.swift · refreshSnapshots &amp; several <code>.other</code> paths</span></div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What's wrong</h4>
+      <p>Several catch sites set a user-facing message to <code>String(describing: error)</code>. For <code>CommandRunnerError.nonZeroExit(CommandResult(...))</code> that dumps the entire result struct (stdout, stderr, timestamps, args) into the banner. <code>refreshSnapshots(in:)</code> additionally routes a post-mutation refresh failure into <code>globalErrorMessage</code> — the wrong surface (a list-level banner for a snapshot-scoped failure).</p>
+      <h4>Why it matters</h4>
+      <p>Ugly, leaky error UX and conflated error scopes — a snapshot refresh hiccup shows up as a global error.</p>
+      <h4>Suggested fix</h4>
+      <p>Centralize a <code>CommandRunnerError → String</code> presenter that extracts <code>stderr.nilIfBlank ?? "exit code \(n)"</code> (the pattern already used well in <code>loadConfigForSelectedProject</code>), and route snapshot errors to a snapshot-scoped property rather than <code>globalErrorMessage</code>.</p>
+    </div>
+  </details>
+
+  <!-- ===================== LOW ===================== -->
+
+  <details class="finding" data-sev="LOW">
+    <summary>
+      <span class="badge LOW">LOW</span>
+      <span>
+        <span class="stitle">L1 · Unmemoized work in view bodies (filters, counts, sets, grouping) recomputed every render</span>
+        <span class="cat">Performance</span>
+        <div class="smeta"><span class="loc">ContentView.swift:96–97</span> · <span class="loc">ProjectListView (filteredProjects)</span> · <span class="loc">AddonManagerView</span> · <span class="loc">FrameworkCommandLauncherView:12–20</span></div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What's wrong &amp; why</h4>
+      <p>Several bodies recompute non-trivial work on every evaluation: sidebar badge counts re-run <code>projects.filter { ... }</code>; <code>filteredProjects</code> runs section filtering + 4-field <code>localizedCaseInsensitiveContains</code> on every keystroke and every <code>projects</code> change; <code>AddonManagerView</code> rebuilds an <code>installedRepositories</code> <code>Set</code> per render and checks it 3×/row; <code>FrameworkCommandLauncherView.groups</code> does an O(n²) <code>reduce + firstIndex</code> grouping per render. Small N today, but unmemoized hot-path work.</p>
+      <h4>Suggested fix</h4>
+      <p>Precompute on the VM when inputs change: expose <code>runningCount</code>/<code>wordPressCount</code>; cache filtered results keyed by <code>(searchText, section, projects)</code> and/or debounce <code>searchText</code>; hoist the add-on <code>Set</code> to a single <code>let</code> at the top of <code>body</code>; build framework groups once with <code>Dictionary(grouping:)</code>.</p>
+    </div>
+  </details>
+
+  <details class="finding" data-sev="LOW">
+    <summary>
+      <span class="badge LOW">LOW</span>
+      <span>
+        <span class="stitle">L2 · Logs panel uses <code>TextEditor(text: .constant(...))</code> and rejoins the log string every render</span>
+        <span class="cat">Performance / correctness</span>
+        <div class="smeta"><span class="loc">LogsViewerView.swift:85, 106–111</span></div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What's wrong &amp; why</h4>
+      <p><code>logText</code> joins stdout+stderr on every body evaluation, and it's bound via <code>.constant</code> to an editable <code>TextEditor</code> just to get selection/scroll. For large tail counts that rebuilds a big string each render and uses the wrong control.</p>
+      <h4>Suggested fix</h4>
+      <p>Compute <code>logText</code> once when <code>projectLogsResult</code> changes; render selectable <code>Text</code> inside a <code>ScrollView</code> (as <code>CommandOutputView</code> already does).</p>
+    </div>
+  </details>
+
+  <details class="finding" data-sev="LOW">
+    <summary>
+      <span class="badge LOW">LOW</span>
+      <span>
+        <span class="stitle">L3 · Fire-and-forget <code>Task { }</code> in button/closure handlers (not view-scoped)</span>
+        <span class="cat">Task lifecycle</span>
+        <div class="smeta"><span class="loc">ContentView.swift:57, 117, 284</span> · <span class="loc">ProjectListView.swift:201–206</span></div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What's wrong &amp; why</h4>
+      <p>Row actions and several buttons spawn raw unstructured <code>Task { await viewModel.… }</code>. They aren't cancelled when the view/sheet disappears and can run after dismissal. This is the conventional SwiftUI "kick off VM work" pattern and the VM owns the real lifecycle (re-entrancy guarded by <code>isBusy</code>), so it's acceptable — flagged only because uncancellable detached tasks are the brief's focus. Worst case is wasted work after dismissal, not a crash or leak.</p>
+      <h4>Suggested fix</h4>
+      <p>Where strict scoping matters, prefer <code>.task(id:)</code> (auto-cancelled on disappear) or hold a <code>@State var task: Task&lt;Void,Never&gt;?</code> cancelled in <code>onDisappear</code>. Otherwise document the choice and keep the <code>isBusy</code> guards.</p>
+    </div>
+  </details>
+
+  <details class="finding" data-sev="LOW">
+    <summary>
+      <span class="badge LOW">LOW</span>
+      <span>
+        <span class="stitle">L4 · <code>CommandScheduler.acquire()</code> is non-cancellable; manual acquire/release is leak-prone</span>
+        <span class="cat">Concurrency</span>
+        <div class="smeta"><span class="loc">CommandScheduler.swift:27–35</span> · manual sites in <span class="loc">ProjectDashboardViewModel</span></div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What's wrong &amp; why</h4>
+      <p>Documented by design: a queued caller cannot be cancelled and stays parked until a permit frees. The safe <code>run(_:)</code> wrapper <code>defer</code>s release, but the VM uses manual <code>acquire()</code>/<code>release()</code> around <code>execute</code>; a future edit that adds an early return/throw between them permanently leaks a permit and lowers the concurrency cap until restart.</p>
+      <h4>Suggested fix</h4>
+      <p>Route all callers through <code>scheduler.run { ... }</code>. If cancellable queueing is wanted, switch <code>acquire()</code> to <code>withTaskCancellationHandler</code> + remove-waiter-and-throw <code>CancellationError</code> (guarding against double-resume). Pairs with H2 (process termination) for true end-to-end cancellation.</p>
+    </div>
+  </details>
+
+  <details class="finding" data-sev="LOW">
+    <summary>
+      <span class="badge LOW">LOW</span>
+      <span>
+        <span class="stitle">L5 · Docker launch failure is silently swallowed</span>
+        <span class="cat">Error handling</span>
+        <div class="smeta"><span class="loc">PrerequisiteService.swift:41–45</span></div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What's wrong &amp; why</h4>
+      <p><code>launch(_:)</code> catches <code>openApplication</code> errors with an empty body. If launch fails permanently (app damaged, Gatekeeper block), <code>isLaunching</code> flips back with no feedback and the user can't tell why Docker never starts.</p>
+      <h4>Suggested fix</h4>
+      <p>Surface the launch error to a <code>@Published</code> state so the prerequisite sheet can show "Couldn't start Docker — …".</p>
+    </div>
+  </details>
+
+  <details class="finding" data-sev="LOW">
+    <summary>
+      <span class="badge LOW">LOW</span>
+      <span>
+        <span class="stitle">L6 · Stringly-typed parsing of <code>ddev version</code> and snapshot tokens is fragile</span>
+        <span class="cat">Parsing</span>
+        <div class="smeta"><span class="loc">PrerequisiteService.swift:82–94</span> · <span class="loc">DDEVSnapshot.swift:91–101</span></div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What's wrong &amp; why</h4>
+      <p><code>parseDDEVVersion</code> uses untyped <code>JSONSerialization</code> + <code>as? [String: Any]</code> probing two key shapes; a schema change silently yields <code>nil</code> (shown as "DDEV: ok" with no version) — inconsistent with the typed <code>Codable</code> used elsewhere. <code>parseSnapshotToken</code> splits on <code>_mariadb_</code>/<code>_mysql_</code> and <code>replacingOccurrences(of: "_", with: ".")</code>, mis-parsing names with extra underscores or future DB types (display-only).</p>
+      <h4>Suggested fix</h4>
+      <p>Decode version into a small <code>Codable</code> struct with <code>CodingKeys</code> (mirror <code>RawDDEVProject</code>); anchor the snapshot version parse with a stricter digits/dots match and fall back to no-suffix on unexpected shapes.</p>
+    </div>
+  </details>
+
+  <details class="finding" data-sev="LOW">
+    <summary>
+      <span class="badge LOW">LOW</span>
+      <span>
+        <span class="stitle">L7 · <code>selectedSnapshotID</code> is dead state driving needless <code>.onChange</code> churn</span>
+        <span class="cat">Dead code</span>
+        <div class="smeta"><span class="loc">SnapshotManagerView.swift:9, 105–111</span></div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What's wrong &amp; why</h4>
+      <p><code>selectedSnapshotID</code> is maintained by radio buttons and an <code>.onChange(of: snapshots)</code> reconciliation block, but no restore/delete action uses it (they operate on the specific snapshot passed to the confirmation). It's vestigial state that fires reconciliation on every snapshot list update.</p>
+      <h4>Suggested fix</h4>
+      <p>Remove the selection state, radios, and <code>.onChange</code> — or wire a real "Restore Selected" action to it.</p>
+    </div>
+  </details>
+
+  <details class="finding" data-sev="LOW">
+    <summary>
+      <span class="badge LOW">LOW</span>
+      <span>
+        <span class="stitle">L8 · <code>config(flags:)</code> validator gives false safety / unused surface</span>
+        <span class="cat">Dead validation</span>
+        <div class="smeta"><span class="loc">DDEVCommandService.swift:215–221, 367–370</span></div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What's wrong &amp; why</h4>
+      <p><code>isValidDDEVConfigFlag</code> is just <code>hasPrefix("--") &amp;&amp; count &gt; 2</code> — it accepts <code>--</code> + anything. In practice all flags come from the closed <code>DDEVConfigChange</code> enum, so the public arbitrary-flag entry point is unused; the check reads like a security control but isn't one.</p>
+      <h4>Suggested fix</h4>
+      <p>Remove the public arbitrary-flag path (route everything through <code>applyConfigChange</code>), or replace with an allowlist of known config flag names.</p>
+    </div>
+  </details>
+
+  <details class="finding" data-sev="LOW">
+    <summary>
+      <span class="badge LOW">LOW</span>
+      <span>
+        <span class="stitle">L9 · <code>URL(string:)</code> on DDEV URL fields can produce nil / "zombie" URLs</span>
+        <span class="cat">Unguarded</span>
+        <div class="smeta"><span class="loc">DDEVProject.swift:249–255</span></div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What's wrong &amp; why</h4>
+      <p>Raw URL strings from <code>ddev list -j</code> are wrapped with <code>URL(string:)</code>. Empty yields nil (fine), but whitespace/odd values can yield a non-nil but broken URL; "open in browser" then opens something unexpected or no-ops.</p>
+      <h4>Suggested fix</h4>
+      <p>Trim and validate via <code>URLComponents</code> / require a scheme; treat blank strings as nil before constructing.</p>
+    </div>
+  </details>
+
+  <details class="finding" data-sev="LOW">
+    <summary>
+      <span class="badge LOW">LOW</span>
+      <span>
+        <span class="stitle">L10 · <code>importFiles</code> / <code>importDatabase</code> don't validate the user file path</span>
+        <span class="cat">Validation</span>
+        <div class="smeta"><span class="loc">DDEVCommandService.swift:79–122</span></div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What's wrong &amp; why</h4>
+      <p>User-selected paths are glued into <code>--source=</code>/<code>--file=</code> with no existence/readability check (no injection risk — single token, no shell). A bad path surfaces only as an opaque "Command failed with exit code N". <code>importFiles</code> is also in the protocol but never invoked from the VM (dead surface).</p>
+      <h4>Suggested fix</h4>
+      <p>Pre-check <code>FileManager.fileExists</code>/<code>isReadableFile</code> and surface a typed precondition error; remove or wire up the unused <code>importFiles</code> path.</p>
+    </div>
+  </details>
+
+  <details class="finding" data-sev="LOW">
+    <summary>
+      <span class="badge LOW">LOW</span>
+      <span>
+        <span class="stitle">L11 · Duplicated boilerplate: pasteboard copy, section headers, optional→bool bindings</span>
+        <span class="cat">Code smell / DRY</span>
+        <div class="smeta"><span class="loc">DiagnosticsView · LogsViewerView · PrerequisiteSheet · SnapshotManagerView · AddonManagerView · ProjectInspectorView · FrameworkCommandLauncherView</span></div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What's wrong &amp; why</h4>
+      <p>Three patterns are copy-pasted across many views: the <code>NSPasteboard.general.clearContents()/setString</code> block; the uppercase section-header treatment (<code>.font(.subheadline.weight(.semibold)).foregroundStyle(.secondary).textCase(.uppercase).kerning(0.5)</code>, ~10 sites, plus two near-identical <code>InspectorSection</code>/<code>ConfigEditorSection</code> wrappers); and the <code>Binding(get: { x != nil }, set: { if !$0 { x = nil } })</code> confirmation boilerplate.</p>
+      <h4>Suggested fix</h4>
+      <p>Extract a <code>Pasteboard.copy(_:)</code> helper, one shared <code>SectionHeader</code>/<code>SectionContainer</code> (or <code>ViewModifier</code>), and a <code>Binding.isPresent(_:)</code> extension.</p>
+    </div>
+  </details>
+
+  <details class="finding" data-sev="LOW">
+    <summary>
+      <span class="badge LOW">LOW</span>
+      <span>
+        <span class="stitle">L12 · <code>#Preview</code> instantiates real services — spawns <code>ddev</code>/<code>docker</code> and the poll loop in Xcode</span>
+        <span class="cat">Tooling</span>
+        <div class="smeta"><span class="loc">ContentView.swift:151–153</span></div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What's wrong &amp; why</h4>
+      <p><code>#Preview { ContentView() }</code> uses the default <code>ProjectDashboardViewModel()</code> / <code>PrerequisiteMonitor()</code>, whose defaults are the real <code>DDEVCommandService</code> / <code>WorkspacePrerequisiteService</code>. Previews then spawn real subprocesses and start the 5&nbsp;s poll loop.</p>
+      <h4>Suggested fix</h4>
+      <p>Add a preview-only init using <code>StaticPrerequisiteService</code> + a stub <code>DDEVServicing</code> (the pattern already used in <code>PrerequisiteSheet</code> previews).</p>
+    </div>
+  </details>
+
+  <details class="finding" data-sev="LOW">
+    <summary>
+      <span class="badge LOW">LOW</span>
+      <span>
+        <span class="stitle">L13 · <code>MacWorkspaceOpener</code> is <code>@unchecked Sendable</code> instead of <code>@MainActor</code></span>
+        <span class="cat">Concurrency hygiene</span>
+        <div class="smeta"><span class="loc">WorkspaceOpening.swift:41</span></div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What's wrong &amp; why</h4>
+      <p>It wraps <code>NSWorkspace</code> (main-thread-affine) and is called from view button closures. Calls are on the main actor today so it's safe, but <code>@unchecked Sendable</code> suppresses the compiler's ability to catch a future off-main call.</p>
+      <h4>Suggested fix</h4>
+      <p>Mark the methods <code>@MainActor</code> instead of relying on <code>@unchecked Sendable</code>.</p>
+    </div>
+  </details>
+
+  <details class="finding" data-sev="LOW">
+    <summary>
+      <span class="badge LOW">LOW</span>
+      <span>
+        <span class="stitle">L14 · Misc: <code>.glassEffect</code> availability, <code>NSOpenPanel.runModal</code> on main, two inconsistent "busy" axes</span>
+        <span class="cat">Assorted</span>
+        <div class="smeta"><span class="loc">ProjectInspectorView.swift:284</span> · <span class="loc">ContentView/DatabaseOperationsView panels</span> · <span class="loc">LogsViewerView:60 vs 74</span></div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What's wrong &amp; why</h4>
+      <p>(a) <code>.glassEffect(in:)</code> is a very recent API — confirm it's gated against the package's minimum macOS or wrap in <code>if #available</code>. (b) <code>NSOpenPanel.runModal()</code> is called synchronously from button actions (works on macOS; mixes AppKit modality into views). (c) The logs panel disables controls on <code>isSelectedProjectBusy</code> (a <i>mutation</i> flag) but shows its spinner on <code>isReadingData</code> — the two states disagree during a refresh; pick <code>isReadingData</code> for the logs panel consistently.</p>
+      <h4>Suggested fix</h4>
+      <p>Verify/gate the glass API; extract an async file-picker helper; standardize "busy" semantics (consider a single <code>isBusy(scope:)</code> helper so each view can't pick the wrong flag).</p>
+    </div>
+  </details>
+
+  <!-- ===================== SECURITY ===================== -->
+
+  <details class="finding" data-sev="SECURITY">
+    <summary>
+      <span class="badge SECURITY">SEC</span>
+      <span>
+        <span class="stitle">S1 · Project cache is world-readable and its <code>appRoot</code> is trusted for <code>trashItem</code> + process CWD</span>
+        <span class="cat">Local tampering</span>
+        <div class="smeta"><span class="loc">ProjectCacheStore.swift</span> · <span class="loc">ProjectDashboardViewModel.swift:675–691</span> · <span class="loc">CommandRunning.swift:52–54</span></div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What's wrong &amp; why</h4>
+      <p><code>projects-cache.json</code> is written with the default umask in Application Support, then its decoded <code>appRoot</code> is used verbatim as the process working directory and as the <b>trash target</b> in <code>moveSelectedProjectFolderToTrash</code>. A tampered cache could redirect command execution into, or trash, an arbitrary directory before the next <code>ddev list</code> re-validates. Local-only, but the trash path is destructive.</p>
+      <h4>Suggested fix</h4>
+      <p>Write the cache with <code>posixPermissions: 0o600</code>; before trashing, assert the resolved path is under <code>NSHomeDirectory()</code> (or re-resolve <code>appRoot</code> from a fresh <code>ddev list</code>). Treat the cache as a display hint, not an authority for destructive ops.</p>
+    </div>
+  </details>
+
+  <details class="finding" data-sev="SECURITY">
+    <summary>
+      <span class="badge SECURITY">SEC</span>
+      <span>
+        <span class="stitle">S2 · One-click copy of <code>ddev utility diagnose</code> can leak DB passwords / env secrets</span>
+        <span class="cat">Secret exposure</span>
+        <div class="smeta"><span class="loc">DiagnosticsView · copyableDiagnosticOutput</span></div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What's wrong &amp; why</h4>
+      <p><code>ddev utility diagnose</code> output can include DB passwords and environment variables; the Copy button puts the whole blob on the pasteboard, easy to paste into a public issue/chat.</p>
+      <h4>Suggested fix</h4>
+      <p>Redact lines matching <code>PASSWORD|SECRET|TOKEN|KEY|DB_|AWS_</code> before offering Copy, or warn the user.</p>
+    </div>
+  </details>
+
+  <details class="finding" data-sev="SECURITY">
+    <summary>
+      <span class="badge SECURITY">SEC</span>
+      <span>
+        <span class="stitle">S3 · Executable resolver tries user-PATH before known-good locations</span>
+        <span class="cat">Binary hijack</span>
+        <div class="smeta"><span class="loc">DDEVExecutableResolver.swift:15–37</span></div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What's wrong &amp; why</h4>
+      <p>The resolver probes user-PATH entries before the known Homebrew/system locations, so a hostile <code>PATH</code> could point <code>ddev</code> at an attacker-controlled binary. The <code>/usr/bin/env</code> fallback makes this mostly moot today, but the ordering is the wrong default.</p>
+      <h4>Suggested fix</h4>
+      <p>Probe known-good absolute locations first, fall back to PATH only if none match.</p>
+    </div>
+  </details>
+
+  <!-- ===================== STRENGTHS ===================== -->
+
+  <h2 id="strengths">What's already done well</h2>
+  <p>Worth stating plainly, because it shapes the priorities — these are not areas that need work:</p>
+  <ul class="clean">
+    <li><b>No retain cycles found.</b> The one long-lived task (<code>PrerequisiteMonitor.pollTask</code>) is textbook: <code>[weak self]</code>, cancellation checks around the sleep, idempotent <code>start()</code>, a real <code>stop()</code>, <i>and</i> a <code>deinit</code> cancel. The <code>TaskGroup</code> in <code>enrichProjectsWithDetails</code> captures <code>[ddevService]</code>, not <code>self</code>.</li>
+    <li><b>None of the classic observer-leak sources exist</b> — no <code>NotificationCenter.addObserver</code>, no <code>Timer.scheduledTimer</code>, no Combine <code>sink</code>, no <code>readabilityHandler</code> retained.</li>
+    <li><b>No force-unwraps</b> (<code>!</code> / <code>try!</code> / <code>as!</code>) in the audited code. Optionals use <code>if let</code>/<code>guard</code>/<code>??</code>; the only force-unwrapped URLs are compile-time literal strings.</li>
+    <li><b>No command injection</b> — every <code>Process</code> call uses array <code>arguments:</code>, no shell, no string-concatenated command lines. User-controlled positional args are guarded by <code>rejectDashPrefixed</code>.</li>
+    <li><b>The previously-critical pipe deadlock is genuinely fixed</b> — concurrent stdout/stderr drain via <code>DispatchGroup</code> before <code>waitUntilExit</code>, off-main, with an <code>NSLock</code>-backed <code>PipeBuffer</code>.</li>
+    <li><b>Command history is bounded</b> in both count (50) and per-entry size (32&nbsp;KiB), explicitly to avoid megabyte accumulation.</li>
+    <li><b>Clean MVVM + DI.</b> <code>@MainActor</code> view model, protocol-driven <code>Sendable</code> services, constructor injection, fake-based tests covering parser edge cases. Destructive actions are confirmation-gated. <code>@StateObject</code> at the root, <code>@ObservedObject</code> for children. Most data loads use <code>.task(id:)</code> (auto-cancelling) correctly.</li>
+  </ul>
+
+  <!-- ===================== ACTION PLAN ===================== -->
+
+  <h2 id="plan">Prioritised action plan</h2>
+  <ol class="plan">
+    <li><b>H1 + H2 together — make the poll loop stoppable and the subprocess cancellable/timeout-bounded.</b><span class="why">These are the brief's subject and they compound into a real "Docker hangs → threads exhaust → app stalls" failure. Fixing both closes the loop literally and figuratively.</span></li>
+    <li><b>M2 — prune <code>commandStates</code> in <code>applyProjects</code>.</b><span class="why">One-line filter; removes the only genuine (slow) unbounded-growth path.</span></li>
+    <li><b>M3 — move cache file I/O off the MainActor.</b><span class="why">Removes a main-thread stall from the hot refresh path.</span></li>
+    <li><b>M1 + M4 — cap the describe/read fan-out and guard <code>refresh()</code> re-entrancy.</b><span class="why">Bounds thread pressure and prevents refresh storms; small, surgical.</span></li>
+    <li><b>M8, M7 — fix command-history identity and the config-editor sync race.</b><span class="why">Correctness bugs users can actually see; low effort.</span></li>
+    <li><b>S1, S2 — lock down the cache file + assert trash path; redact diagnostics copy.</b><span class="why">Cheap hardening; the trash path is destructive.</span></li>
+    <li><b>M5, M6, M10 + the LOW perf items (L1, L2).</b><span class="why">Memory cap at the pipe source, a Docker resolver, cleaner error surfaces, and memoizing view-body work.</span></li>
+    <li><b>M9 — split the view model (or move to <code>@Observable</code>).</b><span class="why">Highest-leverage structural refactor; schedule it deliberately, with the existing tests coming along. Debt, not a defect.</span></li>
+    <li><b>Remaining LOW + code-smell cleanups (L3–L14).</b><span class="why">DRY helpers, dead code removal, preview stubs, concurrency-hygiene annotations — opportunistic / when touching those files.</span></li>
+  </ol>
+
+  <div class="foot">
+    <p>Generated 2026-05-30 as a read-only audit. No source files were modified. Findings were produced by three parallel focused reviewers (concurrency/lifecycle, process/service layer, view layer) and cross-checked against the verbatim current source for the load-bearing items (poll loop, scheduler, <code>applyProjects</code>/<code>moveSelectedProjectFolderToTrash</code>, command-history <code>ForEach</code>). Line numbers reflect the <code>feat/per-project-concurrency</code> working tree; a few may shift by ±1–2 lines as the branch is edited. Complements the prior <code>CODE-REVIEW.md</code> (2026-05-28), whose CRITICAL is confirmed fixed here.</p>
+  </div>
+
+</div>
+
+<script>
+  (function () {
+    var chips = document.querySelectorAll('.chip');
+    var findings = document.querySelectorAll('.finding');
+    chips.forEach(function (chip) {
+      chip.addEventListener('click', function () {
+        chips.forEach(function (c) { c.classList.remove('active'); });
+        chip.classList.add('active');
+        var sev = chip.getAttribute('data-sev');
+        findings.forEach(function (f) {
+          var match = (sev === 'ALL') || (f.getAttribute('data-sev') === sev);
+          f.classList.toggle('hide', !match);
+          if (match && sev !== 'ALL') { f.setAttribute('open', ''); }
+          if (sev === 'ALL') { f.removeAttribute('open'); }
+        });
+        // keep the two HIGH cards open by default in ALL view
+        if (sev === 'ALL') {
+          document.querySelectorAll('.finding[data-sev="HIGH"]').forEach(function (f) { f.setAttribute('open',''); });
+        }
+      });
+    });
+  })();
+</script>
+</body>
+</html>
