@@ -124,17 +124,21 @@ struct ContentView: View {
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
 
-        guard panel.runModal() == .OK, let folder = panel.url else { return }
+        // Non-blocking begin{} (completion on the main queue) rather than runModal(), which
+        // blocks the run loop and mixes AppKit modality into the view (audit L14b).
+        panel.begin { response in
+            guard response == .OK, let folder = panel.url else { return }
 
-        let configPath = folder
-            .appendingPathComponent(".ddev")
-            .appendingPathComponent("config.yaml")
-            .path
+            let configPath = folder
+                .appendingPathComponent(".ddev")
+                .appendingPathComponent("config.yaml")
+                .path
 
-        if FileManager.default.fileExists(atPath: configPath) {
-            Task { await viewModel.startProject(atFolder: folder.path) }
-        } else {
-            folderToConfigure = FolderToConfigure(url: folder)
+            if FileManager.default.fileExists(atPath: configPath) {
+                Task { await viewModel.startProject(atFolder: folder.path) }
+            } else {
+                folderToConfigure = FolderToConfigure(url: folder)
+            }
         }
     }
 }

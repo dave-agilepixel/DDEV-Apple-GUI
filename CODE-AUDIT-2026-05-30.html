@@ -712,7 +712,7 @@ ForEach(results) { entry <span class="tok-k">in</span> ... }</code></pre>
     </div>
   </details>
 
-  <details class="finding" data-sev="LOW">
+  <details class="finding done" data-sev="LOW">
     <summary>
       <span class="badge LOW">LOW</span>
       <span>
@@ -722,6 +722,7 @@ ForEach(results) { entry <span class="tok-k">in</span> ... }</code></pre>
       </span>
     </summary>
     <div class="body">
+      <div class="resolution"><b>RESOLVED 2026-05-31</b> — <b>(a)</b> <code>.glassEffect</code> needs no gating: the package's deployment target is <code>.macOS(.v26)</code> and it compiles clean — a verified no-op. <b>(b)</b> The three file pickers (<code>ContentView.addFolder</code>, <code>DatabaseOperationsView</code> import/export) now use the non-blocking <code>NSOpenPanel/NSSavePanel.begin{}</code> (completion on the main queue) instead of <code>runModal()</code>, so they no longer block the run loop. <b>(c)</b> The logs panel now disables its controls on <code>isSelectedProjectBusy || isReadingData</code>, matching the spinner's <code>isReadingData</code> axis.</div>
       <h4>What's wrong &amp; why</h4>
       <p>(a) <code>.glassEffect(in:)</code> is a very recent API — confirm it's gated against the package's minimum macOS or wrap in <code>if #available</code>. (b) <code>NSOpenPanel.runModal()</code> is called synchronously from button actions (works on macOS; mixes AppKit modality into views). (c) The logs panel disables controls on <code>isSelectedProjectBusy</code> (a <i>mutation</i> flag) but shows its spinner on <code>isReadingData</code> — the two states disagree during a refresh; pick <code>isReadingData</code> for the logs panel consistently.</p>
       <h4>Suggested fix</h4>

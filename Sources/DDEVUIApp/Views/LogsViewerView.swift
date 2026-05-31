@@ -60,7 +60,9 @@ struct LogsViewerView: View {
             }
             .buttonStyle(.bordered)
             .controlSize(.regular)
-            .disabled(viewModel.isSelectedProjectBusy)
+            // Consistent "busy" axis for the logs panel: disable controls while a read is in
+            // flight too, matching the spinner which keys on isReadingData (audit L14c).
+            .disabled(viewModel.isSelectedProjectBusy || viewModel.selectedProjectState.isReadingData)
 
             if project.status != .running {
                 Label("Start the project before refreshing logs.", systemImage: "pause.circle")

@@ -55,8 +55,11 @@ struct DatabaseOperationsView: View {
         panel.title = "Choose Database Dump"
         panel.message = "Choose a SQL dump or supported archive to import into \(project.name)."
 
-        guard panel.runModal() == .OK, let file = panel.url else { return }
-        importDraft = DatabaseImportDraft(filePath: file.path)
+        // Non-blocking begin{} rather than runModal() (audit L14b).
+        panel.begin { response in
+            guard response == .OK, let file = panel.url else { return }
+            importDraft = DatabaseImportDraft(filePath: file.path)
+        }
     }
 }
 
@@ -244,8 +247,11 @@ private struct DatabaseExportSheet: View {
         panel.message = "Choose where to save the database export for \(project.name)."
         panel.nameFieldStringValue = "\(project.name)-db\(compression.defaultFileSuffix)"
 
-        guard panel.runModal() == .OK, let file = panel.url else { return }
-        outputPath = file.path
+        // Non-blocking begin{} rather than runModal() (audit L14b).
+        panel.begin { response in
+            guard response == .OK, let file = panel.url else { return }
+            outputPath = file.path
+        }
     }
 }
 
