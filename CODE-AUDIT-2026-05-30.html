@@ -411,7 +411,7 @@ commandStates = commandStates.filter { liveIDs.contains($0.key) || $0.value.isBu
     </div>
   </details>
 
-  <details class="finding" data-sev="MEDIUM">
+  <details class="finding done" data-sev="MEDIUM">
     <summary>
       <span class="badge MEDIUM">MEDIUM</span>
       <span>
@@ -421,6 +421,7 @@ commandStates = commandStates.filter { liveIDs.contains($0.key) || $0.value.isBu
       </span>
     </summary>
     <div class="body">
+      <div class="resolution"><b>RESOLVED 2026-05-31</b> — <code>CommandHistoryEntry</code> is now <code>Identifiable</code> with a <code>UUID</code> set at creation; the history <code>ForEach</code> keys on <code>\.element.id</code> instead of <code>\.offset</code>, and the single-result fallback renders directly (no per-render synthesized id). Covered by <code>CommandHistoryEntryTests</code> (distinct, copy-stable ids).</div>
       <h4>What's wrong</h4>
       <p>The history list is <code>ForEach(Array(results.enumerated()), id: \.offset)</code>. Because history is append-with-cap (<code>removeFirst</code> once over 50), the same <code>offset</code> maps to a <i>different</i> command as the window slides.</p>
       <h4>Why it matters</h4>

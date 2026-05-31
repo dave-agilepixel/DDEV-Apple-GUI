@@ -1,7 +1,14 @@
-public struct CommandHistoryEntry: Equatable, Sendable {
+import Foundation
+
+public struct CommandHistoryEntry: Identifiable, Equatable, Sendable {
+    /// Stable identity set at creation so SwiftUI keeps row state correct as the capped
+    /// history window slides (audit M8). Keying a ForEach on the array offset reused a
+    /// row's identity for a different command once `removeFirst` shifted indices.
+    public let id: UUID
     public let result: CommandResult
 
     public init(result: CommandResult) {
+        self.id = UUID()
         self.result = result
     }
 }
