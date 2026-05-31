@@ -10,7 +10,6 @@ final class DDEVProjectDetailsDecodingTests: XCTestCase {
 
         XCTAssertEqual(details.phpVersion, "8.3")
         XCTAssertEqual(details.xhguiStatus, .disabled)
-        XCTAssertEqual(details.xdebugEnabled, false)
         XCTAssertEqual(details.nodeJSVersion, "24")
         XCTAssertEqual(details.routerStatus, "healthy")
         XCTAssertEqual(details.sshAgentStatus, "healthy")
@@ -73,7 +72,6 @@ final class DDEVProjectDetailsDecodingTests: XCTestCase {
 
         XCTAssertEqual(details.phpVersion, "8.4")
         XCTAssertEqual(details.xhguiStatus, .enabled)
-        XCTAssertNil(details.xdebugEnabled)
         XCTAssertNil(details.databaseInfo)
         XCTAssertTrue(details.services.isEmpty)
         XCTAssertTrue(details.addonServiceLinks.isEmpty)

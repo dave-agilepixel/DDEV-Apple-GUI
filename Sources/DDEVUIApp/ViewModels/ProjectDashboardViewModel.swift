@@ -104,6 +104,12 @@ public final class ProjectDashboardViewModel {
     /// configured type/version, so the inspector can surface an ambient drift warning (A5).
     public var dbMatchWarning: String?
 
+    /// Live Xdebug on/off state for the selected running project, sourced from `ddev xdebug status`.
+    /// NOTE: `describe -j`'s `xdebug_enabled` reflects the *configured* value (config.yaml), not the
+    /// runtime state toggled by `ddev xdebug on/off`, so the live toggle must not bind to it.
+    /// `nil` when unknown (project not running, or status not yet loaded).
+    public var selectedProjectXdebugEnabled: Bool?
+
     /// Busy/error for genuinely project-less operations: global list refresh, global
     /// diagnostics, and new-project creation (which has no project id yet).
     public var isRunningGlobalCommand = false
@@ -678,15 +684,43 @@ public final class ProjectDashboardViewModel {
         await refreshDetails(for: selectedProject)
     }
 
-    /// Live Xdebug on/off toggle (A2). Flips Xdebug on the running web container without a restart,
-    /// then re-reads describe so the toggle reflects the real `xdebug_enabled` state.
+    /// Reads the *live* Xdebug state for the selected running project via `ddev xdebug status`
+    /// (the authoritative runtime source — describe's `xdebug_enabled` is only the config default).
+    public func loadXdebugStatusForSelectedProject() async {
+        guard let selectedProject, selectedProject.status == .running else {
+            selectedProjectXdebugEnabled = nil
+            return
+        }
+        let targetID = selectedProject.id
+        selectedProjectXdebugEnabled = nil
+        guard let result = try? await ddevService.xdebug(.status, in: selectedProject.appRoot) else { return }
+        guard selectedProjectID == targetID else { return } // selection moved on
+        selectedProjectXdebugEnabled = Self.parseXdebugEnabled(result.stdout)
+    }
+
+    /// Live Xdebug on/off toggle (A2). Flips Xdebug on the running web container without a restart.
+    /// Optimistically reflects the requested state, then reconciles against `ddev xdebug status`
+    /// — NOT describe, whose `xdebug_enabled` reports the config default and would snap the toggle back.
     public func setXdebugForSelectedProject(_ enabled: Bool) async {
         guard let selectedProject else { return }
+        selectedProjectXdebugEnabled = enabled // optimistic; reconciled below
         await runProjectMutation(selectedProject, refresh: .none) {
             let result = try await self.ddevService.xdebug(enabled ? .on : .off, in: selectedProject.appRoot)
-            await self.refreshDetails(for: selectedProject)
+            if let status = try? await self.ddevService.xdebug(.status, in: selectedProject.appRoot),
+               self.selectedProjectID == selectedProject.id {
+                self.selectedProjectXdebugEnabled = Self.parseXdebugEnabled(status.stdout) ?? enabled
+            }
             return result
         }
+    }
+
+    /// Parses `ddev xdebug status` output ("xdebug enabled" / "xdebug disabled") into a Bool.
+    /// `disabled` is checked first because it must not match the `enabled` branch.
+    private static func parseXdebugEnabled(_ output: String) -> Bool? {
+        let lower = output.lowercased()
+        if lower.contains("disabled") { return false }
+        if lower.contains("enabled") { return true }
+        return nil
     }
 
     /// Runs `ddev utility check-db-match` for the selected project and, on a mismatch, populates

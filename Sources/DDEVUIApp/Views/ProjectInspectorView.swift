@@ -45,12 +45,13 @@ struct ProjectInspectorView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
                 .task(id: project.id) {
-                    // Pull the live describe detail (Xdebug, DB info, services) and run the DB-drift
-                    // check once per selection, independent of which tab is showing. The two are
-                    // independent subprocesses, so run them concurrently to keep selection snappy.
+                    // Pull the live describe detail (DB info, services), the live Xdebug status, and
+                    // run the DB-drift check once per selection, independent of which tab is showing.
+                    // They're independent subprocesses, so run them concurrently to keep selection snappy.
                     async let details: Void = viewModel.loadDetailsForSelectedProject()
+                    async let xdebug: Void = viewModel.loadXdebugStatusForSelectedProject()
                     async let driftCheck: Void = viewModel.checkDBMatchForSelectedProject()
-                    _ = await (details, driftCheck)
+                    _ = await (details, xdebug, driftCheck)
                 }
                 .toolbar {
                     ToolbarItem(placement: .primaryAction) {
@@ -618,7 +619,9 @@ private struct OverviewTabContent: View {
                     }
                 })
 
-                if let xdebugEnabled = details?.xdebugEnabled {
+                // Bind to the *live* Xdebug state (ddev xdebug status), not describe's config value.
+                // Only present for a running project (the only time the live state is meaningful).
+                if let xdebugEnabled = viewModel.selectedProjectXdebugEnabled {
                     metaRow("Xdebug", trailing: {
                         Toggle("Xdebug", isOn: Binding(
                             get: { xdebugEnabled },
@@ -627,7 +630,7 @@ private struct OverviewTabContent: View {
                         .labelsHidden()
                         .toggleStyle(.switch)
                         .controlSize(.small)
-                        .disabled(project.status != .running || viewModel.isSelectedProjectBusy)
+                        .disabled(viewModel.isSelectedProjectBusy)
                     })
                 }
 
