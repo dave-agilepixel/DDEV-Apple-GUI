@@ -127,7 +127,10 @@ private struct AddonSearchSheet: View {
     @State private var pendingInstall: DDEVAddon?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        // Build the installed-repository set once per render instead of rebuilding it three
+        // times for every row in the results list (audit L1).
+        let installed = installedRepositories
+        return VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 12) {
                 Image(systemName: "shippingbox.circle.fill")
                     .font(.largeTitle)
@@ -173,9 +176,9 @@ private struct AddonSearchSheet: View {
                     ForEach(viewModel.addonSearchResults) { addon in
                         AddonRow(
                             addon: addon,
-                            actionTitle: installedRepositories.contains(addon.repository) ? "Installed" : "Install",
-                            actionSystemImage: installedRepositories.contains(addon.repository) ? "checkmark" : "plus",
-                            actionDisabled: installedRepositories.contains(addon.repository) || viewModel.isSelectedProjectBusy
+                            actionTitle: installed.contains(addon.repository) ? "Installed" : "Install",
+                            actionSystemImage: installed.contains(addon.repository) ? "checkmark" : "plus",
+                            actionDisabled: installed.contains(addon.repository) || viewModel.isSelectedProjectBusy
                         ) {
                             pendingInstall = addon
                         }

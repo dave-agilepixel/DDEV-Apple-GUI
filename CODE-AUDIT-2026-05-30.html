@@ -482,7 +482,7 @@ ForEach(results) { entry <span class="tok-k">in</span> ... }</code></pre>
 
   <!-- ===================== LOW ===================== -->
 
-  <details class="finding" data-sev="LOW">
+  <details class="finding done" data-sev="LOW">
     <summary>
       <span class="badge LOW">LOW</span>
       <span>
@@ -492,6 +492,7 @@ ForEach(results) { entry <span class="tok-k">in</span> ... }</code></pre>
       </span>
     </summary>
     <div class="body">
+      <div class="resolution"><b>RESOLVED 2026-05-31</b> — Fixed the two genuine inefficiencies: <code>FrameworkCommandLauncherView.groups</code> is now O(n) (order-preserving dictionary grouping) instead of O(n²) <code>reduce + firstIndex</code>, and <code>AddonManagerView</code> builds its installed-repository <code>Set</code> once per render (<code>let installed = …</code>) instead of three times per row. The sidebar badge counts and <code>filteredProjects</code> are linear scans over a handful of projects — left as-is (caching/debounce would be premature at this scale), and the M9 <code>@Observable</code> migration further cuts how often these bodies re-evaluate.</div>
       <h4>What's wrong &amp; why</h4>
       <p>Several bodies recompute non-trivial work on every evaluation: sidebar badge counts re-run <code>projects.filter { ... }</code>; <code>filteredProjects</code> runs section filtering + 4-field <code>localizedCaseInsensitiveContains</code> on every keystroke and every <code>projects</code> change; <code>AddonManagerView</code> rebuilds an <code>installedRepositories</code> <code>Set</code> per render and checks it 3×/row; <code>FrameworkCommandLauncherView.groups</code> does an O(n²) <code>reduce + firstIndex</code> grouping per render. Small N today, but unmemoized hot-path work.</p>
       <h4>Suggested fix</h4>
