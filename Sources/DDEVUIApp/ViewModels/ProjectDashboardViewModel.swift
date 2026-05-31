@@ -933,6 +933,12 @@ public final class ProjectDashboardViewModel: ObservableObject {
     private func applyProjects(_ projects: [DDEVProject]) {
         self.projects = projects
 
+        // Drop per-project command state for projects that have vanished from the list so the
+        // dictionary can't grow unbounded over a long session with project churn (audit M2).
+        // Busy entries are kept so an in-flight command that briefly drops from the list isn't lost.
+        let liveIDs = Set(projects.map(\.id))
+        commandStates = commandStates.filter { liveIDs.contains($0.key) || $0.value.isBusy }
+
         if let selectedProjectID,
            let selectedProject = projects.first(where: { $0.id == selectedProjectID }) {
             selectedProjectFallback = selectedProject

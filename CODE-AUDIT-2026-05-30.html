@@ -287,7 +287,7 @@ self.pollTask = nil  <span class="tok-c">// allow start() to relaunch when the u
     </div>
   </details>
 
-  <details class="finding" data-sev="MEDIUM">
+  <details class="finding done" data-sev="MEDIUM">
     <summary>
       <span class="badge MEDIUM">MEDIUM</span>
       <span>
@@ -297,6 +297,7 @@ self.pollTask = nil  <span class="tok-c">// allow start() to relaunch when the u
       </span>
     </summary>
     <div class="body">
+      <div class="resolution"><b>RESOLVED 2026-05-31</b> — <code>applyProjects(_:)</code> now prunes to live keys: <code>commandStates = commandStates.filter { liveIDs.contains($0.key) || $0.value.isBusy }</code>, keeping busy entries so an in-flight command that briefly drops from the list isn't lost. Covered by two tests (stale entry pruned, busy entry retained).</div>
       <h4>What's wrong</h4>
       <p>Per-project history is correctly bounded (50 entries × 32&nbsp;KiB). The <i>explicit trash</i> action prunes its entry (<code>commandStates[removedID] = nil</code>). But <code>applyProjects(_:)</code> — the path used whenever a project disappears via a list refresh (deleted/unlinked in-app, or removed outside the app) — only reassigns <code>self.projects</code> and recomputes selection. It never prunes <code>commandStates</code>.</p>
       <pre><code><span class="tok-k">private func</span> applyProjects(_ projects: [DDEVProject]) {

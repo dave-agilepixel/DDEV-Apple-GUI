@@ -780,6 +780,34 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         ])
         XCTAssertEqual(viewModel.selectedProjectState.lastResult?.arguments, ["xhgui", "on"])
     }
+
+    // MARK: - M2: commandStates pruning
+
+    func testApplyProjectsPrunesStaleCommandStates() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        // A leftover entry for a project that is no longer in the list.
+        viewModel.commandStates["ghost-project"] = ProjectCommandState()
+        viewModel.commandStates["aqua-pura"] = ProjectCommandState()
+
+        await viewModel.refresh()
+
+        XCTAssertNil(viewModel.commandStates["ghost-project"], "Entry for a vanished project is pruned")
+        XCTAssertNotNil(viewModel.commandStates["aqua-pura"], "Entry for a live project is retained")
+    }
+
+    func testApplyProjectsKeepsBusyEntriesEvenIfNotInList() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        var busy = ProjectCommandState()
+        busy.activity = .running
+        viewModel.commandStates["ghost-busy"] = busy
+
+        await viewModel.refresh()
+
+        XCTAssertNotNil(viewModel.commandStates["ghost-busy"],
+                        "A busy entry is retained so an in-flight command briefly off the list isn't lost")
+    }
 }
 
 private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
