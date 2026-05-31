@@ -9,17 +9,19 @@ import Foundation
 public struct DDEVProjectDetails: Equatable, Sendable {
     public let phpVersion: String?
     public let xhguiStatus: DDEVXHGuiStatus?
-    public let xdebugEnabled: Bool?
     public let nodeJSVersion: String?
     public let routerStatus: String?
     public let sshAgentStatus: String?
     public let databaseInfo: DDEVDatabaseInfo?
     public let services: [DDEVServiceInfo]
 
+    // NOTE: describe's `xdebug_enabled` is deliberately NOT modelled here — it reports the config
+    // default, not the live runtime state. Live Xdebug state comes from `ddev xdebug status`
+    // (see ProjectDashboardViewModel.loadXdebugStatusForSelectedProject).
+
     public init(
         phpVersion: String?,
         xhguiStatus: DDEVXHGuiStatus? = nil,
-        xdebugEnabled: Bool? = nil,
         nodeJSVersion: String? = nil,
         routerStatus: String? = nil,
         sshAgentStatus: String? = nil,
@@ -28,7 +30,6 @@ public struct DDEVProjectDetails: Equatable, Sendable {
     ) {
         self.phpVersion = phpVersion
         self.xhguiStatus = xhguiStatus
-        self.xdebugEnabled = xdebugEnabled
         self.nodeJSVersion = nodeJSVersion
         self.routerStatus = routerStatus
         self.sshAgentStatus = sshAgentStatus
@@ -170,7 +171,6 @@ private struct RawDDEVProjectDetails: Decodable {
     let phpVersion: String?
     let nodeJSVersion: String?
     let xhguiStatus: String?
-    let xdebugEnabled: Bool?
     let routerStatus: String?
     let sshAgentStatus: String?
     let dbinfo: RawDBInfo?
@@ -180,7 +180,6 @@ private struct RawDDEVProjectDetails: Decodable {
         case phpVersion = "php_version"
         case nodeJSVersion = "nodejs_version"
         case xhguiStatus = "xhgui_status"
-        case xdebugEnabled = "xdebug_enabled"
         case routerStatus = "router_status"
         case sshAgentStatus = "ssh_agent_status"
         case dbinfo
@@ -191,7 +190,6 @@ private struct RawDDEVProjectDetails: Decodable {
         DDEVProjectDetails(
             phpVersion: phpVersion,
             xhguiStatus: xhguiStatus.map { DDEVXHGuiStatus(rawValue: $0) ?? .unknown },
-            xdebugEnabled: xdebugEnabled,
             nodeJSVersion: nodeJSVersion,
             routerStatus: routerStatus,
             sshAgentStatus: sshAgentStatus,

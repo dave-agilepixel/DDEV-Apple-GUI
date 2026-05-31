@@ -349,7 +349,6 @@ final class ProjectDashboardViewModelTests: XCTestCase {
     func testLoadDetailsPublishesDescribeDetailForSelectedProject() async {
         let details = DDEVProjectDetails(
             phpVersion: "8.3",
-            xdebugEnabled: true,
             databaseInfo: DDEVDatabaseInfo(
                 type: "mariadb", version: "11.8", host: "db", port: "3306",
                 name: "db", username: "db", password: "db", publishedPort: 55043
@@ -361,33 +360,47 @@ final class ProjectDashboardViewModelTests: XCTestCase {
 
         await viewModel.loadDetailsForSelectedProject()
 
-        XCTAssertEqual(viewModel.selectedProjectDetails?.xdebugEnabled, true)
         XCTAssertEqual(viewModel.selectedProjectDetails?.databaseInfo?.publishedPort, 55043)
     }
 
-    func testSetXdebugRunsXdebugOnThenReReadsDetails() async {
-        let enabled = DDEVProjectDetails(phpVersion: "8.3", xdebugEnabled: true)
-        let service = FakeDDEVService(projects: [.sampleWordPress], describeDetails: ["aqua-pura": enabled])
+    func testLoadXdebugStatusReflectsLiveContainerState() async {
+        // describe's xdebug_enabled is the config value, so the live toggle must read
+        // `ddev xdebug status` instead — here the container reports enabled.
+        let service = FakeDDEVService(projects: [.sampleWordPress], xdebugLiveEnabled: true)
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.loadXdebugStatusForSelectedProject()
+
+        XCTAssertEqual(viewModel.selectedProjectXdebugEnabled, true)
+        XCTAssertTrue(service.commands.contains("xdebug:/Users/dave/Development/agilepixel/aqua-pura:status"))
+    }
+
+    func testSetXdebugOnReconcilesAgainstLiveStatusNotDescribe() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress], xdebugLiveEnabled: false)
         let viewModel = ProjectDashboardViewModel(ddevService: service)
         viewModel.selectedProject = .sampleWordPress
 
         await viewModel.setXdebugForSelectedProject(true)
 
+        // Runs `xdebug on`, then reconciles with `xdebug status` (NOT describe), and the live
+        // state sticks at true rather than snapping back to the config default.
         XCTAssertEqual(service.commands, [
             "xdebug:/Users/dave/Development/agilepixel/aqua-pura:on",
-            "describe:aqua-pura"
+            "xdebug:/Users/dave/Development/agilepixel/aqua-pura:status"
         ])
-        XCTAssertEqual(viewModel.selectedProjectDetails?.xdebugEnabled, true)
+        XCTAssertEqual(viewModel.selectedProjectXdebugEnabled, true)
     }
 
     func testSetXdebugOffRunsXdebugOff() async {
-        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let service = FakeDDEVService(projects: [.sampleWordPress], xdebugLiveEnabled: true)
         let viewModel = ProjectDashboardViewModel(ddevService: service)
         viewModel.selectedProject = .sampleWordPress
 
         await viewModel.setXdebugForSelectedProject(false)
 
         XCTAssertEqual(service.commands.first, "xdebug:/Users/dave/Development/agilepixel/aqua-pura:off")
+        XCTAssertEqual(viewModel.selectedProjectXdebugEnabled, false)
     }
 
     // MARK: - DB drift banner (A5)
@@ -965,6 +978,7 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
     private let xhguiStatuses: [String: DDEVXHGuiStatus]
     private let describeDetails: [String: DDEVProjectDetails]
     private let dbMatchResult: Result<CommandResult, Error>?
+    private var xdebugLiveEnabled: Bool
     private let listError: Error?
     private let importError: Error?
     private let snapshotListOutput: String
@@ -987,6 +1001,7 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
         xhguiStatuses: [String: DDEVXHGuiStatus] = [:],
         describeDetails: [String: DDEVProjectDetails] = [:],
         dbMatchResult: Result<CommandResult, Error>? = nil,
+        xdebugLiveEnabled: Bool = false,
         listError: Error? = nil,
         importError: Error? = nil,
         snapshotListOutput: String = "",
@@ -1003,6 +1018,7 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
         self.xhguiStatuses = xhguiStatuses
         self.describeDetails = describeDetails
         self.dbMatchResult = dbMatchResult
+        self.xdebugLiveEnabled = xdebugLiveEnabled
         self.listError = listError
         self.importError = importError
         self.snapshotListOutput = snapshotListOutput
@@ -1241,7 +1257,19 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
 
     func xdebug(_ command: DDEVXdebugCommand, in appRoot: String) async throws -> CommandResult {
         record("xdebug:\(appRoot):\(command.rawValue)")
-        return commandResult(arguments: ["xdebug", command.rawValue], workingDirectory: appRoot)
+        let enabled: Bool = lock.withLock {
+            switch command {
+            case .on: xdebugLiveEnabled = true
+            case .off: xdebugLiveEnabled = false
+            case .status: break
+            }
+            return xdebugLiveEnabled
+        }
+        return commandResult(
+            arguments: ["xdebug", command.rawValue],
+            workingDirectory: appRoot,
+            stdout: enabled ? "xdebug enabled\n" : "xdebug disabled\n"
+        )
     }
 
     private func record(_ command: String) {
