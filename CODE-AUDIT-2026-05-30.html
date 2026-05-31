@@ -677,7 +677,7 @@ ForEach(results) { entry <span class="tok-k">in</span> ... }</code></pre>
     </div>
   </details>
 
-  <details class="finding" data-sev="LOW">
+  <details class="finding done" data-sev="LOW">
     <summary>
       <span class="badge LOW">LOW</span>
       <span>
@@ -687,6 +687,7 @@ ForEach(results) { entry <span class="tok-k">in</span> ... }</code></pre>
       </span>
     </summary>
     <div class="body">
+      <div class="resolution"><b>RESOLVED 2026-05-31</b> — <code>ContentView</code> gained an injecting initializer (the default <code>init()</code> still wires the real services lazily via <code>StateObject(wrappedValue:)</code>). The <code>#Preview</code> now passes a <code>PreviewCommandRunner</code> (returns an empty list, never shells out) and a <code>StaticPrerequisiteService</code>, so previews no longer spawn real <code>ddev</code>/<code>docker</code> subprocesses or the poll loop.</div>
       <h4>What's wrong &amp; why</h4>
       <p><code>#Preview { ContentView() }</code> uses the default <code>ProjectDashboardViewModel()</code> / <code>PrerequisiteMonitor()</code>, whose defaults are the real <code>DDEVCommandService</code> / <code>WorkspacePrerequisiteService</code>. Previews then spawn real subprocesses and start the 5&nbsp;s poll loop.</p>
       <h4>Suggested fix</h4>

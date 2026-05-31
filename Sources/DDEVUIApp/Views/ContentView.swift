@@ -1,12 +1,23 @@
 import SwiftUI
 
 struct ContentView: View {
-    @StateObject private var viewModel = ProjectDashboardViewModel(
-        notifier: ContentView.makeNotifier()
-    )
-    @StateObject private var prerequisites = PrerequisiteMonitor()
+    @StateObject private var viewModel: ProjectDashboardViewModel
+    @StateObject private var prerequisites: PrerequisiteMonitor
     @State private var folderToConfigure: FolderToConfigure?
     @Environment(\.scenePhase) private var scenePhase
+
+    init() {
+        // Autoclosed by StateObject(wrappedValue:), so this is evaluated once, lazily.
+        _viewModel = StateObject(wrappedValue: ProjectDashboardViewModel(notifier: ContentView.makeNotifier()))
+        _prerequisites = StateObject(wrappedValue: PrerequisiteMonitor())
+    }
+
+    /// Injecting initializer for previews/tests, so they can pass stub services instead of the
+    /// real ones that spawn ddev/docker subprocesses and start the poll loop (audit L12).
+    init(viewModel: ProjectDashboardViewModel, prerequisites: PrerequisiteMonitor) {
+        _viewModel = StateObject(wrappedValue: viewModel)
+        _prerequisites = StateObject(wrappedValue: prerequisites)
+    }
 
     private static func makeNotifier() -> NotificationScheduling {
         let scheduler = UserNotificationScheduler()
@@ -171,7 +182,24 @@ private struct FolderToConfigure: Identifiable {
 }
 
 #Preview {
-    ContentView()
+    ContentView(
+        viewModel: ProjectDashboardViewModel(
+            ddevService: DDEVCommandService(commandRunner: PreviewCommandRunner())
+        ),
+        prerequisites: PrerequisiteMonitor(
+            service: StaticPrerequisiteService(
+                state: PrerequisiteState(docker: .ok, ddev: .ok(version: "v1.24.0"))
+            )
+        )
+    )
+}
+
+/// Returns an empty project list and never shells out, so previews don't spawn real
+/// ddev/docker subprocesses (audit L12).
+private struct PreviewCommandRunner: CommandRunning {
+    func run(_ spec: CommandSpec) async throws -> CommandResult {
+        .success(stdout: "[]")
+    }
 }
 
 private struct SettingsView: View {
