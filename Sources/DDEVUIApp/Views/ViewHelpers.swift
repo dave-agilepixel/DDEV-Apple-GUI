@@ -14,7 +14,7 @@ extension Binding {
     /// A `Bool` binding that is `true` while `optional` is non-nil and clears it when set to
     /// `false`. Replaces the repeated `Binding(get: { x != nil }, set: { if !$0 { x = nil } })`
     /// used to drive confirmation dialogs / sheets from an optional item.
-    static func isPresent<Wrapped>(_ optional: Binding<Wrapped?>) -> Binding<Bool> where Value == Bool {
+    static func isPresent<Wrapped: Sendable>(_ optional: Binding<Wrapped?>) -> Binding<Bool> where Value == Bool {
         Binding<Bool>(
             get: { optional.wrappedValue != nil },
             set: { isPresented in
