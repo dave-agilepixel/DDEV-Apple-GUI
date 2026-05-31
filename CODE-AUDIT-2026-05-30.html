@@ -567,7 +567,7 @@ ForEach(results) { entry <span class="tok-k">in</span> ... }</code></pre>
     </div>
   </details>
 
-  <details class="finding" data-sev="LOW">
+  <details class="finding done" data-sev="LOW">
     <summary>
       <span class="badge LOW">LOW</span>
       <span>
@@ -577,6 +577,7 @@ ForEach(results) { entry <span class="tok-k">in</span> ... }</code></pre>
       </span>
     </summary>
     <div class="body">
+      <div class="resolution"><b>RESOLVED 2026-05-31</b> — <code>parseSnapshotToken</code> now anchors the version suffix to digits/dots: a <code>_mariadb_</code>-style marker followed by a non-version suffix (e.g. <code>my_db_mariadb_backup</code>) falls back to the bare name instead of being mangled into a fake version. Covered by a new anchoring test. <code>parseDDEVVersion</code> was reviewed and left as-is — it already probes the two known shapes, is covered by three tests, and returns <code>nil</code> (graceful "DDEV: ok, no version") on an unexpected shape; the suggested Codable rewrite is a style change, not a defect fix.</div>
       <h4>What's wrong &amp; why</h4>
       <p><code>parseDDEVVersion</code> uses untyped <code>JSONSerialization</code> + <code>as? [String: Any]</code> probing two key shapes; a schema change silently yields <code>nil</code> (shown as "DDEV: ok" with no version) — inconsistent with the typed <code>Codable</code> used elsewhere. <code>parseSnapshotToken</code> splits on <code>_mariadb_</code>/<code>_mysql_</code> and <code>replacingOccurrences(of: "_", with: ".")</code>, mis-parsing names with extra underscores or future DB types (display-only).</p>
       <h4>Suggested fix</h4>

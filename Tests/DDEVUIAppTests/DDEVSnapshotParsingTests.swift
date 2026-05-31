@@ -25,6 +25,19 @@ final class DDEVSnapshotParsingTests: XCTestCase {
         )
     }
 
+    func testSnapshotVersionSuffixIsAnchoredToDigitsAndDots() {
+        // A db-type marker followed by a non-version suffix must not be parsed as a version.
+        XCTAssertEqual(
+            DDEVSnapshot.parseListOutput("my_db_mariadb_backup.gz\n"),
+            [DDEVSnapshot(name: "my_db_mariadb_backup", databaseSuffix: nil)]
+        )
+        // Extra underscores before the db type still yield the trailing version.
+        XCTAssertEqual(
+            DDEVSnapshot.parseListOutput("my_project_prod_mariadb_10.11.gz\n"),
+            [DDEVSnapshot(name: "my_project_prod", databaseSuffix: "mariadb 10.11")]
+        )
+    }
+
     func testParseBoxTableSnapshotListOutput() {
         let output = """
         ┌───────────────────────────┬────────────┐
