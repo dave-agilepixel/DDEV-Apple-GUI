@@ -551,7 +551,7 @@ ForEach(results) { entry <span class="tok-k">in</span> ... }</code></pre>
     </div>
   </details>
 
-  <details class="finding" data-sev="LOW">
+  <details class="finding done" data-sev="LOW">
     <summary>
       <span class="badge LOW">LOW</span>
       <span>
@@ -561,6 +561,7 @@ ForEach(results) { entry <span class="tok-k">in</span> ... }</code></pre>
       </span>
     </summary>
     <div class="body">
+      <div class="resolution"><b>RESOLVED 2026-05-31</b> — <code>PrerequisiteChecking.launch</code> is now <code>async throws</code> and <code>WorkspacePrerequisiteService</code> propagates the <code>openApplication</code> failure instead of swallowing it. <code>PrerequisiteMonitor</code> captures it into a new <code>launchErrorMessage</code> ("Couldn't start Docker Desktop: …") shown in <code>PrerequisiteSheet</code>. Covered by <code>testLaunchSurfacesErrorWhenServiceLaunchFails</code>.</div>
       <h4>What's wrong &amp; why</h4>
       <p><code>launch(_:)</code> catches <code>openApplication</code> errors with an empty body. If launch fails permanently (app damaged, Gatekeeper block), <code>isLaunching</code> flips back with no feedback and the user can't tell why Docker never starts.</p>
       <h4>Suggested fix</h4>

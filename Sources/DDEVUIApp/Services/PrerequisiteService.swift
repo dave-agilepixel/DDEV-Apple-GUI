@@ -3,7 +3,7 @@ import Foundation
 
 public protocol PrerequisiteChecking: Sendable {
     func check() async -> PrerequisiteState
-    func launch(_ runtime: DockerRuntime) async
+    func launch(_ runtime: DockerRuntime) async throws
 }
 
 public final class WorkspacePrerequisiteService: PrerequisiteChecking, @unchecked Sendable {
@@ -37,15 +37,13 @@ public final class WorkspacePrerequisiteService: PrerequisiteChecking, @unchecke
         return PrerequisiteState(docker: await docker, ddev: await ddev)
     }
 
-    public func launch(_ runtime: DockerRuntime) async {
+    public func launch(_ runtime: DockerRuntime) async throws {
         guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: runtime.bundleIdentifier) else { return }
         let config = NSWorkspace.OpenConfiguration()
         config.activates = false
-        do {
-            _ = try await NSWorkspace.shared.openApplication(at: url, configuration: config)
-        } catch {
-            // Subsequent polls will reflect whether the launch succeeded.
-        }
+        // Propagate launch failures (app damaged, Gatekeeper block) instead of swallowing them,
+        // so the prerequisite sheet can tell the user why Docker never started (audit L5).
+        _ = try await NSWorkspace.shared.openApplication(at: url, configuration: config)
     }
 
     private func checkDocker() async -> DockerStatus {
@@ -131,7 +129,7 @@ public final class StaticPrerequisiteService: PrerequisiteChecking, @unchecked S
         }
     }
 
-    public func launch(_ runtime: DockerRuntime) async {
+    public func launch(_ runtime: DockerRuntime) async throws {
         launchHandler?(runtime)
     }
 }

@@ -21,6 +21,13 @@ struct PrerequisiteSheet: View {
                     .fill(.quaternary.opacity(0.4))
             )
 
+            if let launchErrorMessage = monitor.launchErrorMessage {
+                Label(launchErrorMessage, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+                    .font(.callout)
+                    .textSelection(.enabled)
+            }
+
             HStack {
                 Button("Quit DDEVUI") {
                     NSApp.terminate(nil)

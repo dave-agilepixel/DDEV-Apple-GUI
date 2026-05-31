@@ -206,6 +206,18 @@ final class PrerequisiteServiceTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(100))
         XCTAssertEqual(service.callCount, 2, "start() re-arms after the loop self-terminated")
     }
+
+    @MainActor
+    func testLaunchSurfacesErrorWhenServiceLaunchFails() async {
+        let service = ThrowingLaunchPrerequisiteService()
+        let monitor = PrerequisiteMonitor(service: service, pollInterval: .seconds(60))
+
+        await monitor.launch(.dockerDesktop)
+
+        XCTAssertNotNil(monitor.launchErrorMessage, "A launch failure is surfaced, not silently swallowed")
+        XCTAssertTrue(monitor.launchErrorMessage?.contains("Docker Desktop") ?? false)
+        XCTAssertFalse(monitor.isLaunching)
+    }
 }
 
 private final class StubCommandRunner: CommandRunning, @unchecked Sendable {
@@ -261,7 +273,16 @@ private final class CountingPrerequisiteService: PrerequisiteChecking, @unchecke
         return state
     }
 
-    func launch(_ runtime: DockerRuntime) async {}
+    func launch(_ runtime: DockerRuntime) async throws {}
+}
+
+/// A fake whose `launch` always fails, to verify the monitor surfaces the error (audit L5).
+private final class ThrowingLaunchPrerequisiteService: PrerequisiteChecking, @unchecked Sendable {
+    struct LaunchFailure: Error {}
+    func check() async -> PrerequisiteState {
+        PrerequisiteState(docker: .notRunning(.dockerDesktop), ddev: .ok(version: nil))
+    }
+    func launch(_ runtime: DockerRuntime) async throws { throw LaunchFailure() }
 }
 
 private final class LaunchRecorder: @unchecked Sendable {

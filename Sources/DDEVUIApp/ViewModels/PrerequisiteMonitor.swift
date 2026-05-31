@@ -5,6 +5,7 @@ import SwiftUI
 public final class PrerequisiteMonitor: ObservableObject {
     @Published public private(set) var state: PrerequisiteState = .initial
     @Published public private(set) var isLaunching = false
+    @Published public private(set) var launchErrorMessage: String?
 
     public let pollInterval: Duration
     private let service: PrerequisiteChecking
@@ -50,7 +51,12 @@ public final class PrerequisiteMonitor: ObservableObject {
 
     public func launch(_ runtime: DockerRuntime) async {
         isLaunching = true
-        await service.launch(runtime)
+        launchErrorMessage = nil
+        do {
+            try await service.launch(runtime)
+        } catch {
+            launchErrorMessage = "Couldn't start \(runtime.displayName): \(error.presentableMessage)"
+        }
         await refresh()
         isLaunching = false
     }
