@@ -354,7 +354,7 @@ commandStates = commandStates.filter { liveIDs.contains($0.key) || $0.value.isBu
     </div>
   </details>
 
-  <details class="finding" data-sev="MEDIUM">
+  <details class="finding done" data-sev="MEDIUM">
     <summary>
       <span class="badge MEDIUM">MEDIUM</span>
       <span>
@@ -364,6 +364,7 @@ commandStates = commandStates.filter { liveIDs.contains($0.key) || $0.value.isBu
       </span>
     </summary>
     <div class="body">
+      <div class="resolution"><b>RESOLVED 2026-05-31</b> — Pipes are now drained in chunks via <code>availableData</code> and <code>PipeBuffer.appendCapped</code> stops accumulating past a configurable cap (default 4&nbsp;MiB), while still fully draining the pipe so the child never blocks on a full kernel buffer. Truncation is surfaced with a <code>…[output truncated at N MiB]</code> marker. The cap is injectable via <code>ProcessCommandRunner(maxCapturedBytes:)</code>; covered by <code>testLargeOutputIsCappedAndMarkedTruncated</code>.</div>
       <h4>What's wrong</h4>
       <p>stdout/stderr are read fully into a <code>Data</code> via <code>readDataToEndOfFile()</code> with no size cap, then converted to <code>String</code>. The deadlock is fixed, but the in-memory buffer is unbounded. History storage is capped at 32&nbsp;KiB — but only <i>after</i> the entire buffer already exists in RAM.</p>
       <h4>Why it matters</h4>

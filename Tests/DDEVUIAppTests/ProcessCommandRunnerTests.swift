@@ -54,6 +54,16 @@ final class ProcessCommandRunnerTests: XCTestCase {
         XCTAssertLessThan(elapsed, 10, "A wedged child must be killed at the timeout, not run to completion")
     }
 
+    func testLargeOutputIsCappedAndMarkedTruncated() async throws {
+        let runner = ProcessCommandRunner(maxCapturedBytes: 1024)
+        let result = try await runner.run(
+            CommandSpec(executable: "head", arguments: ["-c", "50000", "/dev/zero"])
+        )
+        XCTAssertLessThan(result.stdout.utf8.count, 1024 + 200,
+                          "Captured output is bounded near the cap, not the full 50 KB")
+        XCTAssertTrue(result.stdout.contains("truncated"), "Truncation is surfaced in the captured output")
+    }
+
     func testTimeoutDoesNotFireForFastCommand() async throws {
         let runner = ProcessCommandRunner()
         let result = try await runner.run(

@@ -34,15 +34,23 @@ public enum CommandRunnerError: Error, Equatable {
 }
 
 public final class ProcessCommandRunner: CommandRunning, @unchecked Sendable {
-    public init() {}
+    /// Upper bound on stdout/stderr captured in memory per stream (audit M5). The child is still
+    /// fully drained past this point (so it never blocks on a full pipe), but excess bytes are
+    /// discarded and the result is flagged truncated.
+    private let maxCapturedBytes: Int
+
+    public init(maxCapturedBytes: Int = 4 * 1024 * 1024) {
+        self.maxCapturedBytes = maxCapturedBytes
+    }
 
     public func run(_ spec: CommandSpec) async throws -> CommandResult {
         let controller = ProcessController()
+        let cap = maxCapturedBytes
         let result: CommandResult = try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<CommandResult, Error>) in
                 DispatchQueue.global(qos: .userInitiated).async {
                     do {
-                        continuation.resume(returning: try Self.executeBlocking(spec, controller: controller))
+                        continuation.resume(returning: try Self.executeBlocking(spec, controller: controller, maxCapturedBytes: cap))
                     } catch {
                         continuation.resume(throwing: error)
                     }
@@ -65,7 +73,7 @@ public final class ProcessCommandRunner: CommandRunning, @unchecked Sendable {
     // Blocking implementation, intended to run on a background dispatch queue.
     // Drains stdout and stderr concurrently while the child runs so we don't deadlock
     // on output larger than the pipe kernel buffer (16-64 KiB).
-    private static func executeBlocking(_ spec: CommandSpec, controller: ProcessController) throws -> CommandResult {
+    private static func executeBlocking(_ spec: CommandSpec, controller: ProcessController, maxCapturedBytes: Int) throws -> CommandResult {
         let startedAt = Date()
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
@@ -102,13 +110,13 @@ public final class ProcessCommandRunner: CommandRunning, @unchecked Sendable {
 
         group.enter()
         readQueue.async {
-            stdoutBuffer.append(stdoutPipe.fileHandleForReading.readDataToEndOfFile())
+            Self.drain(stdoutPipe.fileHandleForReading, into: stdoutBuffer, cap: maxCapturedBytes)
             group.leave()
         }
 
         group.enter()
         readQueue.async {
-            stderrBuffer.append(stderrPipe.fileHandleForReading.readDataToEndOfFile())
+            Self.drain(stderrPipe.fileHandleForReading, into: stderrBuffer, cap: maxCapturedBytes)
             group.leave()
         }
 
@@ -128,8 +136,8 @@ public final class ProcessCommandRunner: CommandRunning, @unchecked Sendable {
         watchdog?.cancel()
         group.wait()
 
-        let stdout = String(data: stdoutBuffer.snapshot, encoding: .utf8) ?? ""
-        let stderr = String(data: stderrBuffer.snapshot, encoding: .utf8) ?? ""
+        let stdout = Self.decode(stdoutBuffer, cap: maxCapturedBytes)
+        let stderr = Self.decode(stderrBuffer, cap: maxCapturedBytes)
         return CommandResult(
             executable: spec.executable,
             arguments: spec.arguments,
@@ -143,18 +151,51 @@ public final class ProcessCommandRunner: CommandRunning, @unchecked Sendable {
         )
     }
 
+    /// Reads `handle` to EOF in chunks, capturing at most `cap` bytes into `buffer` while still
+    /// fully draining the pipe so the child never blocks writing to a full kernel buffer (audit M5).
+    private static func drain(_ handle: FileHandle, into buffer: PipeBuffer, cap: Int) {
+        while true {
+            let chunk = handle.availableData
+            if chunk.isEmpty { break } // EOF
+            buffer.appendCapped(chunk, cap: cap)
+        }
+    }
+
+    /// Decodes captured bytes and appends a truncation notice when the source output exceeded `cap`.
+    private static func decode(_ buffer: PipeBuffer, cap: Int) -> String {
+        let text = String(data: buffer.snapshot, encoding: .utf8) ?? ""
+        guard buffer.wasTruncated else { return text }
+        let limit = cap >= 1024 * 1024 ? "\(cap / (1024 * 1024)) MiB" : "\(cap) bytes"
+        return text + "\n…[output truncated at \(limit)]"
+    }
+
     // Lock-guarded accumulator so the per-pipe drain on a background dispatch queue can
     // safely append without tripping Swift 6 Sendable checks on the @Sendable GCD closure.
     private final class PipeBuffer: @unchecked Sendable {
         private let lock = NSLock()
         private var data = Data()
+        private var truncated = false
 
-        func append(_ chunk: Data) {
-            lock.withLock { data.append(chunk) }
+        /// Appends up to `cap` total bytes; excess is dropped and the buffer is flagged truncated.
+        func appendCapped(_ chunk: Data, cap: Int) {
+            lock.withLock {
+                guard data.count < cap else { truncated = true; return }
+                let remaining = cap - data.count
+                if chunk.count <= remaining {
+                    data.append(chunk)
+                } else {
+                    data.append(chunk.prefix(remaining))
+                    truncated = true
+                }
+            }
         }
 
         var snapshot: Data {
             lock.withLock { data }
+        }
+
+        var wasTruncated: Bool {
+            lock.withLock { truncated }
         }
     }
 
