@@ -125,6 +125,9 @@ public final class ProjectDashboardViewModel: ObservableObject {
     private let scheduler: CommandScheduler
     private let notifier: NotificationScheduling
     private var selectedProjectFallback: DDEVProject?
+    /// Guards `refreshProjectsFromDDEV` against overlapping runs (audit M4). Not `@Published`
+    /// — it's internal serialization, not UI state (`isRunningGlobalCommand` drives the spinner).
+    private var isRefreshInFlight = false
 
     public init(
         ddevService: DDEVServicing = DDEVCommandService(),
@@ -908,6 +911,13 @@ public final class ProjectDashboardViewModel: ObservableObject {
     }
 
     private func refreshProjectsFromDDEV() async throws {
+        // Single in-flight guard so overlapping refreshes (e.g. the cache-warm background
+        // refresh racing a mutation-triggered full refresh) don't stack two listProjects +
+        // N-project describe fan-outs at once (audit M4).
+        guard !isRefreshInFlight else { return }
+        isRefreshInFlight = true
+        defer { isRefreshInFlight = false }
+
         let loadedProjects = try await ddevService.listProjects()
         let enrichedProjects = await enrichProjectsWithDetails(loadedProjects)
         applyProjects(enrichedProjects)

@@ -125,6 +125,24 @@ final class ProjectConcurrencyTests: XCTestCase {
         XCTAssertTrue(spy.snapshot().isEmpty, "No notification for the focused project")
     }
 
+    func testOverlappingRefreshIsDroppedByInFlightGuard() async {
+        let service = GatedDDEVService(projects: [.sampleWordPress], gateList: true)
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+
+        async let first: Void = viewModel.refresh()
+        await service.waitForInFlight(count: 1)           // first refresh parked inside listProjects
+        async let second: Void = viewModel.refresh()      // should hit the in-flight guard and bail
+
+        // While the first is still parked, let the second reach its guard decision.
+        for _ in 0..<1000 { await Task.yield() }
+        let listsWhileParked = await service.commands().filter { $0 == "list" }.count
+
+        await service.releaseAll()
+        _ = await (first, second)
+
+        XCTAssertEqual(listsWhileParked, 1, "A second refresh while one is in flight is dropped, not stacked")
+    }
+
     func testStateChangingMutationReDescribesOnlyThatProject() async {
         let service = GatedDDEVService(projects: [.sampleWordPress, .sampleLaravel])
         let viewModel = ProjectDashboardViewModel(ddevService: service)
@@ -168,6 +186,8 @@ private actor GatedDDEVService: DDEVServicing {
     private let projects: [DDEVProject]
     /// Mutation labels that should fail with a non-zero exit (e.g. "stop:agilebugs").
     private let failingLabels: Set<String>
+    /// When true, `listProjects` is gated like a mutation so overlapping refreshes can be observed.
+    private let gateList: Bool
     private var recorded: [String] = []
     private var inFlight = 0
     private var gate: [CheckedContinuation<Void, Never>] = []
@@ -176,9 +196,10 @@ private actor GatedDDEVService: DDEVServicing {
     /// reaches `runGated` *after* `releaseAll()` has drained the initially in-flight ones.
     private var isOpen = false
 
-    init(projects: [DDEVProject], failingLabels: Set<String> = []) {
+    init(projects: [DDEVProject], failingLabels: Set<String> = [], gateList: Bool = false) {
         self.projects = projects
         self.failingLabels = failingLabels
+        self.gateList = gateList
     }
 
     /// Snapshot of recorded commands. Async (not a blocking `nonisolated` accessor) to avoid
@@ -217,7 +238,15 @@ private actor GatedDDEVService: DDEVServicing {
                       stdout: "", stderr: "", startedAt: .distantPast, finishedAt: .distantPast, wasCancelled: false)
     }
 
-    func listProjects() async throws -> [DDEVProject] { recorded.append("list"); return projects }
+    func listProjects() async throws -> [DDEVProject] {
+        recorded.append("list")
+        if gateList, !isOpen {
+            inFlight += 1
+            await withCheckedContinuation { gate.append($0) }
+            inFlight -= 1
+        }
+        return projects
+    }
     func describe(projectName: String) async throws -> DDEVProjectDetails {
         recorded.append("describe:\(projectName)"); return DDEVProjectDetails(phpVersion: nil, xhguiStatus: nil)
     }

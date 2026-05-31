@@ -333,7 +333,7 @@ commandStates = commandStates.filter { liveIDs.contains($0.key) || $0.value.isBu
     </div>
   </details>
 
-  <details class="finding" data-sev="MEDIUM">
+  <details class="finding done" data-sev="MEDIUM">
     <summary>
       <span class="badge MEDIUM">MEDIUM</span>
       <span>
@@ -343,6 +343,7 @@ commandStates = commandStates.filter { liveIDs.contains($0.key) || $0.value.isBu
       </span>
     </summary>
     <div class="body">
+      <div class="resolution"><b>RESOLVED 2026-05-31</b> — Guarded at the shared chokepoint: <code>refreshProjectsFromDDEV</code> now early-returns when a private <code>isRefreshInFlight</code> flag is set, serialising every refresh path (user refresh, cache-warm background refresh, mutation-triggered <code>.fullList</code>) so two <code>listProjects</code> + describe fan-outs can't stack. Covered by <code>testOverlappingRefreshIsDroppedByInFlightGuard</code>.</div>
       <h4>What's wrong</h4>
       <p><code>refresh()</code> sets <code>isRunningGlobalCommand = true</code> but does not early-return when already running. The toolbar button is disabled while running (UI mitigation), but <code>loadCachedProjectsThenRefresh()</code> (from <code>.task</code> on appear) and a refresh triggered by a <code>.fullList</code> mutation can run two <code>listProjects</code> + N-project <code>describe</code> fan-outs at once.</p>
       <h4>Why it matters</h4>
