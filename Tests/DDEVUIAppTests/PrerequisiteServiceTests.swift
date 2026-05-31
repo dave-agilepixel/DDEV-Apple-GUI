@@ -161,6 +161,51 @@ final class PrerequisiteServiceTests: XCTestCase {
         XCTAssertEqual(launchedRuntimes.snapshot, [.dockerDesktop])
         XCTAssertFalse(monitor.isLaunching)
     }
+
+    @MainActor
+    func testPollLoopStopsOncePrerequisitesSatisfied() async throws {
+        let service = CountingPrerequisiteService(state: PrerequisiteState(docker: .ok, ddev: .ok(version: "v1.24.0")))
+        let monitor = PrerequisiteMonitor(service: service, pollInterval: .milliseconds(10))
+
+        monitor.start()
+        // Far more than one poll interval — a non-terminating loop would rack up ~20 checks.
+        try await Task.sleep(for: .milliseconds(200))
+
+        XCTAssertEqual(service.callCount, 1, "Loop must stop after the first satisfied check, not poll forever")
+        XCTAssertTrue(monitor.state.allSatisfied)
+    }
+
+    @MainActor
+    func testPollLoopKeepsPollingWhileUnsatisfiedAndStopsOnStop() async throws {
+        let service = CountingPrerequisiteService(state: PrerequisiteState(docker: .notRunning(.dockerDesktop), ddev: .missing))
+        let monitor = PrerequisiteMonitor(service: service, pollInterval: .milliseconds(10))
+
+        monitor.start()
+        try await Task.sleep(for: .milliseconds(120))
+        XCTAssertGreaterThan(service.callCount, 1, "Loop keeps polling while prerequisites are unmet")
+
+        monitor.stop()
+        // Let any in-flight check settle, then confirm the count is frozen — i.e. polling halted.
+        try await Task.sleep(for: .milliseconds(60))
+        let afterStop = service.callCount
+        try await Task.sleep(for: .milliseconds(80))
+        XCTAssertEqual(service.callCount, afterStop, "stop() halts further polling")
+    }
+
+    @MainActor
+    func testStartReArmsAfterSelfTerminating() async throws {
+        let service = CountingPrerequisiteService(state: PrerequisiteState(docker: .ok, ddev: .ok(version: "v1.24.0")))
+        let monitor = PrerequisiteMonitor(service: service, pollInterval: .milliseconds(10))
+
+        monitor.start()
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(service.callCount, 1)
+
+        // The self-terminated loop cleared pollTask, so start() can re-validate on demand.
+        monitor.start()
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(service.callCount, 2, "start() re-arms after the loop self-terminated")
+    }
 }
 
 private final class StubCommandRunner: CommandRunning, @unchecked Sendable {
@@ -198,6 +243,25 @@ private final class StubCommandRunner: CommandRunning, @unchecked Sendable {
         }
         throw CommandRunnerError.nonZeroExit(result)
     }
+}
+
+/// A fake that records how many times `check()` runs so tests can assert the poll loop's
+/// start/stop/self-terminate lifecycle (audit H1).
+private final class CountingPrerequisiteService: PrerequisiteChecking, @unchecked Sendable {
+    private let state: PrerequisiteState
+    private let lock = NSLock()
+    private var count = 0
+
+    init(state: PrerequisiteState) { self.state = state }
+
+    var callCount: Int { lock.withLock { count } }
+
+    func check() async -> PrerequisiteState {
+        lock.withLock { count += 1 }
+        return state
+    }
+
+    func launch(_ runtime: DockerRuntime) async {}
 }
 
 private final class LaunchRecorder: @unchecked Sendable {

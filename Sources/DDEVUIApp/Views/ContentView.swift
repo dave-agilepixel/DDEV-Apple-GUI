@@ -6,6 +6,7 @@ struct ContentView: View {
     )
     @StateObject private var prerequisites = PrerequisiteMonitor()
     @State private var folderToConfigure: FolderToConfigure?
+    @Environment(\.scenePhase) private var scenePhase
 
     private static func makeNotifier() -> NotificationScheduling {
         let scheduler = UserNotificationScheduler()
@@ -87,6 +88,14 @@ struct ContentView: View {
         }
         .task {
             prerequisites.start()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            // Pause the prerequisite poll while backgrounded; re-arm (and re-validate) on return.
+            if phase == .active {
+                prerequisites.start()
+            } else {
+                prerequisites.stop()
+            }
         }
     }
 

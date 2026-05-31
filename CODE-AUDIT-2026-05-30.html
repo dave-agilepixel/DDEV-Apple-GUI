@@ -186,7 +186,7 @@
 
   <!-- ===================== HIGH ===================== -->
 
-  <details class="finding" data-sev="HIGH" open>
+  <details class="finding done" data-sev="HIGH" open>
     <summary>
       <span class="badge HIGH">HIGH</span>
       <span>
@@ -196,6 +196,7 @@
       </span>
     </summary>
     <div class="body">
+      <div class="resolution reframed"><b>RESOLVED 2026-05-31 (reframed)</b> — The headline claim was inaccurate: <code>stop()</code> <i>does</i> exist (<code>PrerequisiteMonitor.swift:33</code>), matching this audit's own "strengths" note. The real defect — the loop never self-terminated and nothing called <code>stop()</code> outside <code>deinit</code> — is fixed: the loop now <code>break</code>s and clears <code>pollTask</code> once <code>state.allSatisfied</code> (so it stops spawning <code>docker info</code>/<code>ddev version</code> after the gate clears and <code>start()</code> can re-arm), and <code>ContentView</code> now pauses/resumes it via <code>onChange(of: scenePhase)</code>. Covered by three new <code>PrerequisiteMonitor</code> lifecycle tests (stops-when-satisfied, keeps-polling-then-stop, re-arm).</div>
       <h4>What's wrong</h4>
       <p><code>PrerequisiteMonitor.start()</code> launches an infinite <code>while !Task.isCancelled</code> loop that calls <code>service.check()</code> (which shells out to <code>docker&nbsp;info</code> + <code>ddev&nbsp;version</code>) and sleeps 5&nbsp;s. It is started from <code>ContentView</code>'s <code>.task { prerequisites.start() }</code> but there is <b>no matching <code>stop()</code></b> anywhere — no <code>.onDisappear</code>, no <code>scenePhase</code> observation, no "satisfied → stop" condition. The loop only ends when the <code>@StateObject</code> is deallocated (<code>deinit</code> cancels it), which for this single-window app is effectively app quit.</p>
       <pre><code><span class="tok-k">public func</span> start() {

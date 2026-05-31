@@ -25,6 +25,13 @@ public final class PrerequisiteMonitor: ObservableObject {
             while !Task.isCancelled {
                 await self.refresh()
                 guard !Task.isCancelled else { return }
+                // Stop polling once everything is healthy — no point spawning docker/ddev
+                // subprocesses forever after the gate is cleared. Clearing pollTask lets
+                // start() re-arm on demand (e.g. when the scene returns to the foreground).
+                if self.state.allSatisfied {
+                    self.pollTask = nil
+                    return
+                }
                 try? await Task.sleep(for: self.pollInterval)
             }
         }
