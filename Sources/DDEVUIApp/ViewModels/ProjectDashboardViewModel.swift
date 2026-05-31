@@ -15,7 +15,6 @@ public protocol DDEVServicing: Sendable {
     func launchDatabaseTool(_ tool: DDEVDatabaseTool, in appRoot: String) async throws -> CommandResult
     func importDatabase(_ options: DDEVDatabaseImportOptions, in appRoot: String) async throws -> CommandResult
     func exportDatabase(_ options: DDEVDatabaseExportOptions, in appRoot: String) async throws -> CommandResult
-    func importFiles(_ options: DDEVFileImportOptions, in appRoot: String) async throws -> CommandResult
     func createSnapshot(name: String?, in appRoot: String) async throws -> CommandResult
     func listSnapshots(in appRoot: String) async throws -> CommandResult
     func restoreSnapshot(named snapshotName: String, in appRoot: String) async throws -> CommandResult

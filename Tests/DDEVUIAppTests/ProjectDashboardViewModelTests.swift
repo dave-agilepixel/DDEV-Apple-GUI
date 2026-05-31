@@ -1005,10 +1005,6 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
         return commandResult(arguments: ["export-db"], workingDirectory: appRoot)
     }
 
-    func importFiles(_ options: DDEVFileImportOptions, in appRoot: String) async throws -> CommandResult {
-        record("import-files:\(appRoot):\(options.sourcePath)")
-        return commandResult(arguments: ["import-files"], workingDirectory: appRoot)
-    }
 
     func createSnapshot(name: String?, in appRoot: String) async throws -> CommandResult {
         record("snapshot:\(appRoot):\(name ?? "")")

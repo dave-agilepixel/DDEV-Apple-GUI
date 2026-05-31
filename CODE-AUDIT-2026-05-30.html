@@ -638,7 +638,7 @@ ForEach(results) { entry <span class="tok-k">in</span> ... }</code></pre>
     </div>
   </details>
 
-  <details class="finding" data-sev="LOW">
+  <details class="finding done" data-sev="LOW">
     <summary>
       <span class="badge LOW">LOW</span>
       <span>
@@ -648,6 +648,7 @@ ForEach(results) { entry <span class="tok-k">in</span> ... }</code></pre>
       </span>
     </summary>
     <div class="body">
+      <div class="resolution"><b>RESOLVED 2026-05-31</b> — <code>importDatabase</code> now pre-checks the source path with an injectable <code>fileExists</code> (default <code>FileManager.isReadableFile</code>) and throws a <code>LocalizedError</code> (<code>DDEVCommandPreconditionError.fileNotReadable</code>) — a clear "File not found or not readable" message instead of an opaque exit code. The dead <code>importFiles</code> path (in the protocol but never invoked from the VM/views) and its <code>DDEVFileImportOptions</code> model were removed, along with the corresponding test-double methods. Covered by a new reject-unreadable-file test.</div>
       <h4>What's wrong &amp; why</h4>
       <p>User-selected paths are glued into <code>--source=</code>/<code>--file=</code> with no existence/readability check (no injection risk — single token, no shell). A bad path surfaces only as an opaque "Command failed with exit code N". <code>importFiles</code> is also in the protocol but never invoked from the VM (dead surface).</p>
       <h4>Suggested fix</h4>

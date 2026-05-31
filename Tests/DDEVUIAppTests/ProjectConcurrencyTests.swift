@@ -263,7 +263,6 @@ private actor GatedDDEVService: DDEVServicing {
     func launchDatabaseTool(_ tool: DDEVDatabaseTool, in appRoot: String) async throws -> CommandResult { try await runGated("db") }
     func importDatabase(_ options: DDEVDatabaseImportOptions, in appRoot: String) async throws -> CommandResult { try await runGated("import") }
     func exportDatabase(_ options: DDEVDatabaseExportOptions, in appRoot: String) async throws -> CommandResult { try await runGated("export") }
-    func importFiles(_ options: DDEVFileImportOptions, in appRoot: String) async throws -> CommandResult { try await runGated("import-files") }
     func createSnapshot(name: String?, in appRoot: String) async throws -> CommandResult { try await runGated("snapshot") }
     func listSnapshots(in appRoot: String) async throws -> CommandResult { recorded.append("snapshot-list"); return runImmediate() }
     func restoreSnapshot(named snapshotName: String, in appRoot: String) async throws -> CommandResult { try await runGated("snapshot-restore") }

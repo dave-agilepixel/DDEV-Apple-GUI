@@ -3,13 +3,16 @@ import Foundation
 public final class DDEVCommandService: Sendable {
     private let commandRunner: CommandRunning
     private let ddevExecutable: String
+    private let fileExists: @Sendable (String) -> Bool
 
     public init(
         commandRunner: CommandRunning = ProcessCommandRunner(),
-        ddevExecutable: String = DDEVExecutableResolver().resolve()
+        ddevExecutable: String = DDEVExecutableResolver().resolve(),
+        fileExists: @escaping @Sendable (String) -> Bool = { FileManager.default.isReadableFile(atPath: $0) }
     ) {
         self.commandRunner = commandRunner
         self.ddevExecutable = ddevExecutable
+        self.fileExists = fileExists
     }
 
     public func listProjects() async throws -> [DDEVProject] {
@@ -77,6 +80,12 @@ public final class DDEVCommandService: Sendable {
 
     @discardableResult
     public func importDatabase(_ options: DDEVDatabaseImportOptions, in appRoot: String) async throws -> CommandResult {
+        // Surface a missing/unreadable file as a clear precondition error rather than an opaque
+        // "exit code N" from ddev (audit L10).
+        guard fileExists(options.filePath) else {
+            throw DDEVCommandPreconditionError.fileNotReadable(path: options.filePath)
+        }
+
         var arguments = [
             "import-db",
             "--file=\(options.filePath)",
@@ -104,21 +113,6 @@ public final class DDEVCommandService: Sendable {
             ] + options.compression.ddevArguments,
             workingDirectory: appRoot
         )
-    }
-
-    @discardableResult
-    public func importFiles(_ options: DDEVFileImportOptions, in appRoot: String) async throws -> CommandResult {
-        var arguments = ["import-files", "--source=\(options.sourcePath)"]
-
-        if let targetPath = options.targetPath {
-            arguments.append("--target=\(targetPath)")
-        }
-
-        if let extractPath = options.extractPath {
-            arguments.append("--extract-path=\(extractPath)")
-        }
-
-        return try await runDDEV(arguments, workingDirectory: appRoot)
     }
 
     @discardableResult
@@ -327,15 +321,14 @@ public enum DDEVDatabaseTool: String, CaseIterable, Codable, Identifiable, Senda
     }
 }
 
-public struct DDEVFileImportOptions: Equatable, Sendable {
-    public let sourcePath: String
-    public let targetPath: String?
-    public let extractPath: String?
+public enum DDEVCommandPreconditionError: LocalizedError, Equatable {
+    case fileNotReadable(path: String)
 
-    public init(sourcePath: String, targetPath: String? = nil, extractPath: String? = nil) {
-        self.sourcePath = sourcePath
-        self.targetPath = targetPath?.nilIfBlank
-        self.extractPath = extractPath?.nilIfBlank
+    public var errorDescription: String? {
+        switch self {
+        case .fileNotReadable(let path):
+            return "File not found or not readable: \(path)"
+        }
     }
 }
 

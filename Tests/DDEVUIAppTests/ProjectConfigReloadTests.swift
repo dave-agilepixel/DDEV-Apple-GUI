@@ -71,7 +71,6 @@ private final class SuspendedConfigDDEVService: DDEVServicing, @unchecked Sendab
     func launchDatabaseTool(_ tool: DDEVDatabaseTool, in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
     func importDatabase(_ options: DDEVDatabaseImportOptions, in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
     func exportDatabase(_ options: DDEVDatabaseExportOptions, in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
-    func importFiles(_ options: DDEVFileImportOptions, in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
     func createSnapshot(name: String?, in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
     func listSnapshots(in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
     func restoreSnapshot(named snapshotName: String, in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
