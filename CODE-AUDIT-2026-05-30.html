@@ -584,7 +584,7 @@ ForEach(results) { entry <span class="tok-k">in</span> ... }</code></pre>
     </div>
   </details>
 
-  <details class="finding" data-sev="LOW">
+  <details class="finding done" data-sev="LOW">
     <summary>
       <span class="badge LOW">LOW</span>
       <span>
@@ -594,6 +594,7 @@ ForEach(results) { entry <span class="tok-k">in</span> ... }</code></pre>
       </span>
     </summary>
     <div class="body">
+      <div class="resolution"><b>RESOLVED 2026-05-31</b> — Removed the vestigial <code>selectedSnapshotID</code> state, its radio-button selection control, and the <code>.onChange(of: snapshots)</code> reconciliation block (no restore/delete action ever read it — they operate on the snapshot passed to the confirmation). Rows now render the name/suffix directly.</div>
       <h4>What's wrong &amp; why</h4>
       <p><code>selectedSnapshotID</code> is maintained by radio buttons and an <code>.onChange(of: snapshots)</code> reconciliation block, but no restore/delete action uses it (they operate on the specific snapshot passed to the confirmation). It's vestigial state that fires reconciliation on every snapshot list update.</p>
       <h4>Suggested fix</h4>

@@ -6,7 +6,6 @@ struct SnapshotManagerView: View {
 
     @State private var snapshotName = ""
     @State private var lastSuggestedSnapshotName = ""
-    @State private var selectedSnapshotID: DDEVSnapshot.ID?
     @State private var pendingConfirmation: SnapshotConfirmation?
 
     var body: some View {
@@ -115,41 +114,21 @@ struct SnapshotManagerView: View {
         } message: { confirmation in
             Text(confirmation.message(for: project))
         }
-        .onChange(of: viewModel.snapshots) { _, snapshots in
-            if let selectedSnapshotID, !snapshots.contains(where: { $0.id == selectedSnapshotID }) {
-                self.selectedSnapshotID = snapshots.first?.id
-            } else if selectedSnapshotID == nil {
-                selectedSnapshotID = snapshots.first?.id
-            }
-        }
     }
 
     private var snapshotList: some View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(viewModel.snapshots) { snapshot in
                 HStack(spacing: 10) {
-                    Button {
-                        selectedSnapshotID = snapshot.id
-                    } label: {
-                        HStack(spacing: 10) {
-                            Image(systemName: selectedSnapshotID == snapshot.id ? "largecircle.fill.circle" : "circle")
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(snapshot.name)
-                                    .font(.callout.weight(.medium))
-                                if let databaseSuffix = snapshot.databaseSuffix {
-                                    Text(databaseSuffix)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(snapshot.name)
+                            .font(.callout.weight(.medium))
+                        if let databaseSuffix = snapshot.databaseSuffix {
+                            Text(databaseSuffix)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
-                        .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.primary)
-                    .help("Select snapshot")
-                    .accessibilityLabel("Select \(snapshot.name)")
 
                     Spacer(minLength: 0)
 
