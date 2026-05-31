@@ -10,7 +10,10 @@ struct LogsViewerView: View {
     @State private var includeTimestamps = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        // Join stdout/stderr once per render instead of recomputing the (potentially large)
+        // string for each use in the body (audit L2).
+        let logs = logText
+        return VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("Logs")
                     .font(.subheadline.weight(.semibold))
@@ -53,7 +56,7 @@ struct LogsViewerView: View {
                 } label: {
                     Label("Copy", systemImage: "doc.on.doc")
                 }
-                .disabled(logText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .disabled(logs.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             .buttonStyle(.bordered)
             .controlSize(.regular)
@@ -74,7 +77,7 @@ struct LogsViewerView: View {
             if viewModel.selectedProjectState.isReadingData {
                 ProgressView("Loading logs...")
                     .controlSize(.small)
-            } else if logText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            } else if logs.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 ContentUnavailableView(
                     "No Log Output",
                     systemImage: "doc.text.magnifyingglass",
@@ -82,15 +85,20 @@ struct LogsViewerView: View {
                 )
                 .frame(maxWidth: .infinity, minHeight: 120)
             } else {
-                TextEditor(text: .constant(logText))
-                    .font(.system(.caption, design: .monospaced))
-                    .textSelection(.enabled)
-                    .scrollContentBackground(.hidden)
-                    .frame(minHeight: 240, maxHeight: 400)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6)
-                            .stroke(.separator, lineWidth: 1)
-                    )
+                // Selectable Text in a ScrollView (as CommandOutputView does) rather than an
+                // editable TextEditor bound via .constant just to get selection (audit L2).
+                ScrollView {
+                    Text(logs)
+                        .font(.system(.caption, design: .monospaced))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(8)
+                }
+                .frame(minHeight: 240, maxHeight: 400)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(.separator, lineWidth: 1)
+                )
             }
         }
         .task(id: loadTrigger) {

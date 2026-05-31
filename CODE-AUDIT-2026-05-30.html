@@ -499,7 +499,7 @@ ForEach(results) { entry <span class="tok-k">in</span> ... }</code></pre>
     </div>
   </details>
 
-  <details class="finding" data-sev="LOW">
+  <details class="finding done" data-sev="LOW">
     <summary>
       <span class="badge LOW">LOW</span>
       <span>
@@ -509,6 +509,7 @@ ForEach(results) { entry <span class="tok-k">in</span> ... }</code></pre>
       </span>
     </summary>
     <div class="body">
+      <div class="resolution"><b>RESOLVED 2026-05-31</b> — <code>logText</code> is now joined once per render into a local (<code>let logs = logText</code>) reused across the body's branches, and the output renders as selectable <code>Text</code> in a <code>ScrollView</code> (matching <code>CommandOutputView</code>) instead of an editable <code>TextEditor</code> bound via <code>.constant</code>.</div>
       <h4>What's wrong &amp; why</h4>
       <p><code>logText</code> joins stdout+stderr on every body evaluation, and it's bound via <code>.constant</code> to an editable <code>TextEditor</code> just to get selection/scroll. For large tail counts that rebuilds a big string each render and uses the wrong control.</p>
       <h4>Suggested fix</h4>
