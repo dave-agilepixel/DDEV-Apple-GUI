@@ -112,16 +112,16 @@ public final class ProjectDashboardViewModel {
     public var addonRawOutput: String?
     public var diagnosticReport = DDEVDiagnosticReport()
     public var diagnosticsErrorMessage: String?
-    public private(set) var preferences: AppPreferences
-    public private(set) var installedEditors: [EditorChoice]
-    public private(set) var installedDatabaseTools: [DDEVDatabaseTool]
+
+    /// Preferences + installed-app concern, extracted to its own model (audit M9). The public
+    /// API below forwards to it so views/tests are unchanged; both are `@Observable`, so views
+    /// reading the forwarders still track the underlying changes.
+    @ObservationIgnored private let preferencesModel: PreferencesModel
 
     public let supportedPHPVersions = ["8.4", "8.3", "8.2", "8.1", "8.0", "7.4"]
 
     private let ddevService: DDEVServicing
     private let projectCache: ProjectCacheStoring
-    private let preferencesStore: AppPreferencesStoring
-    private let appAvailability: AppAvailabilityChecking
     private let scheduler: CommandScheduler
     private let notifier: NotificationScheduling
     private var selectedProjectFallback: DDEVProject?
@@ -139,14 +139,16 @@ public final class ProjectDashboardViewModel {
     ) {
         self.ddevService = ddevService
         self.projectCache = projectCache
-        self.preferencesStore = preferencesStore
-        self.appAvailability = appAvailability
         self.scheduler = scheduler
         self.notifier = notifier
-        self.preferences = preferencesStore.loadPreferences()
-        self.installedEditors = appAvailability.installedEditors()
-        self.installedDatabaseTools = appAvailability.installedDatabaseTools()
+        self.preferencesModel = PreferencesModel(preferencesStore: preferencesStore, appAvailability: appAvailability)
     }
+
+    // MARK: - Preferences (forwarded to PreferencesModel)
+
+    public var preferences: AppPreferences { preferencesModel.preferences }
+    public var installedEditors: [EditorChoice] { preferencesModel.installedEditors }
+    public var installedDatabaseTools: [DDEVDatabaseTool] { preferencesModel.installedDatabaseTools }
 
     public var selectedProject: DDEVProject? {
         get {
@@ -163,24 +165,10 @@ public final class ProjectDashboardViewModel {
         filteredProjects(in: projects)
     }
 
-    public var availableEditors: [EditorChoice] {
-        AppDefaults.availableEditors(installedEditors: installedEditors)
-    }
-
-    public var availableDatabaseTools: [DDEVDatabaseTool] {
-        installedDatabaseTools
-    }
-
-    public var effectiveDefaultEditor: EditorChoice {
-        AppDefaults.effectiveEditor(saved: preferences.defaultEditor, installedEditors: installedEditors)
-    }
-
-    public var effectiveDefaultDatabaseTool: DDEVDatabaseTool? {
-        AppDefaults.effectiveDatabaseTool(
-            saved: preferences.defaultDatabaseTool,
-            installedDatabaseTools: installedDatabaseTools
-        )
-    }
+    public var availableEditors: [EditorChoice] { preferencesModel.availableEditors }
+    public var availableDatabaseTools: [DDEVDatabaseTool] { preferencesModel.availableDatabaseTools }
+    public var effectiveDefaultEditor: EditorChoice { preferencesModel.effectiveDefaultEditor }
+    public var effectiveDefaultDatabaseTool: DDEVDatabaseTool? { preferencesModel.effectiveDefaultDatabaseTool }
 
     public var copyableDiagnosticOutput: String {
         diagnosticReport.copyableOutput
@@ -214,18 +202,15 @@ public final class ProjectDashboardViewModel {
     }
 
     public func setDefaultEditor(_ editor: EditorChoice?) {
-        preferences.defaultEditor = editor
-        preferencesStore.saveDefaultEditor(editor)
+        preferencesModel.setDefaultEditor(editor)
     }
 
     public func setDefaultDatabaseTool(_ databaseTool: DDEVDatabaseTool?) {
-        preferences.defaultDatabaseTool = databaseTool
-        preferencesStore.saveDefaultDatabaseTool(databaseTool)
+        preferencesModel.setDefaultDatabaseTool(databaseTool)
     }
 
     public func refreshInstalledApps() {
-        installedEditors = appAvailability.installedEditors()
-        installedDatabaseTools = appAvailability.installedDatabaseTools()
+        preferencesModel.refreshInstalledApps()
     }
 
     public func requestNotificationAuthorization() async {
