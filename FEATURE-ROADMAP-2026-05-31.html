@@ -1,0 +1,1088 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DDEVUI — Feature Gap &amp; Build-Next Roadmap · 2026-05-31</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --panel-2: #1d212b;
+    --ink: #e6e9ef;
+    --ink-dim: #a3acbd;
+    --ink-faint: #6f7991;
+    --line: #2a2f3a;
+    --accent: #5b9dff;
+    --crit: #ff5c5c;
+    --high: #ff9f43;
+    --med: #ffd23f;
+    --low: #4cd4b0;
+    --sec: #b98bff;
+    --good: #4cd4b0;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: var(--sans); line-height: 1.6; font-size: 15px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px 120px; }
+  header.hero {
+    padding: 56px 24px 40px; border-bottom: 1px solid var(--line);
+    background: radial-gradient(1200px 400px at 20% -10%, rgba(91,157,255,.12), transparent 60%);
+  }
+  header.hero .inner { max-width: 1080px; margin: 0 auto; }
+  .eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); margin: 0 0 10px; }
+  h1 { font-size: 34px; line-height: 1.15; margin: 0 0 14px; font-weight: 700; letter-spacing: -.01em; }
+  .sub { color: var(--ink-dim); max-width: 760px; font-size: 16px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 22px; font-size: 13px; color: var(--ink-faint); font-family: var(--mono); }
+  .meta b { color: var(--ink-dim); font-weight: 600; }
+
+  h2 { font-size: 22px; margin: 52px 0 14px; padding-top: 8px; letter-spacing: -.01em; scroll-margin-top: 70px; }
+  h3 { font-size: 16px; margin: 28px 0 10px; color: var(--ink-dim); }
+  p { color: var(--ink-dim); }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code { font-family: var(--mono); font-size: .86em; background: var(--panel-2); padding: 1px 6px; border-radius: 5px; color: #d7def0; }
+  .lead { font-size: 16px; color: var(--ink-dim); max-width: 820px; }
+
+  /* summary cards */
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 24px 0 8px; }
+  .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
+  .stat .n { font-size: 30px; font-weight: 700; line-height: 1; font-family: var(--mono); }
+  .stat .l { font-size: 12px; color: var(--ink-faint); text-transform: uppercase; letter-spacing: .08em; margin-top: 8px; }
+  .stat.win .n { color: var(--good); } .stat.bet .n { color: var(--accent); }
+  .stat.nice .n { color: var(--med); } .stat.skip .n { color: var(--ink-faint); }
+
+  .callout { border: 1px solid var(--line); border-left: 3px solid var(--accent); background: var(--panel); border-radius: 10px; padding: 16px 20px; margin: 22px 0; }
+  .callout.good { border-left-color: var(--good); }
+  .callout.warn { border-left-color: var(--high); }
+  .callout h3 { margin: 0 0 6px; color: var(--ink); }
+  .callout p { margin: 6px 0 0; }
+  .callout ul { margin: 8px 0 0; padding-left: 20px; color: var(--ink-dim); }
+  .callout li { margin: 4px 0; }
+
+  /* legend */
+  .legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; margin: 18px 0; }
+  .legend .box { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+  .legend .box h4 { margin: 0 0 8px; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-faint); font-family: var(--mono); }
+  .legend .row { display: flex; gap: 10px; align-items: baseline; margin: 5px 0; font-size: 13px; color: var(--ink-dim); }
+  .legend .k { font-family: var(--mono); font-size: 12px; min-width: 34px; }
+
+  /* filter bar */
+  .filterbar { position: sticky; top: 0; z-index: 5; background: rgba(15,17,21,.88); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); padding: 12px 0; margin: 36px 0 6px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .filterbar .lab { font-size: 12px; color: var(--ink-faint); font-family: var(--mono); margin-right: 4px; }
+  .chip { cursor: pointer; user-select: none; border: 1px solid var(--line); background: var(--panel); color: var(--ink-dim); padding: 5px 12px; border-radius: 999px; font-size: 12.5px; font-family: var(--mono); transition: .15s; }
+  .chip:hover { border-color: var(--ink-faint); }
+  .chip.active { color: #0f1115; font-weight: 700; }
+  .chip[data-v="ALL"].active { background: var(--ink); border-color: var(--ink); }
+  .chip[data-v="QUICKWIN"].active { background: var(--good); border-color: var(--good); }
+  .chip[data-v="BIGBET"].active { background: var(--accent); border-color: var(--accent); }
+  .chip[data-v="NICE"].active { background: var(--med); border-color: var(--med); }
+  .chip[data-v="SKIP"].active { background: var(--ink-faint); border-color: var(--ink-faint); }
+
+  /* feature cards */
+  .feat { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; margin: 16px 0; overflow: hidden; }
+  .feat > summary { list-style: none; cursor: pointer; padding: 16px 20px; display: flex; gap: 14px; align-items: flex-start; }
+  .feat > summary::-webkit-details-marker { display: none; }
+  .feat > summary:hover { background: var(--panel-2); }
+  .badge { flex: none; font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: .04em; padding: 3px 9px; border-radius: 6px; margin-top: 2px; white-space: nowrap; }
+  .badge.QUICKWIN { background: rgba(76,212,176,.16); color: var(--good); }
+  .badge.BIGBET { background: rgba(91,157,255,.16); color: var(--accent); }
+  .badge.NICE { background: rgba(255,210,63,.14); color: var(--med); }
+  .badge.SKIP { background: rgba(111,121,145,.16); color: var(--ink-faint); }
+  /* implementation-status pill (added during the Part A quick-wins build) */
+  .status { flex: none; font-family: var(--mono); font-size: 10.5px; font-weight: 700; letter-spacing: .04em; padding: 3px 9px; border-radius: 6px; margin-top: 2px; white-space: nowrap; text-transform: uppercase; }
+  .status.done { background: rgba(76,212,176,.16); color: var(--good); border: 1px solid rgba(76,212,176,.4); }
+  .status.done::before { content: "✓ "; }
+  .stitle { font-weight: 650; color: var(--ink); font-size: 15.5px; }
+  .smeta { font-size: 12.5px; color: var(--ink-faint); margin-top: 4px; font-family: var(--mono); display: flex; flex-wrap: wrap; gap: 4px 14px; }
+  .smeta .id { color: var(--ink-dim); }
+  .cmd { display: inline-block; font-size: 11px; font-family: var(--mono); color: var(--ink-faint); border: 1px solid var(--line); border-radius: 5px; padding: 1px 7px; }
+  .sgrow { flex: 1; }
+
+  /* axis meters in summary */
+  .axes { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 7px; }
+  .axis { font-family: var(--mono); font-size: 11.5px; color: var(--ink-faint); }
+  .axis b { color: var(--ink-dim); font-weight: 600; }
+  .dots { letter-spacing: 1px; }
+  .dots .on { color: var(--ink); }
+  .eff-S { color: var(--good); } .eff-M { color: var(--med); } .eff-L { color: var(--high); } .eff-XL { color: var(--crit); }
+
+  .body { padding: 4px 22px 22px; border-top: 1px solid var(--line); }
+  .body h4 { margin: 18px 0 6px; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-faint); font-family: var(--mono); }
+  .body p { margin: 0; color: var(--ink-dim); }
+  .body .loc { font-family: var(--mono); font-size: 12.5px; color: var(--accent); }
+  .verdict { border: 1px solid var(--line); border-left: 3px solid var(--accent); background: var(--panel-2); border-radius: 8px; padding: 10px 14px; margin: 14px 0 0; font-size: 13.5px; color: var(--ink-dim); }
+  .verdict.QUICKWIN { border-left-color: var(--good); }
+  .verdict.BIGBET { border-left-color: var(--accent); }
+  .verdict.NICE { border-left-color: var(--med); }
+  .verdict.SKIP { border-left-color: var(--ink-faint); }
+  .verdict b { color: var(--ink); }
+
+  ol.plan { counter-reset: step; list-style: none; padding: 0; }
+  ol.plan li { position: relative; padding: 14px 16px 14px 56px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); margin: 10px 0; color: var(--ink-dim); }
+  ol.plan li::before { counter-increment: step; content: counter(step); position: absolute; left: 14px; top: 14px; width: 28px; height: 28px; border-radius: 50%; background: var(--panel-2); border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-weight: 700; color: var(--accent); }
+  ol.plan li b { color: var(--ink); }
+  ol.plan li .why { display: block; color: var(--ink-faint); font-size: 13px; margin-top: 4px; }
+
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13.5px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--ink-faint); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; font-family: var(--mono); }
+  td code { font-size: 12px; }
+
+  .secthead { margin: 56px 0 4px; }
+  .secthead .tag { font-family: var(--mono); font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); }
+  .secthead p { margin: 6px 0 0; max-width: 820px; }
+
+  .foot { margin-top: 70px; padding-top: 20px; border-top: 1px solid var(--line); color: var(--ink-faint); font-size: 13px; }
+  .foot a { color: var(--ink-dim); }
+  .hide { display: none !important; }
+  .nodemark { color: var(--ink-faint); font-size: 12px; }
+</style>
+</head>
+<body>
+<header class="hero">
+  <div class="inner">
+    <p class="eyebrow">Feature Gap · Prioritization · Build-Next Roadmap</p>
+    <h1>DDEVUI — What's Missing &amp; What's Worth Building</h1>
+    <p class="sub">A candid map of what DDEVUI does today versus DDEV's full feature surface, turned into a prioritized list of <b>what to build next</b>. Every candidate is scored on three axes — effort, value to users, and what it would teach you in Swift/SwiftUI — and given a blunt verdict, including the ones worth <i>not</i> building.</p>
+    <div class="meta">
+      <span><b>Date:</b> 2026-05-31</span>
+      <span><b>App:</b> DDEVUI · Swift 6.2 · SwiftUI · macOS&nbsp;26</span>
+      <span><b>Measured against:</b> DDEV v1.25.2</span>
+      <span><b>Method:</b> parallel codebase map + DDEV docs/CLI research</span>
+      <span><b>Lens:</b> personal learning project (per README)</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <h2 id="summary">The one-screen verdict</h2>
+  <p class="lead">You've already built the 20% of DDEV that delivers 80% of the daily value — lifecycle, config editing, DB import/export, snapshots, add-ons, logs, diagnostics. What's left is mostly <b>long tail</b>: real coverage gaps, but most of them low-value or a poor fit for a GUI. <b>Chasing command-coverage for its own sake is the trap.</b> The wins that matter are few, and most are small.</p>
+
+  <div class="cards">
+    <div class="stat win"><div class="n">7</div><div class="l">Quick wins</div></div>
+    <div class="stat bet"><div class="n">3</div><div class="l">Big bets</div></div>
+    <div class="stat nice"><div class="n">17</div><div class="l">Nice to have</div></div>
+    <div class="stat skip"><div class="n">8</div><div class="l">Deliberately skip</div></div>
+  </div>
+
+  <div class="callout good">
+    <h3>Build status — 2026-05-31: quick-win cluster shipped ✓</h3>
+    <p>The full quick-win cluster — <b>A1, A2, A3, A4, A5, A11</b> and <b>B8</b> — has been implemented on branch <code>feat/part-a-quick-wins</code> (cards below carry an <span class="status done">Implemented</span> pill). The work added a non-persisted rich <code>describe&nbsp;-j</code> detail model (Xdebug state, DB credentials, per-service health/ports — deliberately kept out of the on-disk cache so the DB password and ephemeral ports aren't written to disk), a <code>ddev xdebug</code> service method, and a <code>.command</code> Terminal hand-off for shells. All 200 unit tests pass. Interactive/visual QA of the live panels (which require a running project + Docker) is still recommended.</p>
+  </div>
+
+  <div class="callout good">
+    <h3>If you do only one thing: ship the quick-win cluster</h3>
+    <p>Seven small features (each ~hours, not days) that compound into a far more useful daily tool: a live <b>Xdebug on/off toggle</b>, an <b>Open / Launch hub</b> (site, Mailpit, service UIs), a <b>copyable DB-credentials panel</b>, a <b>per-service health + localhost-ports</b> view, a <b>DB-drift warning banner</b>, an <b>"Open shell in Terminal"</b> button, and <b>"Edit&nbsp;.ddev/&nbsp;in&nbsp;your&nbsp;editor"</b> buttons. None require new infrastructure — the data is already in <code>ddev describe -j</code> and the command service pattern already exists.</p>
+  </div>
+
+  <div class="callout">
+    <h3>If you want a real project to learn from: two big bets</h3>
+    <p><b>1) A <code>MenuBarExtra</code></b> for quick start/stop/launch without opening the window — this changes how you <i>live</i> with the app and teaches macOS menu-bar app lifecycle. <b>2) Streaming-process infrastructure</b> (live <code>ddev logs -f</code>) — your current command runner is request/response; building a streaming variant unlocks live logs, <code>ddev share</code>, and <code>mutagen monitor</code> all at once. The third bet, <b>hosting <code>pull</code>/<code>push</code></b>, is the only feature here with real ROI for your actual agency workflow — but it's provider-specific and destructive-on-push, so it earns its "big bet" label.</p>
+  </div>
+
+  <div class="callout warn">
+    <h3>Sparring-partner note: the honest framing</h3>
+    <p>This is a learning side project with no users to please but you. So "value to users" here mostly means <b>value to you, day to day</b>, plus <b>what it teaches you</b>. Read it that way. The biggest risk isn't picking the wrong feature — it's building <i>parity for parity's sake</i>: an embedded terminal, a hooks form editor, Dockerfile GUIs. Those are effort sinks dressed up as progress. The "Deliberately skip" section exists to give you permission to not build them.</p>
+  </div>
+
+  <h2 id="legend">How to read each card</h2>
+  <div class="legend">
+    <div class="box">
+      <h4>Verdict</h4>
+      <div class="row"><span class="badge QUICKWIN">QUICK WIN</span> High value, low effort. Build first.</div>
+      <div class="row"><span class="badge BIGBET">BIG BET</span> High value, high effort. Plan for it.</div>
+      <div class="row"><span class="badge NICE">NICE TO HAVE</span> Real but modest payoff. Backlog.</div>
+      <div class="row"><span class="badge SKIP">SKIP</span> Low value or wrong for a GUI.</div>
+    </div>
+    <div class="box">
+      <h4>Effort / complexity</h4>
+      <div class="row"><span class="k eff-S">S</span> A few hours — one method + a bit of UI.</div>
+      <div class="row"><span class="k eff-M">M</span> A day or two — new view or flow.</div>
+      <div class="row"><span class="k eff-L">L</span> Several days — multi-part feature.</div>
+      <div class="row"><span class="k eff-XL">XL</span> A week+ — a new subsystem.</div>
+    </div>
+    <div class="box">
+      <h4>Value &amp; learning</h4>
+      <div class="row"><span class="k">Value</span> <span class="dots"><span class="on">●●●</span></span> daily-use payoff to <i>you</i>.</div>
+      <div class="row"><span class="k">Learn</span> <span class="dots"><span class="on">●●●</span></span> Swift/SwiftUI/macOS skill gained.</div>
+      <div class="row" style="color:var(--ink-faint)">Each card also carries a <b>native-GUI fit</b> note — does this even belong in a GUI, or is it a CLI thing?</div>
+    </div>
+  </div>
+
+  <h2 id="order">Recommended build order</h2>
+  <ol class="plan">
+    <li><b>The quick-win cluster (A1–A5, A11, B8).</b> <span class="why">A long weekend of small, high-leverage wins. Mostly new <code>DDEVCommandService</code> methods + reading more of <code>describe -j</code>. Biggest daily-usefulness jump for the least code.</span></li>
+    <li><b>Streaming-process infrastructure → live logs (A6).</b> <span class="why">Build a streaming variant of <code>ProcessCommandRunner</code> once; live <code>logs -f</code> is the first payoff. Reusable foundation for A8 (share) and the mutagen monitor.</span></li>
+    <li><b>MenuBarExtra quick-controls (B1).</b> <span class="why">The feature that most changes how you use the app. Real macOS learning (menu-bar lifecycle, background presence). Leans on the data layer you already have.</span></li>
+    <li><b>Hosting pull/push (A7) — only if your real workflow wants it.</b> <span class="why">Genuinely valuable for agency work, but provider-specific and destructive on push. Do it deliberately, with hard confirmation guards, or not at all.</span></li>
+    <li><b>Cherry-pick the NICE-TO-HAVE long tail as the mood takes you.</b> <span class="why">Global config screen, multi-select, command history, favorites, registry browse. Each is self-contained — perfect "I feel like coding tonight" fodder.</span></li>
+    <li><b>Don't build Part C.</b> <span class="why">Seriously. Hand off to Terminal.app / your editor instead.</span></li>
+  </ol>
+
+  <div class="filterbar" id="filterbar">
+    <span class="lab">FILTER</span>
+    <span class="chip active" data-v="ALL">All</span>
+    <span class="chip" data-v="QUICKWIN">Quick wins</span>
+    <span class="chip" data-v="BIGBET">Big bets</span>
+    <span class="chip" data-v="NICE">Nice to have</span>
+    <span class="chip" data-v="SKIP">Skip</span>
+  </div>
+
+  <!-- ============================ PART A ============================ -->
+  <div class="secthead">
+    <span class="tag">Part A</span>
+    <h2 id="parity" style="margin:6px 0 0">DDEV feature-parity gaps</h2>
+    <p>Things DDEV itself does that DDEVUI doesn't yet expose. Ordered roughly by payoff. The app already shells out to <code>ddev</code> and parses the <code>.raw</code> JSON envelope, so most of these are "one more <code>DDEVCommandService</code> method + a control."</p>
+  </div>
+
+  <details class="feat" data-v="QUICKWIN" open>
+    <summary>
+      <span class="badge QUICKWIN">QUICK WIN</span>
+      <span class="status done">Implemented</span>
+      <span class="sgrow">
+        <span class="stitle">A1 · Open / Launch hub (site, Mailpit, service UIs)</span>
+        <div class="smeta"><span class="id">maps to</span> <span class="cmd">ddev launch</span> <span class="cmd">ddev launch -m</span> <span class="cmd">describe -j → urls / mailpit_url / services.*.http_url</span></div>
+        <div class="axes">
+          <span class="axis"><b>Effort</b> <span class="eff-S">S</span></span>
+          <span class="axis"><b>Value</b> <span class="dots"><span class="on">●●●</span></span></span>
+          <span class="axis"><b>Learn</b> <span class="dots"><span class="on">●●</span>○</span></span>
+        </div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What it is</h4>
+      <p>One obvious place to open every URL a project exposes: the primary site, Mailpit, XHGui, and any add-on service UI (phpMyAdmin, Adminer, etc.). Today you open the primary URL from a menu and XHGui has its own launch — but Mailpit and add-on service URLs aren't surfaced, and the action isn't prominent.</p>
+      <h4>What you'd build</h4>
+      <p>A split "Open" button / menu in <span class="loc">ProjectInspectorView</span> driven entirely by the JSON you already fetch: <code>primary_url</code>, <code>mailpit_url</code>, and <code>services.*.http_url</code> from <code>ddev describe -j</code>. No hardcoded ports — read the fields. Opens via the existing <span class="loc">MacWorkspaceOpener</span>.</p>
+      <h4>Native-GUI fit</h4>
+      <p>Perfect. Launching URLs is exactly what a desktop app should make one-click. The research flagged "don't hardcode service URLs" — derive them from <code>describe -j</code> so it's correct across project types and add-ons.</p>
+      <div class="verdict QUICKWIN"><b>Verdict:</b> Build it. Tiny effort, you'll click it ten times a day. Fold the existing "Open Primary URL" menu item into it.</div>
+    </div>
+  </details>
+
+  <details class="feat" data-v="QUICKWIN">
+    <summary>
+      <span class="badge QUICKWIN">QUICK WIN</span>
+      <span class="status done">Implemented</span>
+      <span class="sgrow">
+        <span class="stitle">A2 · Live Xdebug on/off toggle</span>
+        <div class="smeta"><span class="id">maps to</span> <span class="cmd">ddev xdebug on|off|status</span></div>
+        <div class="axes">
+          <span class="axis"><b>Effort</b> <span class="eff-S">S</span></span>
+          <span class="axis"><b>Value</b> <span class="dots"><span class="on">●●●</span></span></span>
+          <span class="axis"><b>Learn</b> <span class="dots"><span class="on">●</span>○○</span></span>
+        </div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What it is</h4>
+      <p>A real-time toggle. Today the app only exposes Xdebug as a <i>config flag</i> that needs a restart. But <code>ddev xdebug on/off</code> flips it on the running container instantly — and developers flip it constantly, because Xdebug-on makes every request slow.</p>
+      <h4>What you'd build</h4>
+      <p>A SwiftUI <code>Toggle</code> in the inspector bound to <code>xdebug_enabled</code> (already in <code>describe -j</code>), calling new <code>xdebug(on:)</code> methods in <span class="loc">DDEVCommandService</span>. No restart, no config edit.</p>
+      <h4>Native-GUI fit</h4>
+      <p>Ideal — a clean on/off/status command is the textbook case for a toggle switch. Same pattern works for XHProf/Blackfire later (see A17).</p>
+      <div class="verdict QUICKWIN"><b>Verdict:</b> Build it first. Possibly the single highest value-to-effort ratio in this whole document.</div>
+    </div>
+  </details>
+
+  <details class="feat" data-v="QUICKWIN">
+    <summary>
+      <span class="badge QUICKWIN">QUICK WIN</span>
+      <span class="status done">Implemented</span>
+      <span class="sgrow">
+        <span class="stitle">A3 · Copyable database-credentials panel</span>
+        <div class="smeta"><span class="id">maps to</span> <span class="cmd">describe -j → dbinfo{}</span></div>
+        <div class="axes">
+          <span class="axis"><b>Effort</b> <span class="eff-S">S</span></span>
+          <span class="axis"><b>Value</b> <span class="dots"><span class="on">●●●</span></span></span>
+          <span class="axis"><b>Learn</b> <span class="dots"><span class="on">●</span>○○</span></span>
+        </div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What it is</h4>
+      <p>A little panel showing host, port, db name, user, password and the published host port — each with a one-click copy button. Developers grab these constantly to wire up an external DB client or a config file.</p>
+      <h4>What you'd build</h4>
+      <p><code>ddev describe -j</code>'s <code>dbinfo</code> block already has it all: <code>host</code>, <code>dbname</code>, <code>username</code>, <code>password</code>, <code>dbPort</code>, <code>published_port</code> (the <code>127.0.0.1:PORT</code> you connect to from the host). Decode it into the <span class="loc">DDEVProject</span>/describe model and render a copy-row list in <span class="loc">ProjectInspectorView</span>.</p>
+      <h4>Native-GUI fit</h4>
+      <p>Excellent — this is painful on the CLI (you re-run <code>describe</code> and squint) and trivial in a GUI. Pairs naturally with A1 and the "Open in TablePlus/Sequel Ace" launchers you already have.</p>
+      <div class="verdict QUICKWIN"><b>Verdict:</b> Build it. Cheap, and removes a genuine daily papercut.</div>
+    </div>
+  </details>
+
+  <details class="feat" data-v="QUICKWIN">
+    <summary>
+      <span class="badge QUICKWIN">QUICK WIN</span>
+      <span class="status done">Implemented</span>
+      <span class="sgrow">
+        <span class="stitle">A4 · Per-service health + localhost ports</span>
+        <div class="smeta"><span class="id">maps to</span> <span class="cmd">describe -j → services{} / router_status / ssh_agent_status</span></div>
+        <div class="axes">
+          <span class="axis"><b>Effort</b> <span class="eff-M">M</span></span>
+          <span class="axis"><b>Value</b> <span class="dots"><span class="on">●●●</span></span></span>
+          <span class="axis"><b>Learn</b> <span class="dots"><span class="on">●●</span>○</span></span>
+        </div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What it is</h4>
+      <p>A services table in the inspector: each container (web, db, xhgui, add-ons) with its image, running/stopped/created status, and the ephemeral <code>127.0.0.1:PORT</code> Docker assigned — plus router and ssh-agent health. Turns the inspector from "config summary" into "what's actually running right now."</p>
+      <h4>What you'd build</h4>
+      <p>Expand the describe model to decode the <code>services</code> map (<code>short_name</code>, <code>image</code>, <code>status</code>, <code>host_ports_mapping[]</code>, <code>host_http_url</code>) plus <code>router_status</code>/<code>ssh_agent_status</code>. Render a compact table. This also surfaces the <b>partial/unhealthy</b> state (e.g. web up, db unhealthy → <code>status_desc: "db:"</code>) the current status badge probably flattens.</p>
+      <h4>Native-GUI fit</h4>
+      <p>Strong. A table of live service health is exactly the kind of at-a-glance overview a GUI does better than scrolling CLI output.</p>
+      <div class="verdict QUICKWIN"><b>Verdict:</b> Build it. Slightly more decoding work than A1–A3, but it's the feature that makes the detail pane feel substantial.</div>
+    </div>
+  </details>
+
+  <details class="feat" data-v="QUICKWIN">
+    <summary>
+      <span class="badge QUICKWIN">QUICK WIN</span>
+      <span class="status done">Implemented</span>
+      <span class="sgrow">
+        <span class="stitle">A5 · Database-drift warning banner</span>
+        <div class="smeta"><span class="id">maps to</span> <span class="cmd">ddev utility check-db-match</span> <span class="cmd">get-volume-db-version</span></div>
+        <div class="axes">
+          <span class="axis"><b>Effort</b> <span class="eff-S">S</span></span>
+          <span class="axis"><b>Value</b> <span class="dots"><span class="on">●●</span>○</span></span>
+          <span class="axis"><b>Learn</b> <span class="dots"><span class="on">●</span>○○</span></span>
+        </div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What it is</h4>
+      <p>A proactive banner when the on-disk database volume disagrees with the configured DB type/version — a common, confusing failure mode. You already run <code>check-db-match</code> inside the diagnostics screen; the win is surfacing it as a <i>warning the user doesn't have to go looking for</i>.</p>
+      <h4>What you'd build</h4>
+      <p>Run <code>check-db-match</code> (and optionally <code>get-volume-db-version</code>) on project select; if mismatched, show a yellow banner in the inspector with a one-line explanation and a link to A12 (migrate-database) or the manual fix.</p>
+      <h4>Native-GUI fit</h4>
+      <p>Great — turning a buried diagnostic into an ambient warning is precisely the value a GUI adds over the CLI.</p>
+      <div class="verdict QUICKWIN"><b>Verdict:</b> Build it. The command already runs in your code; you're just promoting its result to a banner.</div>
+    </div>
+  </details>
+
+  <details class="feat" data-v="QUICKWIN">
+    <summary>
+      <span class="badge QUICKWIN">QUICK WIN</span>
+      <span class="status done">Implemented</span>
+      <span class="sgrow">
+        <span class="stitle">A11 · "Open shell in Terminal" (ddev ssh hand-off)</span>
+        <div class="smeta"><span class="id">maps to</span> <span class="cmd">ddev ssh</span> <span class="cmd">ddev mysql</span></div>
+        <div class="axes">
+          <span class="axis"><b>Effort</b> <span class="eff-S">S</span></span>
+          <span class="axis"><b>Value</b> <span class="dots"><span class="on">●●●</span></span></span>
+          <span class="axis"><b>Learn</b> <span class="dots"><span class="on">●</span>○○</span></span>
+        </div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What it is</h4>
+      <p>A button that drops you into a shell inside the web (or db) container — but instead of embedding a terminal, it opens Terminal.app (or iTerm) running <code>ddev ssh</code> in the project directory. 90% of the value for 5% of the effort.</p>
+      <h4>What you'd build</h4>
+      <p>An <span class="loc">NSWorkspace</span>/<code>open -a Terminal</code> hand-off that launches the user's terminal with the right working directory and command. Same pattern for <code>ddev mysql</code>/<code>ddev psql</code> REPLs.</p>
+      <h4>Native-GUI fit</h4>
+      <p>Honest fit: interactive shells are a <b>poor</b> fit for an in-app form, and the research called this out as one of the architecturally hard CLI-only commands. The hand-off side-steps the entire PTY problem. (The embedded-terminal version lives in Part C for a reason.)</p>
+      <div class="verdict QUICKWIN"><b>Verdict:</b> Build the hand-off. Resist the embedded terminal — see <a href="#C1">C1</a>.</div>
+    </div>
+  </details>
+
+  <details class="feat" data-v="BIGBET">
+    <summary>
+      <span class="badge BIGBET">BIG BET</span>
+      <span class="sgrow">
+        <span class="stitle">A6 · Live / streaming logs (logs -f)</span>
+        <div class="smeta"><span class="id">maps to</span> <span class="cmd">ddev logs -f</span></div>
+        <div class="axes">
+          <span class="axis"><b>Effort</b> <span class="eff-L">M–L</span></span>
+          <span class="axis"><b>Value</b> <span class="dots"><span class="on">●●●</span></span></span>
+          <span class="axis"><b>Learn</b> <span class="dots"><span class="on">●●●</span></span></span>
+        </div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What it is</h4>
+      <p>Logs that stream live and autoscroll, instead of the current tail-N snapshot. Watching logs while you reproduce a bug is a daily activity.</p>
+      <h4>What you'd build</h4>
+      <p>The hard part isn't the UI — it's that your <span class="loc">ProcessCommandRunner</span> is request/response (run, capture, return). <code>logs -f</code> needs a <b>streaming</b> command runner: spawn the process, read stdout incrementally, push lines into the view, support stop/cancel and backpressure. That's a genuinely meaty Swift concurrency exercise (async sequences, task cancellation, off-main reads — the 2026-05-30 audit's H1/H2 territory).</p>
+      <h4>Native-GUI fit</h4>
+      <p>Good — and the streaming subsystem you build here is the <b>shared foundation</b> for <code>ddev share</code> (A8) and <code>ddev mutagen monitor</code>. That's why it's a bet, not just a feature.</p>
+      <div class="verdict BIGBET"><b>Verdict:</b> Build it second, after the quick wins. High learning value precisely because it forces you to solve streaming-process lifecycle properly. Do it once, reuse it three times.</div>
+    </div>
+  </details>
+
+  <details class="feat" data-v="BIGBET">
+    <summary>
+      <span class="badge BIGBET">BIG BET</span>
+      <span class="sgrow">
+        <span class="stitle">A7 · Hosting pull / push (provider sync)</span>
+        <div class="smeta"><span class="id">maps to</span> <span class="cmd">ddev pull &lt;provider&gt;</span> <span class="cmd">ddev push &lt;provider&gt;</span></div>
+        <div class="axes">
+          <span class="axis"><b>Effort</b> <span class="eff-L">L</span></span>
+          <span class="axis"><b>Value</b> <span class="dots"><span class="on">●●●</span></span> <span class="nodemark">(for agency work)</span></span>
+          <span class="axis"><b>Learn</b> <span class="dots"><span class="on">●●●</span></span></span>
+        </div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What it is</h4>
+      <p>Pull the database + files down from a hosting provider (Platform.sh, Upsun, Acquia, Pantheon, Lagoon, rsync…), or push up to it. This is the feature that connects local DDEV to a real deployment workflow — the highest <i>real-world</i> ROI item here for your Agile Pixel work.</p>
+      <h4>What you'd build</h4>
+      <p>Detect configured providers by reading <code>.ddev/providers/*.yaml</code>; show available pull/push targets; run <code>ddev pull/push &lt;provider&gt;</code> with <code>--skip-db</code>/<code>--skip-files</code> options and live progress (leans on A6's streaming runner). <b>Push is destructive on the remote</b> — it needs a hard, type-the-project-name confirmation, the way your DB-import drop already does.</p>
+      <h4>Native-GUI fit</h4>
+      <p>Good, with care. The danger is making a destructive remote operation too easy. Treat push like a loaded gun: confirmation, clear "this overwrites PRODUCTION" language, maybe default-hidden.</p>
+      <div class="verdict BIGBET"><b>Verdict:</b> Build it <i>if</i> your actual workflow uses provider sync. If you mostly work locally, this is a lot of provider-specific plumbing for little personal payoff — be honest about which camp you're in.</div>
+    </div>
+  </details>
+
+  <details class="feat" data-v="NICE">
+    <summary>
+      <span class="badge NICE">NICE TO HAVE</span>
+      <span class="sgrow">
+        <span class="stitle">A8 · ddev share (public tunnel)</span>
+        <div class="smeta"><span class="id">maps to</span> <span class="cmd">ddev share</span></div>
+        <div class="axes">
+          <span class="axis"><b>Effort</b> <span class="eff-M">M</span></span>
+          <span class="axis"><b>Value</b> <span class="dots"><span class="on">●●</span>○</span></span>
+          <span class="axis"><b>Learn</b> <span class="dots"><span class="on">●●</span>○</span></span>
+        </div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What it is</h4>
+      <p>Expose the local project on a public URL (ngrok / cloudflared) for a client demo, with a copy-the-URL button and a stop button.</p>
+      <h4>What you'd build</h4>
+      <p>A long-running process (the tunnel stays open) whose stdout you parse for the public URL — so it depends on A6's streaming runner. Surface URL + provider + a prominent "Stop sharing" control.</p>
+      <h4>Native-GUI fit</h4>
+      <p>OK. Needs persistent-process management and a clear running/stopped state, but the payoff (grab URL, demo, stop) is genuinely nicer in a GUI than babysitting a terminal.</p>
+      <div class="verdict NICE"><b>Verdict:</b> Backlog it as a payoff of A6. On its own it's occasional-use; bundled with the streaming work it's nearly free.</div>
+    </div>
+  </details>
+
+  <details class="feat" data-v="NICE">
+    <summary>
+      <span class="badge NICE">NICE TO HAVE</span>
+      <span class="sgrow">
+        <span class="stitle">A9 · Arbitrary command runner (ddev exec)</span>
+        <div class="smeta"><span class="id">maps to</span> <span class="cmd">ddev exec</span></div>
+        <div class="axes">
+          <span class="axis"><b>Effort</b> <span class="eff-M">M</span></span>
+          <span class="axis"><b>Value</b> <span class="dots"><span class="on">●●</span>○</span></span>
+          <span class="axis"><b>Learn</b> <span class="dots"><span class="on">●●</span>○</span></span>
+        </div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What it is</h4>
+      <p>A field to run an arbitrary one-shot command inside the web (or db) container and see the output — the escape hatch for everything you didn't build a button for.</p>
+      <h4>What you'd build</h4>
+      <p>A small input + service picker that pipes into a new <code>exec</code> method and renders results in the existing <span class="loc">CommandOutputView</span>. Keep the input-validation hardening you already have (the service rejects dash-prefixed args to prevent flag injection — be careful here since exec is the one place you <i>want</i> to pass through a full command line).</p>
+      <h4>Native-GUI fit</h4>
+      <p>Decent for one-shot exec. Interactive commands belong in the A11 terminal hand-off, not here.</p>
+      <div class="verdict NICE"><b>Verdict:</b> Backlog. Useful power-user escape hatch, but most real uses are covered by the framework presets you already ship + A10.</div>
+    </div>
+  </details>
+
+  <details class="feat" data-v="NICE">
+    <summary>
+      <span class="badge NICE">NICE TO HAVE</span>
+      <span class="sgrow">
+        <span class="stitle">A10 · Tooling passthrough console (composer / npm / drush / wp …)</span>
+        <div class="smeta"><span class="id">maps to</span> <span class="cmd">ddev composer</span> <span class="cmd">ddev npm</span> <span class="cmd">ddev drush</span> <span class="cmd">ddev wp</span></div>
+        <div class="axes">
+          <span class="axis"><b>Effort</b> <span class="eff-M">M</span></span>
+          <span class="axis"><b>Value</b> <span class="dots"><span class="on">●●</span>○</span></span>
+          <span class="axis"><b>Learn</b> <span class="dots"><span class="on">●●</span>○</span></span>
+        </div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What it is</h4>
+      <p>Beyond the canned framework presets you already have, an arbitrary <code>composer …</code> / <code>npm …</code> / <code>drush …</code> entry with output. The available toolset should be <b>derived from the project type</b> (research: framework commands only appear when <code>type</code> matches), which your <span class="loc">DDEVFrameworkCommand</span> model is already shaped for.</p>
+      <h4>What you'd build</h4>
+      <p>Extend <span class="loc">FrameworkCommandLauncherView</span> with a free-text arg field per tool, output to <span class="loc">CommandOutputView</span>. Long-running ones (<code>composer install</code>) want progress.</p>
+      <h4>Native-GUI fit</h4>
+      <p>Good for one-shots with an output pane; you already have the pattern.</p>
+      <div class="verdict NICE"><b>Verdict:</b> Backlog. A natural extension of what you've built, not a new concept — do it when the presets feel too limiting.</div>
+    </div>
+  </details>
+
+  <details class="feat" data-v="NICE">
+    <summary>
+      <span class="badge NICE">NICE TO HAVE</span>
+      <span class="sgrow">
+        <span class="stitle">A12 · Safe DB type/version migration</span>
+        <div class="smeta"><span class="id">maps to</span> <span class="cmd">ddev utility migrate-database</span></div>
+        <div class="axes">
+          <span class="axis"><b>Effort</b> <span class="eff-S">S–M</span></span>
+          <span class="axis"><b>Value</b> <span class="dots"><span class="on">●●</span>○</span></span>
+          <span class="axis"><b>Learn</b> <span class="dots"><span class="on">●</span>○○</span></span>
+        </div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What it is</h4>
+      <p>Your config editor lets the user pick a different DB type/version — but that alone doesn't migrate the data and can leave the volume mismatched (the A5 drift state). <code>ddev utility migrate-database mysql:8.0</code> is the supported safe path for MySQL↔MariaDB.</p>
+      <h4>What you'd build</h4>
+      <p>When the user changes DB type/version, offer "migrate now" rather than just rewriting config. One command + a guard. Note PostgreSQL isn't supported by migrate-database — gate the option by current type.</p>
+      <h4>Native-GUI fit</h4>
+      <p>Good — it makes a footgun in your existing config editor safe.</p>
+      <div class="verdict NICE"><b>Verdict:</b> Backlog, but pair it conceptually with A5. Together they close a real "I changed the DB version and everything broke" hole.</div>
+    </div>
+  </details>
+
+  <details class="feat" data-v="NICE">
+    <summary>
+      <span class="badge NICE">NICE TO HAVE</span>
+      <span class="sgrow">
+        <span class="stitle">A13 · Custom-command discovery</span>
+        <div class="smeta"><span class="id">maps to</span> <span class="cmd">.ddev/commands/</span> <span class="cmd">ddev help</span></div>
+        <div class="axes">
+          <span class="axis"><b>Effort</b> <span class="eff-M">M</span></span>
+          <span class="axis"><b>Value</b> <span class="dots"><span class="on">●●</span>○</span></span>
+          <span class="axis"><b>Learn</b> <span class="dots"><span class="on">●●</span>○</span></span>
+        </div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What it is</h4>
+      <p>Surface user-defined custom commands (bash scripts in <code>.ddev/commands/host|web/</code> and global <code>~/.ddev/commands/</code>) as buttons. The research flagged that a GUI <i>can't</i> know these statically — it must discover them at runtime.</p>
+      <h4>What you'd build</h4>
+      <p>Parse the command annotations (<code>## Command:</code>, <code>## Description:</code>, <code>## Flags:</code>) or scrape <code>ddev help</code> output, and render discovered commands as a dynamic button list.</p>
+      <h4>Native-GUI fit</h4>
+      <p>Good, and a nice dynamic-UI exercise — but only valuable to users who actually write custom commands.</p>
+      <div class="verdict NICE"><b>Verdict:</b> Backlog. Cool, but its audience is narrow. Do it if you personally use custom commands.</div>
+    </div>
+  </details>
+
+  <details class="feat" data-v="NICE">
+    <summary>
+      <span class="badge NICE">NICE TO HAVE</span>
+      <span class="sgrow">
+        <span class="stitle">A14 · Global configuration screen</span>
+        <div class="smeta"><span class="id">maps to</span> <span class="cmd">ddev config global</span> <span class="cmd">~/.ddev/global_config.yaml</span></div>
+        <div class="axes">
+          <span class="axis"><b>Effort</b> <span class="eff-M">M</span></span>
+          <span class="axis"><b>Value</b> <span class="dots"><span class="on">●●</span>○</span></span>
+          <span class="axis"><b>Learn</b> <span class="dots"><span class="on">●●</span>○</span></span>
+        </div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What it is</h4>
+      <p>A settings screen for DDEV's <i>global</i> config: router ports, Mailpit/XHGui ports, default performance mode, telemetry opt-in (<code>instrumentation_opt_in</code>), <code>omit_containers</code>. Distinct from the per-project config you already edit.</p>
+      <h4>What you'd build</h4>
+      <p>A "Global" tab alongside your existing per-project editor, reading/writing global config via <code>ddev config global --flags</code>. Map a handful of common keys to controls; leave the long tail to a raw view.</p>
+      <h4>Native-GUI fit</h4>
+      <p>Good. Set-once settings are pleasant in a form.</p>
+      <div class="verdict NICE"><b>Verdict:</b> Backlog. Solid, self-contained, low-risk — good "tonight's coding" candidate. Lower urgency than per-project daily actions.</div>
+    </div>
+  </details>
+
+  <details class="feat" data-v="NICE">
+    <summary>
+      <span class="badge NICE">NICE TO HAVE</span>
+      <span class="sgrow">
+        <span class="stitle">A15 · Global housekeeping (poweroff / clean / images)</span>
+        <div class="smeta"><span class="id">maps to</span> <span class="cmd">ddev poweroff</span> <span class="cmd">ddev clean</span> <span class="cmd">ddev delete images</span> <span class="cmd">utility download-images</span></div>
+        <div class="axes">
+          <span class="axis"><b>Effort</b> <span class="eff-S">S</span></span>
+          <span class="axis"><b>Value</b> <span class="dots"><span class="on">●●</span>○</span></span>
+          <span class="axis"><b>Learn</b> <span class="dots"><span class="on">●</span>○○</span></span>
+        </div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What it is</h4>
+      <p>A small "global actions" area: power off all projects, reclaim disk (<code>clean</code> / prune images), pre-pull images. Useful occasional maintenance currently absent (the app does per-project lifecycle but no global poweroff).</p>
+      <h4>What you'd build</h4>
+      <p>A handful of buttons with confirmations on the destructive ones, in a global/settings area. Trivial command wrappers.</p>
+      <h4>Native-GUI fit</h4>
+      <p>Good. "Power off everything" is a satisfying one-click.</p>
+      <div class="verdict NICE"><b>Verdict:</b> Backlog. Cheap to add; bundle the poweroff button in early since it's genuinely handy.</div>
+    </div>
+  </details>
+
+  <details class="feat" data-v="NICE">
+    <summary>
+      <span class="badge NICE">NICE TO HAVE</span>
+      <span class="sgrow">
+        <span class="stitle">A16 · Richer add-on registry browse (official/community + stars)</span>
+        <div class="smeta"><span class="id">maps to</span> <span class="cmd">ddev add-on list --all</span> <span class="cmd">addons.ddev.com</span></div>
+        <div class="axes">
+          <span class="axis"><b>Effort</b> <span class="eff-M">M</span></span>
+          <span class="axis"><b>Value</b> <span class="dots"><span class="on">●●</span>○</span></span>
+          <span class="axis"><b>Learn</b> <span class="dots"><span class="on">●●</span>○</span></span>
+        </div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What it is</h4>
+      <p>You already install/remove/search add-ons. The enhancement: a proper browse experience distinguishing <b>official</b> (the <code>ddev</code> org) from <b>community</b> add-ons, with star counts as a trust signal — the way the registry presents them.</p>
+      <h4>What you'd build</h4>
+      <p>Enrich <span class="loc">AddonManagerView</span> with official/community grouping and stars. Note the research caveat: <code>--all</code>/<code>search</code> hit the network and can be slow (it timed out at 30s without project context), so run async with a spinner and a sensible timeout — exactly the cancellable-subprocess concern from your audit.</p>
+      <h4>Native-GUI fit</h4>
+      <p>Good — browsing/trust-signals are nicer visually than CLI text.</p>
+      <div class="verdict NICE"><b>Verdict:</b> Backlog. Polish on an already-decent feature, not a gap.</div>
+    </div>
+  </details>
+
+  <details class="feat" data-v="NICE">
+    <summary>
+      <span class="badge NICE">NICE TO HAVE</span>
+      <span class="sgrow">
+        <span class="stitle">A17 · XHProf / Blackfire toggles</span>
+        <div class="smeta"><span class="id">maps to</span> <span class="cmd">ddev xhprof on|off</span> <span class="cmd">ddev blackfire on|off</span></div>
+        <div class="axes">
+          <span class="axis"><b>Effort</b> <span class="eff-S">S</span></span>
+          <span class="axis"><b>Value</b> <span class="dots"><span class="on">●</span>○○</span></span>
+          <span class="axis"><b>Learn</b> <span class="dots"><span class="on">●</span>○○</span></span>
+        </div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What it is</h4>
+      <p>You already wrap XHGui; XHProf and Blackfire are the same on/off/status shape. Add them as toggles next to A2's Xdebug switch.</p>
+      <h4>What you'd build</h4>
+      <p>Two more toggles reusing the A2 pattern, reading <code>xhprof_mode</code> from <code>describe -j</code>. Blackfire needs credentials, so gate it.</p>
+      <h4>Native-GUI fit</h4>
+      <p>Fine, but niche — profiling is occasional and audience is small.</p>
+      <div class="verdict NICE"><b>Verdict:</b> Backlog / low. Basically free once A2 exists, but don't prioritize it — most users never profile.</div>
+    </div>
+  </details>
+
+  <details class="feat" data-v="NICE">
+    <summary>
+      <span class="badge NICE">NICE TO HAVE</span>
+      <span class="sgrow">
+        <span class="stitle">A18 · Versions / About panel</span>
+        <div class="smeta"><span class="id">maps to</span> <span class="cmd">ddev version -j</span></div>
+        <div class="axes">
+          <span class="axis"><b>Effort</b> <span class="eff-S">S</span></span>
+          <span class="axis"><b>Value</b> <span class="dots"><span class="on">●</span>○○</span></span>
+          <span class="axis"><b>Learn</b> <span class="dots"><span class="on">●</span>○○</span></span>
+        </div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What it is</h4>
+      <p>A small panel listing DDEV + component image versions (web/db/router/ssh-agent/xhgui), Docker and Mutagen versions — handy when filing a bug or checking what you're on.</p>
+      <h4>What you'd build</h4>
+      <p>Decode <code>ddev version -j</code> (clean component map) into a read-only list, probably in the diagnostics/settings area where you already show <code>ddev version</code>.</p>
+      <h4>Native-GUI fit</h4>
+      <p>Fine. Pure polish.</p>
+      <div class="verdict NICE"><b>Verdict:</b> Backlog / low. Cheap nicety, no urgency.</div>
+    </div>
+  </details>
+
+  <details class="feat" data-v="NICE">
+    <summary>
+      <span class="badge NICE">NICE TO HAVE</span>
+      <span class="sgrow">
+        <span class="stitle">A19 · Import uploaded files (import-files)</span>
+        <div class="smeta"><span class="id">maps to</span> <span class="cmd">ddev import-files</span></div>
+        <div class="axes">
+          <span class="axis"><b>Effort</b> <span class="eff-S">S</span></span>
+          <span class="axis"><b>Value</b> <span class="dots"><span class="on">●</span>○○</span></span>
+          <span class="axis"><b>Learn</b> <span class="dots"><span class="on">●</span>○○</span></span>
+        </div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What it is</h4>
+      <p>Pull an uploaded-files archive/dir into the project's upload dir — the file-side companion to your DB import. Useful when seeding a project from a production export.</p>
+      <h4>What you'd build</h4>
+      <p>A file picker + <code>ddev import-files --source</code> wrapper alongside <span class="loc">DatabaseOperationsView</span>.</p>
+      <h4>Native-GUI fit</h4>
+      <p>Good — drag-and-drop import is a natural GUI gesture.</p>
+      <div class="verdict NICE"><b>Verdict:</b> Backlog / low. Sits next to DB import conceptually; add it if you do A7 (pull often brings files too).</div>
+    </div>
+  </details>
+
+  <!-- ============================ PART B ============================ -->
+  <div class="secthead">
+    <span class="tag">Part B</span>
+    <h2 id="ux" style="margin:6px 0 0">UX &amp; quality wins (not DDEV features)</h2>
+    <p>These aren't DDEV commands — they're ways the app itself could be nicer, several surfaced by the 2026-05-30 code audit. For a learning project, these are where the <i>Swift/SwiftUI</i> learning is richest.</p>
+  </div>
+
+  <details class="feat" data-v="BIGBET">
+    <summary>
+      <span class="badge BIGBET">BIG BET</span>
+      <span class="sgrow">
+        <span class="stitle">B1 · Menu-bar extra (quick controls)</span>
+        <div class="smeta"><span class="id">SwiftUI</span> <span class="cmd">MenuBarExtra</span></div>
+        <div class="axes">
+          <span class="axis"><b>Effort</b> <span class="eff-L">M–L</span></span>
+          <span class="axis"><b>Value</b> <span class="dots"><span class="on">●●●</span></span></span>
+          <span class="axis"><b>Learn</b> <span class="dots"><span class="on">●●●</span></span></span>
+        </div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What it is</h4>
+      <p>A menu-bar dropdown listing your projects with start/stop/launch right there — without opening the main window. For a local-dev tool you reach for ten times a day, this is arguably <i>the</i> killer feature: it changes the app from "a window you open" to "always-there controls."</p>
+      <h4>What you'd build</h4>
+      <p>A SwiftUI <code>MenuBarExtra</code> scene in <span class="loc">DDEVUIApp.swift</span> backed by your existing <span class="loc">ProjectDashboardViewModel</span> data. The interesting parts: window-vs-menubar lifecycle, keeping the list fresh (ties into B2), and "launch-at-login / run-in-background" behavior.</p>
+      <h4>Native-GUI fit</h4>
+      <p>Excellent and deeply native — exactly what Mac users expect from a tool like this. No CLI equivalent.</p>
+      <div class="verdict BIGBET"><b>Verdict:</b> The marquee learning project. Do it after the quick wins (so the menu has rich data to show) and ideally after B2 (so it stays fresh). Highest "I'd actually use this constantly" payoff in Part B.</div>
+    </div>
+  </details>
+
+  <details class="feat" data-v="NICE">
+    <summary>
+      <span class="badge NICE">NICE TO HAVE</span>
+      <span class="sgrow">
+        <span class="stitle">B2 · Smarter live status (less manual refresh)</span>
+        <div class="smeta"><span class="id">verify current behavior</span> <span class="cmd">ddev list -j</span></div>
+        <div class="axes">
+          <span class="axis"><b>Effort</b> <span class="eff-M">S–M</span></span>
+          <span class="axis"><b>Value</b> <span class="dots"><span class="on">●●</span>○</span></span>
+          <span class="axis"><b>Learn</b> <span class="dots"><span class="on">●●</span>○</span></span>
+        </div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What it is</h4>
+      <p>Status that updates itself smoothly — including the transition states (starting → running). You already have a background poll loop (the audit's H1), so this is about <i>tightening</i> it: faster reflection of state changes, optimistic UI during start/stop, less reliance on the manual Refresh button.</p>
+      <h4>What you'd build</h4>
+      <p>Tune the poll cadence and add optimistic transition states in <span class="loc">ProjectDashboardViewModel</span>, mindful of the audit's note that the poll loop has no off-switch and the subprocesses can't time out — fix those while you're in there.</p>
+      <h4>Native-GUI fit</h4>
+      <p>Core to feeling like a live dashboard rather than a CLI snapshot.</p>
+      <div class="verdict NICE"><b>Verdict:</b> Backlog, but do it <i>before</i> B1 — a stale menu-bar list is worse than no menu-bar list. Confirm exactly what the current poll does first.</div>
+    </div>
+  </details>
+
+  <details class="feat" data-v="NICE">
+    <summary>
+      <span class="badge NICE">NICE TO HAVE</span>
+      <span class="sgrow">
+        <span class="stitle">B3 · Multi-select batch start/stop</span>
+        <div class="smeta"><span class="id">SwiftUI selection</span> <span class="cmd">ddev start --all</span> <span class="cmd">ddev stop --all</span></div>
+        <div class="axes">
+          <span class="axis"><b>Effort</b> <span class="eff-M">M</span></span>
+          <span class="axis"><b>Value</b> <span class="dots"><span class="on">●●</span>○</span></span>
+          <span class="axis"><b>Learn</b> <span class="dots"><span class="on">●●</span>○</span></span>
+        </div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What it is</h4>
+      <p>Select several projects and start/stop them together (or "stop all"). Today every action is one project at a time.</p>
+      <h4>What you'd build</h4>
+      <p>Multi-selection in <span class="loc">ProjectListView</span> + batch actions, routed through your existing <span class="loc">CommandScheduler</span> (max-3-concurrent already handles fan-out safely). <code>--all</code> variants exist for the blunt case.</p>
+      <h4>Native-GUI fit</h4>
+      <p>Good. Multi-select is a natural GUI affordance the CLI handles only via <code>--all</code>.</p>
+      <div class="verdict NICE"><b>Verdict:</b> Backlog. Nice teaching exercise for SwiftUI selection + your scheduler; modest daily value unless you juggle many projects at once.</div>
+    </div>
+  </details>
+
+  <details class="feat" data-v="NICE">
+    <summary>
+      <span class="badge NICE">NICE TO HAVE</span>
+      <span class="sgrow">
+        <span class="stitle">B4 · Surface command / output history</span>
+        <div class="smeta"><span class="id">already in model</span> <span class="cmd">commandHistory (capped 50)</span></div>
+        <div class="axes">
+          <span class="axis"><b>Effort</b> <span class="eff-M">M</span></span>
+          <span class="axis"><b>Value</b> <span class="dots"><span class="on">●●</span>○</span></span>
+          <span class="axis"><b>Learn</b> <span class="dots"><span class="on">●</span>○○</span></span>
+        </div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What it is</h4>
+      <p>A panel showing recent commands and their output. The audit notes you already keep a <code>commandHistory</code> (capped at 50 entries / 32&nbsp;KiB each) in the model — it just isn't surfaced in the UI. Low-hanging fruit.</p>
+      <h4>What you'd build</h4>
+      <p>A history view reading the existing buffer, with re-run and copy. No new data plumbing.</p>
+      <h4>Native-GUI fit</h4>
+      <p>Good — a scrollable, searchable history is a clear GUI win over scrollback.</p>
+      <div class="verdict NICE"><b>Verdict:</b> Backlog. Unusually cheap because the data already exists; promote it if the diagnostics/output area starts feeling thin.</div>
+    </div>
+  </details>
+
+  <details class="feat" data-v="NICE">
+    <summary>
+      <span class="badge NICE">NICE TO HAVE</span>
+      <span class="sgrow">
+        <span class="stitle">B5 · Favorites / pinning / sorting</span>
+        <div class="smeta"><span class="id">UserDefaults</span></div>
+        <div class="axes">
+          <span class="axis"><b>Effort</b> <span class="eff-M">S–M</span></span>
+          <span class="axis"><b>Value</b> <span class="dots"><span class="on">●●</span>○</span></span>
+          <span class="axis"><b>Learn</b> <span class="dots"><span class="on">●</span>○○</span></span>
+        </div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What it is</h4>
+      <p>Pin the 2–3 projects you actually work on to the top; sort by name/status/recently-used. Matters once you have more than a handful of projects.</p>
+      <h4>What you'd build</h4>
+      <p>Persist pins/sort prefs via your existing <span class="loc">UserDefaultsAppPreferencesStore</span>; reorder in <span class="loc">ProjectListView</span>.</p>
+      <h4>Native-GUI fit</h4>
+      <p>Good, standard list UX.</p>
+      <div class="verdict NICE"><b>Verdict:</b> Backlog. Value scales with how many projects you keep around.</div>
+    </div>
+  </details>
+
+  <details class="feat" data-v="NICE">
+    <summary>
+      <span class="badge NICE">NICE TO HAVE</span>
+      <span class="sgrow">
+        <span class="stitle">B6 · Keyboard shortcuts / command palette</span>
+        <div class="smeta"><span class="id">SwiftUI commands</span></div>
+        <div class="axes">
+          <span class="axis"><b>Effort</b> <span class="eff-M">M</span></span>
+          <span class="axis"><b>Value</b> <span class="dots"><span class="on">●●</span>○</span></span>
+          <span class="axis"><b>Learn</b> <span class="dots"><span class="on">●●</span>○</span></span>
+        </div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What it is</h4>
+      <p>Beyond the existing Cmd+F / add-folder, real shortcuts for start/stop/restart/launch on the selected project, and maybe a ⌘K-style quick switcher to jump to a project by name.</p>
+      <h4>What you'd build</h4>
+      <p>SwiftUI <code>.keyboardShortcut</code> + a <code>commands { }</code> menu; a quick-switcher sheet for the palette.</p>
+      <h4>Native-GUI fit</h4>
+      <p>Good — power-user nicety, very Mac-native.</p>
+      <div class="verdict NICE"><b>Verdict:</b> Backlog. Pleasant and good SwiftUI practice; not load-bearing.</div>
+    </div>
+  </details>
+
+  <details class="feat" data-v="NICE">
+    <summary>
+      <span class="badge NICE">NICE TO HAVE</span>
+      <span class="sgrow">
+        <span class="stitle">B7 · Actionable Docker-down onboarding</span>
+        <div class="smeta"><span class="id">enhance</span> <span class="cmd">PrerequisiteSheet</span> <span class="cmd">utility dockercheck</span></div>
+        <div class="axes">
+          <span class="axis"><b>Effort</b> <span class="eff-S">S</span></span>
+          <span class="axis"><b>Value</b> <span class="dots"><span class="on">●●</span>○</span></span>
+          <span class="axis"><b>Learn</b> <span class="dots"><span class="on">●</span>○○</span></span>
+        </div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What it is</h4>
+      <p>You already block on a <span class="loc">PrerequisiteSheet</span> when Docker/DDEV are missing. The enhancement: make it <i>actionable</i> — a "Start Docker" / "Open OrbStack" button, links to install docs, and a re-check via <code>ddev utility dockercheck</code>. Most "DDEV is broken" moments are really "Docker isn't running."</p>
+      <h4>What you'd build</h4>
+      <p>Detect the Docker provider, offer to launch it, and re-run the prerequisite check — turning a dead-end into a guided fix.</p>
+      <h4>Native-GUI fit</h4>
+      <p>Excellent — graceful failure guidance is a core GUI advantage over a CLI error dump.</p>
+      <div class="verdict NICE"><b>Verdict:</b> Backlog, leaning quick win. Cheap and it directly reduces "why won't it work" friction.</div>
+    </div>
+  </details>
+
+  <details class="feat" data-v="QUICKWIN">
+    <summary>
+      <span class="badge QUICKWIN">QUICK WIN</span>
+      <span class="status done">Implemented</span>
+      <span class="sgrow">
+        <span class="stitle">B8 · "Edit .ddev/ in your editor" buttons</span>
+        <div class="smeta"><span class="id">the pragmatic alternative to building forms</span></div>
+        <div class="axes">
+          <span class="axis"><b>Effort</b> <span class="eff-S">S</span></span>
+          <span class="axis"><b>Value</b> <span class="dots"><span class="on">●●</span>○</span></span>
+          <span class="axis"><b>Learn</b> <span class="dots"><span class="on">●</span>○○</span></span>
+        </div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>What it is</h4>
+      <p>Buttons to open the project's <code>.ddev/</code> folder, <code>config.yaml</code>, custom Dockerfiles, and <code>docker-compose.*.yaml</code> in the user's editor. This is the <b>deliberate non-feature</b> that lets you skip building fragile GUI forms for advanced config (see C4/C5) while still giving access.</p>
+      <h4>What you'd build</h4>
+      <p>"Open in editor" actions via your existing <span class="loc">MacWorkspaceOpener</span> + the user's chosen editor (Cursor/VS Code, already a preference). Just file/folder opens.</p>
+      <h4>Native-GUI fit</h4>
+      <p>Great pragmatic fit — the GUI handles discovery/launch; the editor handles editing. Don't reinvent a YAML editor.</p>
+      <div class="verdict QUICKWIN"><b>Verdict:</b> Build it. It's the cheap escape valve that justifies <i>not</i> building C4 and C5. Quietly one of the highest-leverage items here.</div>
+    </div>
+  </details>
+
+  <!-- ============================ PART C ============================ -->
+  <div class="secthead">
+    <span class="tag">Part C</span>
+    <h2 id="skip" style="margin:6px 0 0">Deliberately skip</h2>
+    <p>Permission to not build. These are real DDEV capabilities, but they're either a poor fit for a GUI, far more effort than payoff, or better handed off to another tool. Listing them as explicit "no" decisions is as valuable as the build list.</p>
+  </div>
+
+  <details class="feat" data-v="SKIP" id="C1">
+    <summary>
+      <span class="badge SKIP">SKIP</span>
+      <span class="sgrow">
+        <span class="stitle">C1 · Embedded in-app terminal (PTY)</span>
+        <div class="smeta"><span class="id">do A11 instead</span> <span class="cmd">ddev ssh</span> <span class="cmd">ddev mysql</span></div>
+        <div class="axes"><span class="axis"><b>Effort</b> <span class="eff-XL">XL</span></span> <span class="axis"><b>Value</b> <span class="dots"><span class="on">●●</span>○</span></span></div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>Why skip</h4>
+      <p>An embedded PTY/terminal (SwiftTerm-style) to run <code>ddev ssh</code>/<code>mysql</code> inside the app is a whole subsystem: pseudo-terminal handling, ANSI rendering, resize, signals. The research explicitly flagged interactive shells as the architecturally hard, CLI-native case. <b>A11's Terminal.app hand-off delivers ~90% of the value for ~5% of the effort.</b> Building your own terminal is a project unto itself, not a feature of this app.</p>
+      <div class="verdict SKIP"><b>Verdict:</b> Don't. Hand off to Terminal.app (A11). Revisit only if "learn to build a terminal emulator" becomes the goal itself.</div>
+    </div>
+  </details>
+
+  <details class="feat" data-v="SKIP">
+    <summary>
+      <span class="badge SKIP">SKIP</span>
+      <span class="sgrow">
+        <span class="stitle">C2 · Replicating ddev tui</span>
+        <div class="smeta"><span class="id">redundant</span> <span class="cmd">ddev tui</span></div>
+        <div class="axes"><span class="axis"><b>Value</b> <span class="dots"><span class="on">●</span>○○</span></span></div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>Why skip</h4>
+      <p>DDEV ships an interactive terminal dashboard (<code>ddev tui</code>). Re-implementing a TUI's layout in a GUI is pointless — your GUI <i>is</i> the richer alternative. Use <code>tui</code> as a feature-parity benchmark for ideas, not a thing to clone.</p>
+      <div class="verdict SKIP"><b>Verdict:</b> Don't clone it. Mine it for ideas instead.</div>
+    </div>
+  </details>
+
+  <details class="feat" data-v="SKIP">
+    <summary>
+      <span class="badge SKIP">SKIP</span>
+      <span class="sgrow">
+        <span class="stitle">C3 · Shell plumbing (completion / aliases / cd / fix-commands)</span>
+        <div class="smeta"><span class="id">no GUI meaning</span></div>
+        <div class="axes"><span class="axis"><b>Value</b> <span class="dots"><span class="on">○</span>○○</span></span></div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>Why skip</h4>
+      <p><code>ddev completion</code>, <code>aliases</code>, <code>utility cd</code>, <code>fix-commands</code>, <code>testcleanup</code> are shell-integration plumbing. They have literally no meaning in a GUI context.</p>
+      <div class="verdict SKIP"><b>Verdict:</b> N/A by design. Ignore entirely.</div>
+    </div>
+  </details>
+
+  <details class="feat" data-v="SKIP" id="C4">
+    <summary>
+      <span class="badge SKIP">SKIP</span>
+      <span class="sgrow">
+        <span class="stitle">C4 · Hooks GUI form editor</span>
+        <div class="smeta"><span class="id">use B8 instead</span> <span class="cmd">hooks: in config.yaml</span></div>
+        <div class="axes"><span class="axis"><b>Effort</b> <span class="eff-L">L</span></span> <span class="axis"><b>Value</b> <span class="dots"><span class="on">●</span>○○</span></span></div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>Why skip</h4>
+      <p>DDEV hooks (<code>pre/post-start</code>, <code>pre/post-import-db</code>, etc., with <code>exec</code>/<code>exec-host</code>/<code>composer</code> actions) are arbitrarily nested YAML running arbitrary commands. A faithful GUI form would be complex and still less flexible than the YAML. Niche audience, high build cost.</p>
+      <div class="verdict SKIP"><b>Verdict:</b> Don't build a form. Give the "Open config.yaml in editor" button (B8) and let people write YAML.</div>
+    </div>
+  </details>
+
+  <details class="feat" data-v="SKIP" id="C5">
+    <summary>
+      <span class="badge SKIP">SKIP</span>
+      <span class="sgrow">
+        <span class="stitle">C5 · Custom Dockerfile / docker-compose GUI forms</span>
+        <div class="smeta"><span class="id">use B8 instead</span> <span class="cmd">.ddev/web-build/</span> <span class="cmd">docker-compose.*.yaml</span></div>
+        <div class="axes"><span class="axis"><b>Effort</b> <span class="eff-L">L</span></span> <span class="axis"><b>Value</b> <span class="dots"><span class="on">●</span>○○</span></span></div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>Why skip</h4>
+      <p>Custom Dockerfiles and compose overrides are free-form infrastructure files. A GUI form can't meaningfully constrain them, and anyone editing them is comfortable in a text editor. Same logic as C4.</p>
+      <div class="verdict SKIP"><b>Verdict:</b> Don't. "Open in editor" (B8) is the correct, honest answer.</div>
+    </div>
+  </details>
+
+  <details class="feat" data-v="SKIP">
+    <summary>
+      <span class="badge SKIP">SKIP</span>
+      <span class="sgrow">
+        <span class="stitle">C6 · Let's Encrypt / bind-all-interfaces</span>
+        <div class="smeta"><span class="id">server territory</span> <span class="cmd">use_letsencrypt</span></div>
+        <div class="axes"><span class="axis"><b>Value</b> <span class="dots"><span class="on">●</span>○○</span></span></div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>Why skip</h4>
+      <p>Let's Encrypt and binding to all interfaces are mainly for DDEV-on-a-server installs, not a local macOS dev box. Wrong audience for a native Mac GUI. If exposed at all, they belong as raw keys in the A14 global-config screen, not as featured UI.</p>
+      <div class="verdict SKIP"><b>Verdict:</b> Don't feature it. At most, it's a row in the advanced global config.</div>
+    </div>
+  </details>
+
+  <details class="feat" data-v="SKIP">
+    <summary>
+      <span class="badge SKIP">SKIP</span>
+      <span class="sgrow">
+        <span class="stitle">C7 · Remote dev (Gitpod / Codespaces / WSL2)</span>
+        <div class="smeta"><span class="id">not native-mac</span></div>
+        <div class="axes"><span class="axis"><b>Value</b> <span class="dots"><span class="on">○</span>○○</span></span></div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>Why skip</h4>
+      <p>DDEV's cloud/remote-dev support is orthogonal to a local macOS-native GUI. Someone in Codespaces isn't running your Mac app.</p>
+      <div class="verdict SKIP"><b>Verdict:</b> Out of scope. Ignore.</div>
+    </div>
+  </details>
+
+  <details class="feat" data-v="SKIP">
+    <summary>
+      <span class="badge SKIP">SKIP</span>
+      <span class="sgrow">
+        <span class="stitle">C8 · /etc/hosts management via privileged helper</span>
+        <div class="smeta"><span class="id">let ddev handle the sudo prompt</span> <span class="cmd">ddev hostname</span></div>
+        <div class="axes"><span class="axis"><b>Effort</b> <span class="eff-XL">XL</span></span> <span class="axis"><b>Value</b> <span class="dots"><span class="on">●</span>○○</span></span></div>
+      </span>
+    </summary>
+    <div class="body">
+      <h4>Why skip</h4>
+      <p><code>ddev hostname</code> edits <code>/etc/hosts</code> and needs root. Doing this <i>yourself</i> from the GUI means shipping a privileged helper tool (SMJobBless / a launchd helper) — a notarization, security, and maintenance burden wildly out of proportion to the payoff. You can still <i>set</i> <code>additional_hostnames</code> in config; let the <code>ddev</code> CLI handle the actual hosts-file write with its own sudo prompt when the project starts.</p>
+      <div class="verdict SKIP"><b>Verdict:</b> Don't build a privileged helper. Configure hostnames; let <code>ddev</code> do the elevated write. The juice isn't worth the squeeze.</div>
+    </div>
+  </details>
+
+  <h2 id="notes">Two technical notes the research surfaced</h2>
+  <div class="callout">
+    <h3>1 · You're already parsing the right thing — keep doing it</h3>
+    <p>DDEV's <code>-j</code> output is a <i>log envelope</i> — the machine-readable payload lives in the <code>.raw</code> key, while <code>.msg</code> is the rendered Unicode table. Your service already decodes this correctly. The point for the roadmap: <b>nearly every quick win (A1, A3, A4, A18) is just decoding more fields from <code>describe -j</code>/<code>version -j</code> you already fetch</b> — not new commands. That's why the cluster is cheap.</p>
+  </div>
+  <div class="callout warn">
+    <h3>2 · The hard architectural seam is streaming, and your audit already pointed at it</h3>
+    <p>The features that don't fit your request/response command runner — live logs (A6), share (A8), mutagen monitor — all need a <b>cancellable, streaming subprocess</b> with proper teardown. The 2026-05-30 audit's H1 (poll loop with no off-switch) and H2 (subprocesses that can't time out or cancel) are the <i>same seam</i>. Fix that infrastructure once and you both close audit findings and unlock the Part-A/B streaming features. Sequence it deliberately rather than bolting streaming onto each feature ad hoc.</p>
+  </div>
+
+  <div class="foot">
+    <p>Generated 2026-05-31 from a parallel codebase map (Sources/DDEVUIApp) and DDEV v1.25.2 feature research (docs.ddev.com, addons.ddev.com, live <code>ddev</code> CLI). Scores are judgment calls calibrated to this being a personal Swift/SwiftUI learning project, not a commercial product — treat them as a starting point for your own prioritization, not gospel. Companion to <a href="CODE-AUDIT-2026-05-30.html">CODE-AUDIT-2026-05-30.html</a>.</p>
+  </div>
+
+</div>
+
+<script>
+  (function () {
+    var bar = document.getElementById('filterbar');
+    var chips = bar.querySelectorAll('.chip');
+    var feats = document.querySelectorAll('.feat');
+    bar.addEventListener('click', function (e) {
+      var chip = e.target.closest('.chip');
+      if (!chip) return;
+      chips.forEach(function (c) { c.classList.remove('active'); });
+      chip.classList.add('active');
+      var v = chip.getAttribute('data-v');
+      feats.forEach(function (f) {
+        var show = (v === 'ALL') || (f.getAttribute('data-v') === v);
+        f.classList.toggle('hide', !show);
+        if (show && v !== 'ALL') { f.setAttribute('open', ''); }
+      });
+      // hide a section header when none of its cards are visible
+      document.querySelectorAll('.secthead').forEach(function (h) {
+        var sib = h.nextElementSibling, anyVisible = false;
+        while (sib && !sib.classList.contains('secthead')) {
+          if (sib.classList.contains('feat') && !sib.classList.contains('hide')) { anyVisible = true; break; }
+          sib = sib.nextElementSibling;
+        }
+        h.classList.toggle('hide', !anyVisible);
+      });
+    });
+  })();
+</script>
+</body>
+</html>

@@ -44,15 +44,24 @@ struct ProjectInspectorView: View {
                     tabContent(project)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
+                .task(id: project.id) {
+                    // Pull the live describe detail (Xdebug, DB info, services) and run the DB-drift
+                    // check once per selection, independent of which tab is showing. The two are
+                    // independent subprocesses, so run them concurrently to keep selection snappy.
+                    async let details: Void = viewModel.loadDetailsForSelectedProject()
+                    async let driftCheck: Void = viewModel.checkDBMatchForSelectedProject()
+                    _ = await (details, driftCheck)
+                }
                 .toolbar {
                     ToolbarItem(placement: .primaryAction) {
                         Menu {
-                            Button {
-                                if let url = project.primaryURL { workspaceOpener.openURL(url) }
-                            } label: {
-                                Label("Open Primary URL", systemImage: "safari")
+                            ForEach(projectLaunchLinks(project, viewModel.selectedProjectDetails)) { link in
+                                Button {
+                                    workspaceOpener.openURL(link.url)
+                                } label: {
+                                    Label("Open \(link.name)", systemImage: link.systemImage)
+                                }
                             }
-                            .disabled(project.primaryURL == nil)
 
                             Divider()
 
@@ -136,12 +145,16 @@ struct ProjectInspectorView: View {
         VStack(alignment: .leading, spacing: 16) {
             header(project)
             primaryActionBar(project)
+            if let warning = viewModel.dbMatchWarning {
+                DBDriftBanner(message: warning) { showConfigEditor = true }
+            }
             tabPicker
         }
         .padding(.horizontal, 24)
         .padding(.top, 20)
         .padding(.bottom, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .animation(.snappy, value: viewModel.dbMatchWarning)
     }
 
     private var tabPicker: some View {
@@ -266,6 +279,7 @@ struct ProjectInspectorView: View {
 
                 Spacer(minLength: 0)
 
+                shellSplitButton(project, isRunning: isRunning)
                 editorSplitButton(project)
                 databaseSplitButton(isRunning: isRunning)
             }
@@ -282,6 +296,38 @@ struct ProjectInspectorView: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
         .glassEffect(in: .rect(cornerRadius: 14))
+    }
+
+    /// A11 — hands a shell session off to Terminal.app. Primary action opens `ddev ssh` in the web
+    /// container; the menu offers the db shell and the MySQL client. Mirrors the editor/database
+    /// split-button idiom for visual consistency.
+    private func shellSplitButton(_ project: DDEVProject, isRunning: Bool) -> some View {
+        HStack(spacing: 0) {
+            Button {
+                workspaceOpener.openShell(in: project.appRoot, target: .webShell)
+            } label: {
+                Label("Shell", systemImage: "terminal")
+            }
+            .help("Open a shell in the web container in Terminal")
+
+            Menu {
+                ForEach(DDEVShellTarget.allCases) { target in
+                    Button {
+                        workspaceOpener.openShell(in: project.appRoot, target: target)
+                    } label: {
+                        Label(target.displayName, systemImage: target.systemImage)
+                    }
+                }
+            } label: {
+                EmptyView()
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.visible)
+            .fixedSize()
+        }
+        .controlSize(.large)
+        .fixedSize()
+        .disabled(!isRunning)
     }
 
     private func editorSplitButton(_ project: DDEVProject) -> some View {
@@ -413,6 +459,120 @@ private struct InspectorChipLabelStyle: LabelStyle {
     }
 }
 
+// MARK: - Launch hub (A1)
+
+/// One openable destination for the Open/Launch hub: the primary site, Mailpit, XHGui, and any
+/// add-on service UI surfaced from `ddev describe -j`.
+struct LaunchLink: Identifiable {
+    var id: String { name }
+    let name: String
+    let systemImage: String
+    let url: URL
+}
+
+/// Every browser-openable URL the project exposes — the project's own URLs plus add-on service UIs
+/// (phpMyAdmin, Adminer, …) derived from the live describe detail. Shared by the toolbar "Open"
+/// menu and the Overview URL chips so they can't drift apart.
+func projectLaunchLinks(_ project: DDEVProject, _ details: DDEVProjectDetails?) -> [LaunchLink] {
+    var links: [LaunchLink] = []
+    if let url = project.primaryURL { links.append(LaunchLink(name: "Primary", systemImage: "safari", url: url)) }
+    if let url = project.httpsURL { links.append(LaunchLink(name: "HTTPS", systemImage: "lock.shield", url: url)) }
+    if let url = project.httpURL { links.append(LaunchLink(name: "HTTP", systemImage: "globe", url: url)) }
+    if let url = project.mailpitHTTPSURL ?? project.mailpitURL {
+        links.append(LaunchLink(name: "Mailpit", systemImage: "envelope", url: url))
+    }
+    if let url = project.openableXHGuiURL {
+        links.append(LaunchLink(name: "XHGui", systemImage: "chart.bar.xaxis", url: url))
+    }
+    for service in details?.addonServiceLinks ?? [] {
+        links.append(LaunchLink(name: service.name.capitalized, systemImage: "puzzlepiece.extension", url: service.url))
+    }
+    return links
+}
+
+// MARK: - DB drift banner (A5)
+
+/// Ambient warning shown when the on-disk database volume disagrees with the configured DB
+/// type/version — promotes a buried `check-db-match` diagnostic into something the user can't miss.
+private struct DBDriftBanner: View {
+    let message: String
+    let onEditConfig: () -> Void
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.yellow)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Database version mismatch")
+                    .font(.callout.weight(.semibold))
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 8)
+            Button("Edit Config", action: onEditConfig)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.yellow.opacity(0.10), in: .rect(cornerRadius: 10))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .strokeBorder(Color.yellow.opacity(0.35), lineWidth: 1)
+        )
+        .accessibilityElement(children: .combine)
+    }
+}
+
+// MARK: - Copyable value row (A3)
+
+/// A label + value row with a one-click copy button, optionally masking the value (passwords).
+private struct CopyableRow: View {
+    let label: String
+    let value: String
+    var isSecret: Bool = false
+    @State private var revealed = false
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(label)
+                .foregroundStyle(.secondary)
+                .frame(width: 96, alignment: .leading)
+            Text(displayValue)
+                .font(.system(.callout, design: .monospaced))
+                .textSelection(.enabled)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 4)
+            if isSecret {
+                Button {
+                    revealed.toggle()
+                } label: {
+                    Image(systemName: revealed ? "eye.slash" : "eye")
+                }
+                .buttonStyle(.borderless)
+                .help(revealed ? "Hide" : "Reveal")
+            }
+            Button {
+                Pasteboard.copy(value)
+            } label: {
+                Image(systemName: "doc.on.doc")
+            }
+            .buttonStyle(.borderless)
+            .help("Copy \(label.lowercased())")
+        }
+        .font(.callout)
+    }
+
+    private var displayValue: String {
+        guard isSecret, !revealed else { return value }
+        return String(repeating: "•", count: max(8, min(value.count, 16)))
+    }
+}
+
 // MARK: - Overview tab
 
 private struct OverviewTabContent: View {
@@ -421,10 +581,14 @@ private struct OverviewTabContent: View {
     let workspaceOpener: MacWorkspaceOpener
     @Binding var showConfigEditor: Bool
 
+    private var details: DDEVProjectDetails? { viewModel.selectedProjectDetails }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
             environmentSection
             urlsSection
+            servicesSection
+            databaseCredentialsSection
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 20)
@@ -454,6 +618,19 @@ private struct OverviewTabContent: View {
                     }
                 })
 
+                if let xdebugEnabled = details?.xdebugEnabled {
+                    metaRow("Xdebug", trailing: {
+                        Toggle("Xdebug", isOn: Binding(
+                            get: { xdebugEnabled },
+                            set: { newValue in Task { await viewModel.setXdebugForSelectedProject(newValue) } }
+                        ))
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                        .disabled(project.status != .running || viewModel.isSelectedProjectBusy)
+                    })
+                }
+
                 metaRow("Project type", trailing: {
                     Text(project.projectType.displayName)
                         .foregroundStyle(.secondary)
@@ -474,42 +651,49 @@ private struct OverviewTabContent: View {
                     })
                 }
 
-                HStack {
+                HStack(spacing: 8) {
+                    // B8 — open the raw .ddev/ files in the editor instead of building fragile
+                    // GUI forms for advanced config.
+                    Button {
+                        workspaceOpener.openFolder(project.appRoot + "/.ddev", editor: viewModel.effectiveDefaultEditor)
+                    } label: {
+                        Label(".ddev/", systemImage: "folder")
+                    }
+                    Button {
+                        workspaceOpener.openFile(project.appRoot + "/.ddev/config.yaml", editor: viewModel.effectiveDefaultEditor)
+                    } label: {
+                        Label("config.yaml", systemImage: "doc.text")
+                    }
+
                     Spacer()
+
                     Button {
                         showConfigEditor = true
                     } label: {
                         Label("Edit Config", systemImage: "slider.horizontal.3")
                     }
-                    .buttonStyle(.bordered)
                     .disabled(viewModel.isSelectedProjectBusy)
                 }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
             }
         }
     }
 
     @ViewBuilder
     private var urlsSection: some View {
-        let links: [(String, String, URL?)] = [
-            ("Primary", "safari", project.primaryURL),
-            ("HTTPS", "lock.shield", project.httpsURL),
-            ("HTTP", "globe", project.httpURL),
-            ("Mailpit", "envelope", project.mailpitHTTPSURL ?? project.mailpitURL),
-            ("XHGui", "chart.bar.xaxis", project.openableXHGuiURL)
-        ]
-        let available = links.compactMap { item -> (String, String, URL)? in
-            guard let url = item.2 else { return nil }
-            return (item.0, item.1, url)
-        }
+        // A1 — one place to open every URL the project exposes, including add-on service UIs
+        // (phpMyAdmin, Adminer, …) derived from the live describe detail.
+        let links = projectLaunchLinks(project, details)
 
-        if !available.isEmpty || project.xhguiStatus == .disabled {
-            InspectorSection("URLs") {
+        if !links.isEmpty || project.xhguiStatus == .disabled {
+            InspectorSection("Open") {
                 FlowHStack(spacing: 8) {
-                    ForEach(available, id: \.0) { item in
+                    ForEach(links) { link in
                         Button {
-                            workspaceOpener.openURL(item.2)
+                            workspaceOpener.openURL(link.url)
                         } label: {
-                            Label(item.0, systemImage: item.1)
+                            Label(link.name, systemImage: link.systemImage)
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
@@ -530,6 +714,53 @@ private struct OverviewTabContent: View {
         }
     }
 
+    // A4 — per-service health + the ephemeral 127.0.0.1 ports Docker assigned, plus router and
+    // ssh-agent health. Surfaces partial/unhealthy states the single status badge flattens.
+    @ViewBuilder
+    private var servicesSection: some View {
+        if let details, !details.services.isEmpty {
+            InspectorSection("Services") {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(details.services) { service in
+                        ServiceRow(service: service, workspaceOpener: workspaceOpener)
+                    }
+                    if let router = details.routerStatus {
+                        ServiceHealthRow(label: "Router", status: router)
+                    }
+                    if let ssh = details.sshAgentStatus {
+                        ServiceHealthRow(label: "SSH agent", status: ssh)
+                    }
+                }
+            }
+        }
+    }
+
+    // A3 — copyable database credentials. Only shown for a running project (the dbinfo only exists
+    // then), and the password is masked until revealed.
+    @ViewBuilder
+    private var databaseCredentialsSection: some View {
+        if project.status == .running, let db = details?.databaseInfo {
+            InspectorSection("Database Credentials") {
+                VStack(alignment: .leading, spacing: 6) {
+                    CopyableRow(label: "Database", value: db.name)
+                    CopyableRow(label: "Username", value: db.username)
+                    CopyableRow(label: "Password", value: db.password, isSecret: true)
+                    if let hostPort = details?.databaseHostPort {
+                        CopyableRow(label: "Host", value: "127.0.0.1")
+                        CopyableRow(label: "Port", value: hostPort)
+                    } else {
+                        Label(
+                            "Database port is not published to the host. Use the Database button to open a client.",
+                            systemImage: "info.circle"
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+    }
+
     private func metaRow<Trailing: View>(_ label: String, @ViewBuilder trailing: () -> Trailing) -> some View {
         HStack(alignment: .firstTextBaseline) {
             Text(label)
@@ -538,6 +769,69 @@ private struct OverviewTabContent: View {
             trailing()
         }
         .font(.callout)
+    }
+}
+
+// MARK: - Service rows (A4)
+
+private struct ServiceRow: View {
+    let service: DDEVServiceInfo
+    let workspaceOpener: MacWorkspaceOpener
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Circle()
+                .fill(service.isRunning ? Color.green : Color.orange)
+                .frame(width: 7, height: 7)
+            Text(service.shortName)
+                .font(.callout.weight(.medium))
+                .frame(width: 76, alignment: .leading)
+            Text(service.status)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Spacer(minLength: 6)
+
+            if !service.hostPorts.isEmpty {
+                Text(service.hostPorts.map { "\($0.exposedPort)→\($0.hostPort)" }.joined(separator: "  "))
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .textSelection(.enabled)
+            }
+
+            if let url = service.hostHTTPSURL ?? service.hostHTTPURL ?? service.httpsURL ?? service.httpURL {
+                Button {
+                    workspaceOpener.openURL(url)
+                } label: {
+                    Image(systemName: "arrow.up.forward.app")
+                }
+                .buttonStyle(.borderless)
+                .help("Open \(service.shortName)")
+            }
+        }
+        .help(service.image)
+    }
+}
+
+private struct ServiceHealthRow: View {
+    let label: String
+    let status: String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Circle()
+                .fill(status == "healthy" ? Color.green : Color.orange)
+                .frame(width: 7, height: 7)
+            Text(label)
+                .font(.callout)
+                .frame(width: 76, alignment: .leading)
+            Text(status)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Spacer()
+        }
     }
 }
 

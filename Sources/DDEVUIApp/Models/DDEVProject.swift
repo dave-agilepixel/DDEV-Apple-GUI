@@ -299,24 +299,6 @@ extension DDEVProject {
     }
 }
 
-public struct DDEVProjectDetails: Equatable, Sendable {
-    public let phpVersion: String?
-    public let xhguiStatus: DDEVXHGuiStatus?
-
-    public init(phpVersion: String?, xhguiStatus: DDEVXHGuiStatus? = nil) {
-        self.phpVersion = phpVersion
-        self.xhguiStatus = xhguiStatus
-    }
-
-    public static func decodeDescribePayload(_ data: Data) throws -> DDEVProjectDetails {
-        let payload = try JSONDecoder().decode(DDEVDescribePayload.self, from: data)
-        return DDEVProjectDetails(
-            phpVersion: payload.raw.phpVersion,
-            xhguiStatus: payload.raw.xhguiStatus.map { DDEVXHGuiStatus(rawValue: $0) ?? .unknown }
-        )
-    }
-}
-
 private struct DDEVListPayload: Decodable {
     let raw: [RawDDEVProject]
 }
@@ -360,19 +342,5 @@ private struct RawDDEVProject: Decodable {
         case mutagenEnabled = "mutagen_enabled"
         case mutagenStatus = "mutagen_status"
         case phpVersion = "php_version"
-    }
-}
-
-private struct DDEVDescribePayload: Decodable {
-    let raw: RawDDEVProjectDetails
-}
-
-private struct RawDDEVProjectDetails: Decodable {
-    let phpVersion: String?
-    let xhguiStatus: String?
-
-    private enum CodingKeys: String, CodingKey {
-        case phpVersion = "php_version"
-        case xhguiStatus = "xhgui_status"
     }
 }

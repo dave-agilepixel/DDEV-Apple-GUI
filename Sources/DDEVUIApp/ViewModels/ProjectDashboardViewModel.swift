@@ -35,6 +35,7 @@ public protocol DDEVServicing: Sendable {
     func utilityCheckDBMatch(in appRoot: String) async throws -> CommandResult
     func mutagen(_ command: DDEVMutagenCommand, in appRoot: String) async throws -> CommandResult
     func xhgui(_ command: DDEVXHGuiCommand, in appRoot: String) async throws -> CommandResult
+    func xdebug(_ command: DDEVXdebugCommand, in appRoot: String) async throws -> CommandResult
     func updateWordPressCore(in appRoot: String) async throws -> CommandResult
     func updateWordPressPlugins(in appRoot: String) async throws -> CommandResult
     func updateWordPressThemes(in appRoot: String) async throws -> CommandResult
@@ -93,6 +94,15 @@ public final class ProjectDashboardViewModel {
     /// Per-project command state, keyed by project id (the project name). The single source
     /// of truth for busy/queued lifecycle, last result, error, history, and output expansion.
     public var commandStates: [DDEVProject.ID: ProjectCommandState] = [:]
+
+    /// Live `ddev describe -j` detail for the *selected* project — Xdebug state, DB credentials,
+    /// per-service health/ports. Deliberately not merged into the cached `DDEVProject` (it carries
+    /// the DB password and ephemeral ports), so it lives here, refetched per selection.
+    public var selectedProjectDetails: DDEVProjectDetails?
+
+    /// Set when `ddev utility check-db-match` reports the on-disk DB volume disagrees with the
+    /// configured type/version, so the inspector can surface an ambient drift warning (A5).
+    public var dbMatchWarning: String?
 
     /// Busy/error for genuinely project-less operations: global list refresh, global
     /// diagnostics, and new-project creation (which has no project id yet).
@@ -657,6 +667,62 @@ public final class ProjectDashboardViewModel {
         }
     }
 
+    /// Fetches the rich describe detail for the selected project (Xdebug state, DB info, services).
+    /// Best-effort and quiet: a describe failure just leaves the panels empty rather than surfacing
+    /// an error, matching how list-refresh enrichment tolerates per-project describe failures.
+    public func loadDetailsForSelectedProject() async {
+        guard let selectedProject else { return }
+        // Clear stale detail from the previously-selected project so panels don't show wrong data
+        // during the fetch.
+        selectedProjectDetails = nil
+        await refreshDetails(for: selectedProject)
+    }
+
+    /// Live Xdebug on/off toggle (A2). Flips Xdebug on the running web container without a restart,
+    /// then re-reads describe so the toggle reflects the real `xdebug_enabled` state.
+    public func setXdebugForSelectedProject(_ enabled: Bool) async {
+        guard let selectedProject else { return }
+        await runProjectMutation(selectedProject, refresh: .none) {
+            let result = try await self.ddevService.xdebug(enabled ? .on : .off, in: selectedProject.appRoot)
+            await self.refreshDetails(for: selectedProject)
+            return result
+        }
+    }
+
+    /// Runs `ddev utility check-db-match` for the selected project and, on a mismatch, populates
+    /// `dbMatchWarning` so the inspector can show an ambient drift banner (A5). Only runs for a
+    /// running project — a stopped DB can't be inspected, and we'd rather stay silent than cry wolf.
+    public func checkDBMatchForSelectedProject() async {
+        guard let selectedProject, selectedProject.status == .running else {
+            dbMatchWarning = nil
+            return
+        }
+        let targetID = selectedProject.id
+        dbMatchWarning = nil
+        do {
+            _ = try await ddevService.utilityCheckDBMatch(in: selectedProject.appRoot)
+            // Exit 0 → the volume matches the configured database; nothing to warn about.
+        } catch CommandRunnerError.nonZeroExit(let result) {
+            guard selectedProjectID == targetID else { return } // selection moved on mid-check
+            dbMatchWarning = Self.dbMatchMessage(from: result)
+        } catch {
+            // Couldn't run the check (e.g. DB container not up yet). Don't show a scary banner for
+            // a non-drift failure.
+        }
+    }
+
+    /// Distils a concise, user-facing line from a failed check-db-match result.
+    private static func dbMatchMessage(from result: CommandResult) -> String {
+        let firstMeaningfulLine: (String) -> String? = { text in
+            text.split(separator: "\n", omittingEmptySubsequences: true)
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .first { !$0.isEmpty }
+        }
+        return firstMeaningfulLine(result.stderr)
+            ?? firstMeaningfulLine(result.stdout)
+            ?? "The database volume does not match the configured database type/version."
+    }
+
     public func moveSelectedProjectFolderToTrash() {
         guard let selectedProject else { return }
 
@@ -760,6 +826,14 @@ public final class ProjectDashboardViewModel {
         case .fullList: await refreshProjectsFromDDEVInBackground()
         case .project: await reDescribe(project)
         }
+    }
+
+    /// Re-fetch the live describe detail for `project` and publish it as `selectedProjectDetails`,
+    /// unless the selection moved on while the describe was in flight.
+    private func refreshDetails(for project: DDEVProject) async {
+        guard let details = try? await ddevService.describe(projectName: project.name) else { return }
+        guard selectedProjectID == project.id else { return }
+        selectedProjectDetails = details
     }
 
     /// Re-describe a single project and patch it into `projects` in place.

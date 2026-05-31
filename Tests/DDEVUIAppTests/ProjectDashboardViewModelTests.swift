@@ -344,6 +344,99 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         ])
     }
 
+    // MARK: - Live details (A1–A4)
+
+    func testLoadDetailsPublishesDescribeDetailForSelectedProject() async {
+        let details = DDEVProjectDetails(
+            phpVersion: "8.3",
+            xdebugEnabled: true,
+            databaseInfo: DDEVDatabaseInfo(
+                type: "mariadb", version: "11.8", host: "db", port: "3306",
+                name: "db", username: "db", password: "db", publishedPort: 55043
+            )
+        )
+        let service = FakeDDEVService(projects: [.sampleWordPress], describeDetails: ["aqua-pura": details])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.loadDetailsForSelectedProject()
+
+        XCTAssertEqual(viewModel.selectedProjectDetails?.xdebugEnabled, true)
+        XCTAssertEqual(viewModel.selectedProjectDetails?.databaseInfo?.publishedPort, 55043)
+    }
+
+    func testSetXdebugRunsXdebugOnThenReReadsDetails() async {
+        let enabled = DDEVProjectDetails(phpVersion: "8.3", xdebugEnabled: true)
+        let service = FakeDDEVService(projects: [.sampleWordPress], describeDetails: ["aqua-pura": enabled])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.setXdebugForSelectedProject(true)
+
+        XCTAssertEqual(service.commands, [
+            "xdebug:/Users/dave/Development/agilepixel/aqua-pura:on",
+            "describe:aqua-pura"
+        ])
+        XCTAssertEqual(viewModel.selectedProjectDetails?.xdebugEnabled, true)
+    }
+
+    func testSetXdebugOffRunsXdebugOff() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.setXdebugForSelectedProject(false)
+
+        XCTAssertEqual(service.commands.first, "xdebug:/Users/dave/Development/agilepixel/aqua-pura:off")
+    }
+
+    // MARK: - DB drift banner (A5)
+
+    func testDBMatchWarningSetWhenCheckExitsNonZero() async {
+        let mismatch = CommandResult.failure(
+            stderr: "Database in volume mysql:8.0 does not match configured mariadb:11.8\n",
+            exitCode: 1
+        )
+        let service = FakeDDEVService(
+            projects: [.sampleWordPress],
+            dbMatchResult: .failure(CommandRunnerError.nonZeroExit(mismatch))
+        )
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.checkDBMatchForSelectedProject()
+
+        XCTAssertEqual(
+            viewModel.dbMatchWarning,
+            "Database in volume mysql:8.0 does not match configured mariadb:11.8"
+        )
+    }
+
+    func testDBMatchWarningClearedWhenVolumeMatches() async {
+        let match = CommandResult.success(stdout: "database in volume matches configured database: mariadb:11.8\n")
+        let service = FakeDDEVService(projects: [.sampleWordPress], dbMatchResult: .success(match))
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.checkDBMatchForSelectedProject()
+
+        XCTAssertNil(viewModel.dbMatchWarning)
+    }
+
+    func testDBMatchCheckSkippedForNonRunningProject() async {
+        let service = FakeDDEVService(
+            projects: [.sampleLaravel],
+            dbMatchResult: .failure(CommandRunnerError.nonZeroExit(CommandResult.failure(stderr: "drift", exitCode: 1)))
+        )
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleLaravel // paused
+
+        await viewModel.checkDBMatchForSelectedProject()
+
+        XCTAssertNil(viewModel.dbMatchWarning)
+        XCTAssertFalse(service.commands.contains { $0.hasPrefix("check-db-match") })
+    }
+
     func testImportDatabaseUsesSelectedProjectFolderAndRefreshes() async {
         let service = FakeDDEVService(projects: [.sampleWordPress])
         let viewModel = ProjectDashboardViewModel(ddevService: service)
@@ -870,6 +963,8 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
     private let loadedProjects: [DDEVProject]
     private let phpVersions: [String: String]
     private let xhguiStatuses: [String: DDEVXHGuiStatus]
+    private let describeDetails: [String: DDEVProjectDetails]
+    private let dbMatchResult: Result<CommandResult, Error>?
     private let listError: Error?
     private let importError: Error?
     private let snapshotListOutput: String
@@ -890,6 +985,8 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
         projects: [DDEVProject],
         phpVersions: [String: String] = [:],
         xhguiStatuses: [String: DDEVXHGuiStatus] = [:],
+        describeDetails: [String: DDEVProjectDetails] = [:],
+        dbMatchResult: Result<CommandResult, Error>? = nil,
         listError: Error? = nil,
         importError: Error? = nil,
         snapshotListOutput: String = "",
@@ -904,6 +1001,8 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
         self.loadedProjects = projects
         self.phpVersions = phpVersions
         self.xhguiStatuses = xhguiStatuses
+        self.describeDetails = describeDetails
+        self.dbMatchResult = dbMatchResult
         self.listError = listError
         self.importError = importError
         self.snapshotListOutput = snapshotListOutput
@@ -926,6 +1025,9 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
 
     func describe(projectName: String) async throws -> DDEVProjectDetails {
         record("describe:\(projectName)")
+        if let details = describeDetails[projectName] {
+            return details
+        }
         return DDEVProjectDetails(phpVersion: phpVersions[projectName], xhguiStatus: xhguiStatuses[projectName])
     }
 
@@ -1115,6 +1217,9 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
 
     func utilityCheckDBMatch(in appRoot: String) async throws -> CommandResult {
         record("check-db-match:\(appRoot)")
+        if let dbMatchResult {
+            return try dbMatchResult.get()
+        }
         if let diagnosticError {
             throw diagnosticError
         }
@@ -1132,6 +1237,11 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
     func xhgui(_ command: DDEVXHGuiCommand, in appRoot: String) async throws -> CommandResult {
         record("xhgui:\(appRoot):\(command.rawValue)")
         return commandResult(arguments: ["xhgui", command.rawValue], workingDirectory: appRoot)
+    }
+
+    func xdebug(_ command: DDEVXdebugCommand, in appRoot: String) async throws -> CommandResult {
+        record("xdebug:\(appRoot):\(command.rawValue)")
+        return commandResult(arguments: ["xdebug", command.rawValue], workingDirectory: appRoot)
     }
 
     private func record(_ command: String) {
@@ -1275,6 +1385,24 @@ extension DDEVProject {
             mutagenEnabled: mutagenEnabled,
             mutagenStatus: mutagenStatus,
             phpVersion: phpVersion
+        )
+    }
+}
+
+extension CommandResult {
+    /// Test helper mirroring `CommandResult.success`, for building a failed (non-zero exit) result.
+    static func failure(stdout: String = "", stderr: String = "", exitCode: Int32 = 1) -> CommandResult {
+        let now = Date()
+        return CommandResult(
+            executable: "ddev",
+            arguments: [],
+            workingDirectory: nil,
+            exitCode: exitCode,
+            stdout: stdout,
+            stderr: stderr,
+            startedAt: now,
+            finishedAt: now,
+            wasCancelled: false
         )
     }
 }

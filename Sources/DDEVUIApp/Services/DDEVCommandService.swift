@@ -265,6 +265,11 @@ public final class DDEVCommandService: Sendable {
     }
 
     @discardableResult
+    public func xdebug(_ command: DDEVXdebugCommand, in appRoot: String) async throws -> CommandResult {
+        try await runDDEV(["xdebug", command.rawValue], workingDirectory: appRoot)
+    }
+
+    @discardableResult
     public func updateWordPressCore(in appRoot: String) async throws -> CommandResult {
         try await runDDEV(["wp", "core", "update"], workingDirectory: appRoot)
     }
@@ -343,6 +348,12 @@ public enum DDEVXHGuiCommand: String, CaseIterable, Sendable {
     case on
     case off
     case launch
+    case status
+}
+
+public enum DDEVXdebugCommand: String, CaseIterable, Sendable {
+    case on
+    case off
     case status
 }
 
