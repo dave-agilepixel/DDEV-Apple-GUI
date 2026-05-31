@@ -29,22 +29,16 @@ struct CommandOutputView: View {
                 )
             }
 
-            let results = commandResultsToDisplay
-            if !results.isEmpty {
+            if !history.isEmpty {
                 VStack(alignment: .leading, spacing: 12) {
-                    ForEach(Array(results.enumerated()), id: \.offset) { index, result in
-                        VStack(alignment: .leading, spacing: 8) {
-                            if results.count > 1 {
-                                Text("Command \(index + 1)")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(.secondary)
-                            }
-
-                            metadataRow(for: result)
-                            outputPanel(for: result)
-                        }
+                    // Keyed on the entry's stable id (not the array offset) so the sliding,
+                    // capped history window can't hand a row's view state to a different command.
+                    ForEach(Array(history.enumerated()), id: \.element.id) { index, entry in
+                        commandBlock(for: entry.result, index: index, total: history.count)
                     }
                 }
+            } else if let result {
+                commandBlock(for: result, index: 0, total: 1)
             } else if errorMessage == nil {
                 Text("No command has run yet.")
                     .font(.callout)
@@ -53,16 +47,17 @@ struct CommandOutputView: View {
         }
     }
 
-    private var commandResultsToDisplay: [CommandResult] {
-        if !history.isEmpty {
-            return history.map(\.result)
-        }
+    private func commandBlock(for result: CommandResult, index: Int, total: Int) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if total > 1 {
+                Text("Command \(index + 1)")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
 
-        if let result {
-            return [result]
+            metadataRow(for: result)
+            outputPanel(for: result)
         }
-
-        return []
     }
 
     private func metadataRow(for result: CommandResult) -> some View {

@@ -3,7 +3,7 @@ import SwiftUI
 
 struct DatabaseOperationsView: View {
     let project: DDEVProject
-    @ObservedObject var viewModel: ProjectDashboardViewModel
+    var viewModel: ProjectDashboardViewModel
 
     @State private var importDraft: DatabaseImportDraft?
     @State private var exportDraft: DatabaseExportDraft?
@@ -12,10 +12,7 @@ struct DatabaseOperationsView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("Database")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                    .kerning(0.5)
+                    .sectionHeaderStyle()
                 Spacer()
             }
 
@@ -55,8 +52,11 @@ struct DatabaseOperationsView: View {
         panel.title = "Choose Database Dump"
         panel.message = "Choose a SQL dump or supported archive to import into \(project.name)."
 
-        guard panel.runModal() == .OK, let file = panel.url else { return }
-        importDraft = DatabaseImportDraft(filePath: file.path)
+        // Non-blocking begin{} rather than runModal() (audit L14b).
+        panel.begin { response in
+            guard response == .OK, let file = panel.url else { return }
+            importDraft = DatabaseImportDraft(filePath: file.path)
+        }
     }
 }
 
@@ -72,7 +72,7 @@ private struct DatabaseExportDraft: Identifiable {
 private struct DatabaseImportSheet: View {
     let project: DDEVProject
     let draft: DatabaseImportDraft
-    @ObservedObject var viewModel: ProjectDashboardViewModel
+    var viewModel: ProjectDashboardViewModel
     @Environment(\.dismiss) private var dismiss
 
     @State private var database = "db"
@@ -169,7 +169,7 @@ private struct DatabaseImportSheet: View {
 private struct DatabaseExportSheet: View {
     let project: DDEVProject
     let draft: DatabaseExportDraft
-    @ObservedObject var viewModel: ProjectDashboardViewModel
+    var viewModel: ProjectDashboardViewModel
     @Environment(\.dismiss) private var dismiss
 
     @State private var database = "db"
@@ -244,8 +244,11 @@ private struct DatabaseExportSheet: View {
         panel.message = "Choose where to save the database export for \(project.name)."
         panel.nameFieldStringValue = "\(project.name)-db\(compression.defaultFileSuffix)"
 
-        guard panel.runModal() == .OK, let file = panel.url else { return }
-        outputPath = file.path
+        // Non-blocking begin{} rather than runModal() (audit L14b).
+        panel.begin { response in
+            guard response == .OK, let file = panel.url else { return }
+            outputPath = file.path
+        }
     }
 }
 

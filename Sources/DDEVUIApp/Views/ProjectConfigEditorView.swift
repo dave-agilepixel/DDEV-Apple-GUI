@@ -2,7 +2,7 @@ import SwiftUI
 
 struct ProjectConfigEditorView: View {
     let project: DDEVProject
-    @ObservedObject var viewModel: ProjectDashboardViewModel
+    var viewModel: ProjectDashboardViewModel
     @Environment(\.dismiss) private var dismiss
 
     @State private var loadedConfig: DDEVConfig?
@@ -32,14 +32,15 @@ struct ProjectConfigEditorView: View {
         .frame(width: 620)
         .frame(minHeight: 620)
         .task(id: project.id) {
+            // Single source of truth: load, then sync only if we're still on the same project.
+            // The previous dual-sync (.task + .onChange on the shared @Published projectConfig)
+            // could splice project A's config into project B's fields on a fast switch (audit M7).
             loadedConfig = nil
+            let loadingProjectID = project.id
             await viewModel.loadConfigForSelectedProject()
-            if let config = viewModel.projectConfig {
-                syncState(from: config)
-            }
-        }
-        .onChange(of: viewModel.projectConfig) { _, config in
-            guard let config else { return }
+            guard !Task.isCancelled,
+                  viewModel.selectedProject?.id == loadingProjectID,
+                  let config = viewModel.projectConfig else { return }
             syncState(from: config)
         }
     }
@@ -320,30 +321,11 @@ struct ProjectConfigEditorView: View {
     private func apply(_ change: DDEVConfigChange) async {
         await viewModel.applyConfigChangeForSelectedProject(change)
 
-        if viewModel.selectedProjectState.lastErrorMessage == nil, let updatedConfig = draftConfig {
-            loadedConfig = updatedConfig
+        // Advance only the applied field's baseline (audit M7). Rebuilding the baseline from a
+        // full draft of every field used to clear other rows' "changed" indicators incorrectly.
+        if viewModel.selectedProjectState.lastErrorMessage == nil {
+            loadedConfig = loadedConfig?.applying(change)
         }
-    }
-
-    private var draftConfig: DDEVConfig? {
-        guard !phpVersion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              !nodeJSVersion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              !databaseVersion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return nil
-        }
-
-        return DDEVConfig(
-            phpVersion: phpVersion,
-            nodeJSVersion: nodeJSVersion,
-            databaseType: databaseType,
-            databaseVersion: databaseVersion,
-            webserverType: webserverType,
-            performanceMode: performanceMode,
-            xdebugEnabled: xdebugEnabled,
-            xhprofMode: xhprofMode,
-            uploadDirs: uploadDirs,
-            additionalHostnames: additionalHostnames
-        )
     }
 
     private func syncState(from config: DDEVConfig) {
@@ -380,10 +362,7 @@ private struct ConfigEditorSection<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(title)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-                .kerning(0.5)
+                .sectionHeaderStyle()
 
             VStack(spacing: 10) {
                 content

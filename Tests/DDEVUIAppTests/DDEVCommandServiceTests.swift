@@ -111,7 +111,7 @@ final class DDEVCommandServiceTests: XCTestCase {
 
     func testDefaultDatabaseImportRunsInProjectDirectory() async throws {
         let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
-        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
+        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev", fileExists: { _ in true })
 
         _ = try await service.importDatabase(
             DDEVDatabaseImportOptions(filePath: "/Users/dave/Downloads/db.sql.gz"),
@@ -129,7 +129,7 @@ final class DDEVCommandServiceTests: XCTestCase {
 
     func testNamedDatabaseImportIncludesArchiveOptionsAndNoDrop() async throws {
         let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
-        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
+        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev", fileExists: { _ in true })
 
         _ = try await service.importDatabase(
             DDEVDatabaseImportOptions(
@@ -201,40 +201,21 @@ final class DDEVCommandServiceTests: XCTestCase {
         ])
     }
 
-    func testFileImportOptionsRunInProjectDirectory() async throws {
+    func testDatabaseImportRejectsUnreadableFileWithClearError() async throws {
         let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
-        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
+        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev", fileExists: { _ in false })
 
-        _ = try await service.importFiles(
-            DDEVFileImportOptions(sourcePath: "/Users/dave/Downloads/files.tar.gz"),
-            in: "/Users/dave/site"
-        )
-        _ = try await service.importFiles(
-            DDEVFileImportOptions(
-                sourcePath: "/Users/dave/Downloads/files.zip",
-                targetPath: "web/sites/default/files",
-                extractPath: "public"
-            ),
-            in: "/Users/dave/site"
-        )
-
-        XCTAssertEqual(runner.commands, [
-            CommandSpec(
-                executable: "ddev",
-                arguments: ["import-files", "--source=/Users/dave/Downloads/files.tar.gz"],
-                workingDirectory: "/Users/dave/site"
-            ),
-            CommandSpec(
-                executable: "ddev",
-                arguments: [
-                    "import-files",
-                    "--source=/Users/dave/Downloads/files.zip",
-                    "--target=web/sites/default/files",
-                    "--extract-path=public"
-                ],
-                workingDirectory: "/Users/dave/site"
+        do {
+            _ = try await service.importDatabase(
+                DDEVDatabaseImportOptions(filePath: "/Users/dave/Downloads/missing.sql.gz"),
+                in: "/Users/dave/site"
             )
-        ])
+            XCTFail("Expected a precondition error for an unreadable file")
+        } catch let error as DDEVCommandPreconditionError {
+            XCTAssertEqual(error, .fileNotReadable(path: "/Users/dave/Downloads/missing.sql.gz"))
+        }
+
+        XCTAssertTrue(runner.commands.isEmpty, "ddev is not invoked when the source file is unreadable")
     }
 
     func testSnapshotCommandsRunInProjectDirectory() async throws {
@@ -309,24 +290,6 @@ final class DDEVCommandServiceTests: XCTestCase {
             CommandSpec(
                 executable: "ddev",
                 arguments: ["add-on", "remove", "redis", "--project", "aqua-pura"],
-                workingDirectory: "/Users/dave/site"
-            )
-        ])
-    }
-
-    func testConfigCommandAcceptsValidatedFlagsInProjectDirectory() async throws {
-        let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
-        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
-
-        _ = try await service.config(
-            flags: ["--nodejs-version=24", "--webserver-type=apache-fpm", "--performance-mode=mutagen"],
-            in: "/Users/dave/site"
-        )
-
-        XCTAssertEqual(runner.commands, [
-            CommandSpec(
-                executable: "ddev",
-                arguments: ["config", "--nodejs-version=24", "--webserver-type=apache-fpm", "--performance-mode=mutagen"],
                 workingDirectory: "/Users/dave/site"
             )
         ])

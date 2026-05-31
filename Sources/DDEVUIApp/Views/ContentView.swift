@@ -1,11 +1,22 @@
 import SwiftUI
 
 struct ContentView: View {
-    @StateObject private var viewModel = ProjectDashboardViewModel(
-        notifier: ContentView.makeNotifier()
-    )
-    @StateObject private var prerequisites = PrerequisiteMonitor()
+    @State private var viewModel: ProjectDashboardViewModel
+    @State private var prerequisites: PrerequisiteMonitor
     @State private var folderToConfigure: FolderToConfigure?
+    @Environment(\.scenePhase) private var scenePhase
+
+    init() {
+        _viewModel = State(initialValue: ProjectDashboardViewModel(notifier: ContentView.makeNotifier()))
+        _prerequisites = State(initialValue: PrerequisiteMonitor())
+    }
+
+    /// Injecting initializer for previews/tests, so they can pass stub services instead of the
+    /// real ones that spawn ddev/docker subprocesses and start the poll loop (audit L12).
+    init(viewModel: ProjectDashboardViewModel, prerequisites: PrerequisiteMonitor) {
+        _viewModel = State(initialValue: viewModel)
+        _prerequisites = State(initialValue: prerequisites)
+    }
 
     private static func makeNotifier() -> NotificationScheduling {
         let scheduler = UserNotificationScheduler()
@@ -88,6 +99,14 @@ struct ContentView: View {
         .task {
             prerequisites.start()
         }
+        .onChange(of: scenePhase) { _, phase in
+            // Pause the prerequisite poll while backgrounded; re-arm (and re-validate) on return.
+            if phase == .active {
+                prerequisites.start()
+            } else {
+                prerequisites.stop()
+            }
+        }
     }
 
     private func count(for item: ProjectSidebarItem) -> Int? {
@@ -115,17 +134,21 @@ struct ContentView: View {
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
 
-        guard panel.runModal() == .OK, let folder = panel.url else { return }
+        // Non-blocking begin{} (completion on the main queue) rather than runModal(), which
+        // blocks the run loop and mixes AppKit modality into the view (audit L14b).
+        panel.begin { response in
+            guard response == .OK, let folder = panel.url else { return }
 
-        let configPath = folder
-            .appendingPathComponent(".ddev")
-            .appendingPathComponent("config.yaml")
-            .path
+            let configPath = folder
+                .appendingPathComponent(".ddev")
+                .appendingPathComponent("config.yaml")
+                .path
 
-        if FileManager.default.fileExists(atPath: configPath) {
-            Task { await viewModel.startProject(atFolder: folder.path) }
-        } else {
-            folderToConfigure = FolderToConfigure(url: folder)
+            if FileManager.default.fileExists(atPath: configPath) {
+                Task { await viewModel.startProject(atFolder: folder.path) }
+            } else {
+                folderToConfigure = FolderToConfigure(url: folder)
+            }
         }
     }
 }
@@ -158,11 +181,28 @@ private struct FolderToConfigure: Identifiable {
 }
 
 #Preview {
-    ContentView()
+    ContentView(
+        viewModel: ProjectDashboardViewModel(
+            ddevService: DDEVCommandService(commandRunner: PreviewCommandRunner())
+        ),
+        prerequisites: PrerequisiteMonitor(
+            service: StaticPrerequisiteService(
+                state: PrerequisiteState(docker: .ok, ddev: .ok(version: "v1.24.0"))
+            )
+        )
+    )
+}
+
+/// Returns an empty project list and never shells out, so previews don't spawn real
+/// ddev/docker subprocesses (audit L12).
+private struct PreviewCommandRunner: CommandRunning {
+    func run(_ spec: CommandSpec) async throws -> CommandResult {
+        .success(stdout: "[]")
+    }
 }
 
 private struct SettingsView: View {
-    @ObservedObject var viewModel: ProjectDashboardViewModel
+    var viewModel: ProjectDashboardViewModel
 
     var body: some View {
         Form {
@@ -217,7 +257,7 @@ private struct SettingsView: View {
 
 private struct AddProjectSheet: View {
     let folder: URL
-    @ObservedObject var viewModel: ProjectDashboardViewModel
+    var viewModel: ProjectDashboardViewModel
     @Environment(\.dismiss) private var dismiss
 
     @State private var projectName: String

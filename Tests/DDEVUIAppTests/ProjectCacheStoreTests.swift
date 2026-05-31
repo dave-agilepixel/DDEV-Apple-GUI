@@ -2,54 +2,75 @@ import XCTest
 @testable import DDEVUIApp
 
 final class ProjectCacheStoreTests: XCTestCase {
-    func testFileProjectCacheStoreReturnsEmptyWhenCacheIsMissing() throws {
+    func testFileProjectCacheStoreReturnsEmptyWhenCacheIsMissing() async throws {
         let directory = try temporaryDirectory()
         let store = FileProjectCacheStore(cacheDirectory: directory)
 
-        let projects = try store.loadProjects()
+        let projects = try await store.loadProjects()
 
         XCTAssertEqual(projects, [])
     }
 
-    func testFileProjectCacheStoreSavesAndLoadsProjects() throws {
+    func testFileProjectCacheStoreSavesAndLoadsProjects() async throws {
         let directory = try temporaryDirectory()
         let store = FileProjectCacheStore(cacheDirectory: directory)
 
-        try store.saveProjects([.sampleWordPress, .sampleLaravel])
+        try await store.saveProjects([.sampleWordPress, .sampleLaravel])
 
-        XCTAssertEqual(try store.loadProjects(), [.sampleWordPress, .sampleLaravel])
+        let loaded = try await store.loadProjects()
+        XCTAssertEqual(loaded, [.sampleWordPress, .sampleLaravel])
     }
 
-    func testFileProjectCacheStoreCreatesCacheDirectory() throws {
+    func testFileProjectCacheStoreCreatesCacheDirectory() async throws {
         let directory = try temporaryDirectory().appendingPathComponent("Nested")
         let store = FileProjectCacheStore(cacheDirectory: directory)
 
-        try store.saveProjects([.sampleWordPress])
+        try await store.saveProjects([.sampleWordPress])
 
         XCTAssertTrue(FileManager.default.fileExists(atPath: directory.path))
-        XCTAssertEqual(try store.loadProjects(), [.sampleWordPress])
+        let loaded = try await store.loadProjects()
+        XCTAssertEqual(loaded, [.sampleWordPress])
     }
 
-    func testInMemoryProjectCacheStoreExposesMutableProjects() throws {
+    func testFileProjectCacheStoreWritesOwnerOnlyPermissions() async throws {
+        let directory = try temporaryDirectory()
+        let store = FileProjectCacheStore(cacheDirectory: directory)
+
+        try await store.saveProjects([.sampleWordPress])
+
+        let cacheFile = directory.appendingPathComponent("projects-cache.json").path
+        let attributes = try FileManager.default.attributesOfItem(atPath: cacheFile)
+        let permissions = (attributes[.posixPermissions] as? NSNumber)?.intValue
+        XCTAssertEqual(permissions, 0o600, "Cache must be written owner read/write only, not world-readable")
+    }
+
+    func testInMemoryProjectCacheStoreExposesMutableProjects() async throws {
         let store = InMemoryProjectCacheStore(projects: [.sampleWordPress])
 
         XCTAssertEqual(store.projects, [.sampleWordPress])
 
         store.projects = [.sampleLaravel]
 
-        XCTAssertEqual(try store.loadProjects(), [.sampleLaravel])
+        let loaded = try await store.loadProjects()
+        XCTAssertEqual(loaded, [.sampleLaravel])
     }
 
-    func testInMemoryProjectCacheStoreExposesMutableErrors() throws {
+    func testInMemoryProjectCacheStoreExposesMutableErrors() async throws {
         let store = InMemoryProjectCacheStore(projects: [.sampleWordPress])
 
         store.loadError = ProjectCacheStoreTestError.load
         store.saveError = ProjectCacheStoreTestError.save
 
-        XCTAssertThrowsError(try store.loadProjects()) { error in
+        do {
+            _ = try await store.loadProjects()
+            XCTFail("Expected load to throw")
+        } catch {
             XCTAssertEqual(error as? ProjectCacheStoreTestError, .load)
         }
-        XCTAssertThrowsError(try store.saveProjects([.sampleLaravel])) { error in
+        do {
+            try await store.saveProjects([.sampleLaravel])
+            XCTFail("Expected save to throw")
+        } catch {
             XCTAssertEqual(error as? ProjectCacheStoreTestError, .save)
         }
         XCTAssertEqual(store.projects, [.sampleWordPress])

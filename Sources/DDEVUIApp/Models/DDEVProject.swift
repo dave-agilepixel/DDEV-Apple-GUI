@@ -237,6 +237,21 @@ extension DDEVProject {
         return payload.raw.map(DDEVProject.init(raw:))
     }
 
+    /// Builds a URL only from a trimmed string that has a scheme and host, so blank or
+    /// whitespace/garbage values from `ddev list -j` become `nil` rather than a non-nil
+    /// "zombie" URL that "open in browser" would mishandle (audit L9).
+    static func validatedURL(_ raw: String) -> URL? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              let components = URLComponents(string: trimmed),
+              let scheme = components.scheme, !scheme.isEmpty,
+              let host = components.host, !host.isEmpty,
+              let url = components.url else {
+            return nil
+        }
+        return url
+    }
+
     private init(raw: RawDDEVProject) {
         self.init(
             name: raw.name,
@@ -246,13 +261,13 @@ extension DDEVProject {
             statusDescription: raw.statusDesc,
             projectType: DDEVProjectType(rawValue: raw.type) ?? .other,
             docroot: raw.docroot,
-            primaryURL: URL(string: raw.primaryURL),
-            httpURL: URL(string: raw.httpURL),
-            httpsURL: URL(string: raw.httpsURL),
-            mailpitURL: URL(string: raw.mailpitURL),
-            mailpitHTTPSURL: URL(string: raw.mailpitHTTPSURL),
-            xhguiURL: URL(string: raw.xhguiURL),
-            xhguiHTTPSURL: URL(string: raw.xhguiHTTPSURL),
+            primaryURL: Self.validatedURL(raw.primaryURL),
+            httpURL: Self.validatedURL(raw.httpURL),
+            httpsURL: Self.validatedURL(raw.httpsURL),
+            mailpitURL: Self.validatedURL(raw.mailpitURL),
+            mailpitHTTPSURL: Self.validatedURL(raw.mailpitHTTPSURL),
+            xhguiURL: Self.validatedURL(raw.xhguiURL),
+            xhguiHTTPSURL: Self.validatedURL(raw.xhguiHTTPSURL),
             xhguiStatus: raw.xhguiStatus.map { DDEVXHGuiStatus(rawValue: $0) ?? .unknown },
             mutagenEnabled: raw.mutagenEnabled,
             mutagenStatus: raw.mutagenStatus,

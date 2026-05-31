@@ -1,5 +1,5 @@
-import Combine
 import Foundation
+import Observation
 
 public protocol DDEVServicing: Sendable {
     func listProjects() async throws -> [DDEVProject]
@@ -15,7 +15,6 @@ public protocol DDEVServicing: Sendable {
     func launchDatabaseTool(_ tool: DDEVDatabaseTool, in appRoot: String) async throws -> CommandResult
     func importDatabase(_ options: DDEVDatabaseImportOptions, in appRoot: String) async throws -> CommandResult
     func exportDatabase(_ options: DDEVDatabaseExportOptions, in appRoot: String) async throws -> CommandResult
-    func importFiles(_ options: DDEVFileImportOptions, in appRoot: String) async throws -> CommandResult
     func createSnapshot(name: String?, in appRoot: String) async throws -> CommandResult
     func listSnapshots(in appRoot: String) async throws -> CommandResult
     func restoreSnapshot(named snapshotName: String, in appRoot: String) async throws -> CommandResult
@@ -27,7 +26,6 @@ public protocol DDEVServicing: Sendable {
     func searchAddOns(query: String, in appRoot: String) async throws -> CommandResult
     func getAddOn(_ repository: String, projectName: String, in appRoot: String) async throws -> CommandResult
     func removeAddOn(named name: String, projectName: String, in appRoot: String) async throws -> CommandResult
-    func config(flags: [String], in appRoot: String) async throws -> CommandResult
     func applyConfigChange(_ change: DDEVConfigChange, in appRoot: String) async throws -> CommandResult
     func runProjectCommand(arguments: [String], in appRoot: String) async throws -> CommandResult
     func version() async throws -> CommandResult
@@ -85,46 +83,51 @@ public enum ProjectSidebarItem: String, CaseIterable, Identifiable, Sendable {
 }
 
 @MainActor
-public final class ProjectDashboardViewModel: ObservableObject {
-    @Published public var projects: [DDEVProject] = []
-    @Published public var selectedProjectID: DDEVProject.ID?
-    @Published public var selectedSidebarItem: ProjectSidebarItem = .projects
-    @Published public var searchText = ""
+@Observable
+public final class ProjectDashboardViewModel {
+    public var projects: [DDEVProject] = []
+    public var selectedProjectID: DDEVProject.ID?
+    public var selectedSidebarItem: ProjectSidebarItem = .projects
+    public var searchText = ""
 
     /// Per-project command state, keyed by project id (the project name). The single source
     /// of truth for busy/queued lifecycle, last result, error, history, and output expansion.
-    @Published public var commandStates: [DDEVProject.ID: ProjectCommandState] = [:]
+    public var commandStates: [DDEVProject.ID: ProjectCommandState] = [:]
 
     /// Busy/error for genuinely project-less operations: global list refresh, global
     /// diagnostics, and new-project creation (which has no project id yet).
-    @Published public var isRunningGlobalCommand = false
-    @Published public var globalErrorMessage: String?
-    @Published public var snapshots: [DDEVSnapshot] = []
-    @Published public var projectLogsResult: CommandResult?
-    @Published public var projectLogsErrorMessage: String?
-    @Published public var projectConfig: DDEVConfig?
-    @Published public var projectConfigErrorMessage: String?
-    @Published public var projectConfigRestartRecommended = false
-    @Published public var installedAddOns: [DDEVAddon] = []
-    @Published public var addonSearchResults: [DDEVAddon] = DDEVAddon.recommendedOfficial
-    @Published public var addonErrorMessage: String?
-    @Published public var addOnRestartRecommended = false
-    @Published public var addonRawOutput: String?
-    @Published public var diagnosticReport = DDEVDiagnosticReport()
-    @Published public var diagnosticsErrorMessage: String?
-    @Published public private(set) var preferences: AppPreferences
-    @Published public private(set) var installedEditors: [EditorChoice]
-    @Published public private(set) var installedDatabaseTools: [DDEVDatabaseTool]
+    public var isRunningGlobalCommand = false
+    public var globalErrorMessage: String?
+    public var snapshots: [DDEVSnapshot] = []
+    public var snapshotErrorMessage: String?
+    public var projectLogsResult: CommandResult?
+    public var projectLogsErrorMessage: String?
+    public var projectConfig: DDEVConfig?
+    public var projectConfigErrorMessage: String?
+    public var projectConfigRestartRecommended = false
+    public var installedAddOns: [DDEVAddon] = []
+    public var addonSearchResults: [DDEVAddon] = DDEVAddon.recommendedOfficial
+    public var addonErrorMessage: String?
+    public var addOnRestartRecommended = false
+    public var addonRawOutput: String?
+    public var diagnosticReport = DDEVDiagnosticReport()
+    public var diagnosticsErrorMessage: String?
+
+    /// Preferences + installed-app concern, extracted to its own model (audit M9). The public
+    /// API below forwards to it so views/tests are unchanged; both are `@Observable`, so views
+    /// reading the forwarders still track the underlying changes.
+    @ObservationIgnored private let preferencesModel: PreferencesModel
 
     public let supportedPHPVersions = ["8.4", "8.3", "8.2", "8.1", "8.0", "7.4"]
 
     private let ddevService: DDEVServicing
     private let projectCache: ProjectCacheStoring
-    private let preferencesStore: AppPreferencesStoring
-    private let appAvailability: AppAvailabilityChecking
     private let scheduler: CommandScheduler
     private let notifier: NotificationScheduling
     private var selectedProjectFallback: DDEVProject?
+    /// Guards `refreshProjectsFromDDEV` against overlapping runs (audit M4). Internal
+    /// serialization only — `isRunningGlobalCommand` is what drives the UI spinner.
+    private var isRefreshInFlight = false
 
     public init(
         ddevService: DDEVServicing = DDEVCommandService(),
@@ -136,14 +139,16 @@ public final class ProjectDashboardViewModel: ObservableObject {
     ) {
         self.ddevService = ddevService
         self.projectCache = projectCache
-        self.preferencesStore = preferencesStore
-        self.appAvailability = appAvailability
         self.scheduler = scheduler
         self.notifier = notifier
-        self.preferences = preferencesStore.loadPreferences()
-        self.installedEditors = appAvailability.installedEditors()
-        self.installedDatabaseTools = appAvailability.installedDatabaseTools()
+        self.preferencesModel = PreferencesModel(preferencesStore: preferencesStore, appAvailability: appAvailability)
     }
+
+    // MARK: - Preferences (forwarded to PreferencesModel)
+
+    public var preferences: AppPreferences { preferencesModel.preferences }
+    public var installedEditors: [EditorChoice] { preferencesModel.installedEditors }
+    public var installedDatabaseTools: [DDEVDatabaseTool] { preferencesModel.installedDatabaseTools }
 
     public var selectedProject: DDEVProject? {
         get {
@@ -160,24 +165,10 @@ public final class ProjectDashboardViewModel: ObservableObject {
         filteredProjects(in: projects)
     }
 
-    public var availableEditors: [EditorChoice] {
-        AppDefaults.availableEditors(installedEditors: installedEditors)
-    }
-
-    public var availableDatabaseTools: [DDEVDatabaseTool] {
-        installedDatabaseTools
-    }
-
-    public var effectiveDefaultEditor: EditorChoice {
-        AppDefaults.effectiveEditor(saved: preferences.defaultEditor, installedEditors: installedEditors)
-    }
-
-    public var effectiveDefaultDatabaseTool: DDEVDatabaseTool? {
-        AppDefaults.effectiveDatabaseTool(
-            saved: preferences.defaultDatabaseTool,
-            installedDatabaseTools: installedDatabaseTools
-        )
-    }
+    public var availableEditors: [EditorChoice] { preferencesModel.availableEditors }
+    public var availableDatabaseTools: [DDEVDatabaseTool] { preferencesModel.availableDatabaseTools }
+    public var effectiveDefaultEditor: EditorChoice { preferencesModel.effectiveDefaultEditor }
+    public var effectiveDefaultDatabaseTool: DDEVDatabaseTool? { preferencesModel.effectiveDefaultDatabaseTool }
 
     public var copyableDiagnosticOutput: String {
         diagnosticReport.copyableOutput
@@ -211,18 +202,15 @@ public final class ProjectDashboardViewModel: ObservableObject {
     }
 
     public func setDefaultEditor(_ editor: EditorChoice?) {
-        preferences.defaultEditor = editor
-        preferencesStore.saveDefaultEditor(editor)
+        preferencesModel.setDefaultEditor(editor)
     }
 
     public func setDefaultDatabaseTool(_ databaseTool: DDEVDatabaseTool?) {
-        preferences.defaultDatabaseTool = databaseTool
-        preferencesStore.saveDefaultDatabaseTool(databaseTool)
+        preferencesModel.setDefaultDatabaseTool(databaseTool)
     }
 
     public func refreshInstalledApps() {
-        installedEditors = appAvailability.installedEditors()
-        installedDatabaseTools = appAvailability.installedDatabaseTools()
+        preferencesModel.refreshInstalledApps()
     }
 
     public func requestNotificationAuthorization() async {
@@ -236,12 +224,12 @@ public final class ProjectDashboardViewModel: ObservableObject {
         do {
             try await refreshProjectsFromDDEV()
         } catch {
-            globalErrorMessage = String(describing: error)
+            globalErrorMessage = error.presentableMessage
         }
     }
 
     public func loadCachedProjectsThenRefresh() async {
-        let loadedCachedProjects = loadCachedProjects()
+        let loadedCachedProjects = await loadCachedProjects()
 
         if loadedCachedProjects {
             await refreshProjectsFromDDEVInBackground()
@@ -256,7 +244,12 @@ public final class ProjectDashboardViewModel: ObservableObject {
         guard !isBusy(selectedProject) else { return }
 
         setActivity(.queued, for: id)
-        await scheduler.acquire()
+        do {
+            try await scheduler.acquire()
+        } catch {
+            setActivity(.idle, for: id) // cancelled while queued (audit L4)
+            return
+        }
         setActivity(.running, for: id)
 
         let outcome = await execute {
@@ -385,6 +378,7 @@ public final class ProjectDashboardViewModel: ObservableObject {
 
     public func loadSnapshotsForSelectedProject() async {
         guard let selectedProject else { return }
+        snapshotErrorMessage = nil
         await runSelectedProjectRead {
             let result = try await self.ddevService.listSnapshots(in: selectedProject.appRoot)
             self.snapshots = DDEVSnapshot.parseListOutput(result.stdout)
@@ -666,9 +660,19 @@ public final class ProjectDashboardViewModel: ObservableObject {
     public func moveSelectedProjectFolderToTrash() {
         guard let selectedProject else { return }
 
+        // The appRoot can originate from the on-disk cache, so don't trust it as the authority
+        // for a destructive op (audit S1). Refuse anything that doesn't resolve to a strict
+        // subpath of the user's home directory before handing it to the Trash.
+        let resolvedPath = URL(fileURLWithPath: selectedProject.appRoot).standardizedFileURL.path
+        let home = URL(fileURLWithPath: NSHomeDirectory()).standardizedFileURL.path
+        guard resolvedPath.hasPrefix(home + "/") else {
+            globalErrorMessage = "Refusing to move \"\(resolvedPath)\" to the Trash: it is outside your home directory."
+            return
+        }
+
         do {
             try FileManager.default.trashItem(
-                at: URL(fileURLWithPath: selectedProject.appRoot),
+                at: URL(fileURLWithPath: resolvedPath),
                 resultingItemURL: nil
             )
             let removedID = selectedProject.id
@@ -677,7 +681,7 @@ public final class ProjectDashboardViewModel: ObservableObject {
             self.selectedProject = projects.first
             globalErrorMessage = nil
         } catch {
-            globalErrorMessage = String(describing: error)
+            globalErrorMessage = error.presentableMessage
         }
     }
 
@@ -699,7 +703,12 @@ public final class ProjectDashboardViewModel: ObservableObject {
 
         setActivity(.queued, for: id)
         // Manual acquire/release (not scheduler.run) so the permit frees before the re-describe read.
-        await scheduler.acquire()              // resumes on MainActor
+        do {
+            try await scheduler.acquire()      // resumes on MainActor
+        } catch {
+            setActivity(.idle, for: id)        // cancelled while queued (audit L4)
+            return
+        }
         setActivity(.running, for: id)
 
         let outcome = await execute(operation)
@@ -728,7 +737,7 @@ public final class ProjectDashboardViewModel: ObservableObject {
             commandStates[id, default: .init()].lastErrorMessage = "Command failed with exit code \(result.exitCode)."
             await notifyIfBackground(project: project, succeeded: false, summary: summary(result))
         case .failure(.other(let error)):
-            commandStates[id, default: .init()].lastErrorMessage = String(describing: error)
+            commandStates[id, default: .init()].lastErrorMessage = error.presentableMessage
             await notifyIfBackground(project: project, succeeded: false, summary: "command failed")
         }
     }
@@ -761,7 +770,7 @@ public final class ProjectDashboardViewModel: ObservableObject {
         if selectedProjectFallback?.id == project.id {
             selectedProjectFallback = projects[index]
         }
-        try? projectCache.saveProjects(projects)
+        try? await projectCache.saveProjects(projects)
     }
 
     private func summary(_ result: CommandResult) -> String {
@@ -799,7 +808,7 @@ public final class ProjectDashboardViewModel: ObservableObject {
         } catch CommandRunnerError.nonZeroExit(let result) {
             globalErrorMessage = "Command failed with exit code \(result.exitCode)."
         } catch {
-            globalErrorMessage = String(describing: error)
+            globalErrorMessage = error.presentableMessage
         }
     }
 
@@ -821,7 +830,7 @@ public final class ProjectDashboardViewModel: ObservableObject {
             recordResult(result, for: id, expandsOutput: false)
             commandStates[id, default: .init()].lastErrorMessage = "Command failed with exit code \(result.exitCode)."
         } catch {
-            commandStates[id, default: .init()].lastErrorMessage = String(describing: error)
+            commandStates[id, default: .init()].lastErrorMessage = error.presentableMessage
         }
     }
 
@@ -840,10 +849,10 @@ public final class ProjectDashboardViewModel: ObservableObject {
                 ])
                 diagnosticsErrorMessage = "Command failed with exit code \(result.exitCode)."
             } else {
-                diagnosticsErrorMessage = String(describing: failure.underlying)
+                diagnosticsErrorMessage = failure.underlying.presentableMessage
             }
         } catch {
-            diagnosticsErrorMessage = String(describing: error)
+            diagnosticsErrorMessage = error.presentableMessage
         }
     }
 
@@ -892,8 +901,10 @@ public final class ProjectDashboardViewModel: ObservableObject {
         do {
             let result = try await ddevService.listSnapshots(in: appRoot)
             snapshots = DDEVSnapshot.parseListOutput(result.stdout)
+            snapshotErrorMessage = nil
         } catch {
-            globalErrorMessage = String(describing: error)
+            // Snapshot-scoped surface, not the list-level global banner (audit M10).
+            snapshotErrorMessage = error.presentableMessage
         }
     }
 
@@ -903,15 +914,22 @@ public final class ProjectDashboardViewModel: ObservableObject {
             installedAddOns = try DDEVAddon.parseListOutput(result.stdout)
             addonRawOutput = installedAddOns.isEmpty ? result.stdout.nilIfBlank : nil
         } catch {
-            addonErrorMessage = String(describing: error)
+            addonErrorMessage = error.presentableMessage
         }
     }
 
     private func refreshProjectsFromDDEV() async throws {
+        // Single in-flight guard so overlapping refreshes (e.g. the cache-warm background
+        // refresh racing a mutation-triggered full refresh) don't stack two listProjects +
+        // N-project describe fan-outs at once (audit M4).
+        guard !isRefreshInFlight else { return }
+        isRefreshInFlight = true
+        defer { isRefreshInFlight = false }
+
         let loadedProjects = try await ddevService.listProjects()
         let enrichedProjects = await enrichProjectsWithDetails(loadedProjects)
         applyProjects(enrichedProjects)
-        try? projectCache.saveProjects(enrichedProjects)
+        try? await projectCache.saveProjects(enrichedProjects)
     }
 
     private func refreshProjectsFromDDEVInBackground() async {
@@ -922,9 +940,9 @@ public final class ProjectDashboardViewModel: ObservableObject {
         }
     }
 
-    private func loadCachedProjects() -> Bool {
+    private func loadCachedProjects() async -> Bool {
         guard projects.isEmpty else { return false }
-        guard let cachedProjects = try? projectCache.loadProjects(), !cachedProjects.isEmpty else { return false }
+        guard let cachedProjects = try? await projectCache.loadProjects(), !cachedProjects.isEmpty else { return false }
 
         applyProjects(cachedProjects)
         return true
@@ -932,6 +950,12 @@ public final class ProjectDashboardViewModel: ObservableObject {
 
     private func applyProjects(_ projects: [DDEVProject]) {
         self.projects = projects
+
+        // Drop per-project command state for projects that have vanished from the list so the
+        // dictionary can't grow unbounded over a long session with project churn (audit M2).
+        // Busy entries are kept so an in-flight command that briefly drops from the list isn't lost.
+        let liveIDs = Set(projects.map(\.id))
+        commandStates = commandStates.filter { liveIDs.contains($0.key) || $0.value.isBusy }
 
         if let selectedProjectID,
            let selectedProject = projects.first(where: { $0.id == selectedProjectID }) {
@@ -945,26 +969,22 @@ public final class ProjectDashboardViewModel: ObservableObject {
 
     private func enrichProjectsWithDetails(_ projects: [DDEVProject]) async -> [DDEVProject] {
         // Each describe is an independent subprocess; running them in parallel turns an
-        // O(N × describe-latency) freeze into roughly O(slowest-describe).
-        await withTaskGroup(of: (Int, DDEVProject).self) { group in
-            for (index, project) in projects.enumerated() {
-                group.addTask { [ddevService] in
-                    do {
-                        let details = try await ddevService.describe(projectName: project.name)
-                        return (index, project.applying(details: details))
-                    } catch {
-                        return (index, project)
-                    }
-                }
+        // O(N × describe-latency) freeze into roughly O(slowest-describe). Bounded to
+        // maxConcurrentDescribes so a large workspace can't put N blocking describes in
+        // flight at once and pressure the global dispatch pool (audit M1).
+        let ddevService = self.ddevService
+        return await concurrentMap(projects, limit: Self.maxConcurrentDescribes) { project in
+            do {
+                let details = try await ddevService.describe(projectName: project.name)
+                return project.applying(details: details)
+            } catch {
+                return project
             }
-
-            var collected = Array<DDEVProject?>(repeating: nil, count: projects.count)
-            for await (index, project) in group {
-                collected[index] = project
-            }
-            return collected.compactMap { $0 }
         }
     }
+
+    /// Cap on concurrent `describe` subprocesses during a refresh fan-out (audit M1).
+    private static let maxConcurrentDescribes = 4
 }
 
 private struct DiagnosticFailure: Error {

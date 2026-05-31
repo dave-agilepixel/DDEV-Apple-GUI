@@ -33,6 +33,8 @@ public struct DDEVExecutableResolver: Sendable {
             "/usr/bin/ddev"
         ]
 
-        return pathExecutables + knownLocations
+        // Known-good absolute locations first; fall back to PATH only if none match, so a
+        // hostile PATH can't shadow ddev with an attacker-controlled binary (audit S3).
+        return knownLocations + pathExecutables
     }
 }

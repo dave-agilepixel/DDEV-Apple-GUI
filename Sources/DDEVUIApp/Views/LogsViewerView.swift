@@ -3,20 +3,20 @@ import SwiftUI
 
 struct LogsViewerView: View {
     let project: DDEVProject
-    @ObservedObject var viewModel: ProjectDashboardViewModel
+    var viewModel: ProjectDashboardViewModel
 
     @State private var service: DDEVLogRequest.Service = .web
     @State private var tailCount = 100
     @State private var includeTimestamps = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        // Join stdout/stderr once per render instead of recomputing the (potentially large)
+        // string for each use in the body (audit L2).
+        let logs = logText
+        return VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("Logs")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                    .kerning(0.5)
+                    .sectionHeaderStyle()
                 Spacer()
                 Button {
                     Task { await refreshLogs() }
@@ -53,11 +53,13 @@ struct LogsViewerView: View {
                 } label: {
                     Label("Copy", systemImage: "doc.on.doc")
                 }
-                .disabled(logText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .disabled(logs.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             .buttonStyle(.bordered)
             .controlSize(.regular)
-            .disabled(viewModel.isSelectedProjectBusy)
+            // Consistent "busy" axis for the logs panel: disable controls while a read is in
+            // flight too, matching the spinner which keys on isReadingData (audit L14c).
+            .disabled(viewModel.isSelectedProjectBusy || viewModel.selectedProjectState.isReadingData)
 
             if project.status != .running {
                 Label("Start the project before refreshing logs.", systemImage: "pause.circle")
@@ -74,7 +76,7 @@ struct LogsViewerView: View {
             if viewModel.selectedProjectState.isReadingData {
                 ProgressView("Loading logs...")
                     .controlSize(.small)
-            } else if logText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            } else if logs.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 ContentUnavailableView(
                     "No Log Output",
                     systemImage: "doc.text.magnifyingglass",
@@ -82,15 +84,20 @@ struct LogsViewerView: View {
                 )
                 .frame(maxWidth: .infinity, minHeight: 120)
             } else {
-                TextEditor(text: .constant(logText))
-                    .font(.system(.caption, design: .monospaced))
-                    .textSelection(.enabled)
-                    .scrollContentBackground(.hidden)
-                    .frame(minHeight: 240, maxHeight: 400)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6)
-                            .stroke(.separator, lineWidth: 1)
-                    )
+                // Selectable Text in a ScrollView (as CommandOutputView does) rather than an
+                // editable TextEditor bound via .constant just to get selection (audit L2).
+                ScrollView {
+                    Text(logs)
+                        .font(.system(.caption, design: .monospaced))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(8)
+                }
+                .frame(minHeight: 240, maxHeight: 400)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(.separator, lineWidth: 1)
+                )
             }
         }
         .task(id: loadTrigger) {
@@ -127,8 +134,7 @@ struct LogsViewerView: View {
     }
 
     private func copyLogsToPasteboard() {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(logText, forType: .string)
+        Pasteboard.copy(logText)
     }
 }
 

@@ -96,7 +96,11 @@ public struct DDEVSnapshot: Equatable, Identifiable, Sendable {
                 let version = String(baseName[range.upperBound...])
                     .replacingOccurrences(of: "_", with: ".")
 
-                guard !snapshotName.isEmpty, !version.isEmpty else { break }
+                // Only treat the suffix as a version if it actually looks like one (digits and
+                // dots). Otherwise fall back to the bare name so an unexpected shape isn't
+                // mangled into a fake version (audit L6).
+                let isVersionLike = !version.isEmpty && version.allSatisfy { $0.isNumber || $0 == "." }
+                guard !snapshotName.isEmpty, isVersionLike else { break }
                 return DDEVSnapshot(name: snapshotName, databaseSuffix: "\(databaseType) \(version)")
             }
         }

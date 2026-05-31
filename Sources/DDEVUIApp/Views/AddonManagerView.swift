@@ -2,7 +2,7 @@ import SwiftUI
 
 struct AddonManagerView: View {
     let project: DDEVProject
-    @ObservedObject var viewModel: ProjectDashboardViewModel
+    var viewModel: ProjectDashboardViewModel
 
     @State private var showSearchSheet = false
     @State private var pendingRemoval: DDEVAddon?
@@ -11,10 +11,7 @@ struct AddonManagerView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("Add-ons")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                    .kerning(0.5)
+                    .sectionHeaderStyle()
                 Spacer()
                 Button {
                     Task { await viewModel.loadInstalledAddOnsForSelectedProject() }
@@ -97,14 +94,7 @@ struct AddonManagerView: View {
         }
         .confirmationDialog(
             "Remove add-on?",
-            isPresented: Binding(
-                get: { pendingRemoval != nil },
-                set: { isPresented in
-                    if !isPresented {
-                        pendingRemoval = nil
-                    }
-                }
-            ),
+            isPresented: .isPresent($pendingRemoval),
             presenting: pendingRemoval
         ) { addon in
             Button("Remove \(addon.repository)", role: .destructive) {
@@ -130,14 +120,17 @@ struct AddonManagerView: View {
 
 private struct AddonSearchSheet: View {
     let project: DDEVProject
-    @ObservedObject var viewModel: ProjectDashboardViewModel
+    var viewModel: ProjectDashboardViewModel
     @Environment(\.dismiss) private var dismiss
 
     @State private var query = ""
     @State private var pendingInstall: DDEVAddon?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        // Build the installed-repository set once per render instead of rebuilding it three
+        // times for every row in the results list (audit L1).
+        let installed = installedRepositories
+        return VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 12) {
                 Image(systemName: "shippingbox.circle.fill")
                     .font(.largeTitle)
@@ -183,9 +176,9 @@ private struct AddonSearchSheet: View {
                     ForEach(viewModel.addonSearchResults) { addon in
                         AddonRow(
                             addon: addon,
-                            actionTitle: installedRepositories.contains(addon.repository) ? "Installed" : "Install",
-                            actionSystemImage: installedRepositories.contains(addon.repository) ? "checkmark" : "plus",
-                            actionDisabled: installedRepositories.contains(addon.repository) || viewModel.isSelectedProjectBusy
+                            actionTitle: installed.contains(addon.repository) ? "Installed" : "Install",
+                            actionSystemImage: installed.contains(addon.repository) ? "checkmark" : "plus",
+                            actionDisabled: installed.contains(addon.repository) || viewModel.isSelectedProjectBusy
                         ) {
                             pendingInstall = addon
                         }
@@ -204,14 +197,7 @@ private struct AddonSearchSheet: View {
         .frame(width: 640, height: 560)
         .confirmationDialog(
             "Install add-on?",
-            isPresented: Binding(
-                get: { pendingInstall != nil },
-                set: { isPresented in
-                    if !isPresented {
-                        pendingInstall = nil
-                    }
-                }
-            ),
+            isPresented: .isPresent($pendingInstall),
             presenting: pendingInstall
         ) { addon in
             Button("Install \(addon.repository)") {

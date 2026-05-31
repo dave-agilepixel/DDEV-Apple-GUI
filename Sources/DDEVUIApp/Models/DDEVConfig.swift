@@ -36,6 +36,42 @@ public struct DDEVConfig: Equatable, Sendable, CustomStringConvertible {
         self.additionalHostnames = additionalHostnames
     }
 
+    /// Returns a copy with only the field(s) addressed by `change` updated. The config editor
+    /// uses this to advance just the applied row's baseline after a successful apply, so other
+    /// rows' unsaved-change indicators stay accurate (audit M7).
+    public func applying(_ change: DDEVConfigChange) -> DDEVConfig {
+        var php = phpVersion, node = nodeJSVersion
+        var dbType = databaseType, dbVersion = databaseVersion
+        var web = webserverType, perf = performanceMode
+        var xdebug = xdebugEnabled, xhprof = xhprofMode
+        var uploads = uploadDirs, hostnames = additionalHostnames
+
+        switch change {
+        case .phpVersion(let value): php = value
+        case .nodeJSVersion(let value): node = value
+        case .database(let type, let version): dbType = type; dbVersion = version
+        case .webserverType(let value): web = value
+        case .performanceMode(let value): perf = value
+        case .xdebugEnabled(let value): xdebug = value
+        case .xhprofMode(let value): xhprof = value
+        case .uploadDirs(let value): uploads = value
+        case .additionalHostnames(let value): hostnames = value
+        }
+
+        return DDEVConfig(
+            phpVersion: php,
+            nodeJSVersion: node,
+            databaseType: dbType,
+            databaseVersion: dbVersion,
+            webserverType: web,
+            performanceMode: perf,
+            xdebugEnabled: xdebug,
+            xhprofMode: xhprof,
+            uploadDirs: uploads,
+            additionalHostnames: hostnames
+        )
+    }
+
     public static func parseYAML(_ yaml: String) throws -> DDEVConfig {
         let parser = DDEVConfigYAMLParser(yaml: yaml)
         let document = parser.parse()

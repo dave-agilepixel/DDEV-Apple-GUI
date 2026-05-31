@@ -2,21 +2,17 @@ import SwiftUI
 
 struct SnapshotManagerView: View {
     let project: DDEVProject
-    @ObservedObject var viewModel: ProjectDashboardViewModel
+    var viewModel: ProjectDashboardViewModel
 
     @State private var snapshotName = ""
     @State private var lastSuggestedSnapshotName = ""
-    @State private var selectedSnapshotID: DDEVSnapshot.ID?
     @State private var pendingConfirmation: SnapshotConfirmation?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("Snapshots")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                    .kerning(0.5)
+                    .sectionHeaderStyle()
                 Spacer()
                 Button {
                     Task { await viewModel.loadSnapshotsForSelectedProject() }
@@ -63,6 +59,19 @@ struct SnapshotManagerView: View {
             .controlSize(.regular)
             .labelStyle(.titleAndIcon)
 
+            if let snapshotErrorMessage = viewModel.snapshotErrorMessage {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.red)
+                    Text(snapshotErrorMessage)
+                        .foregroundStyle(.red)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(10)
+                .background(RoundedRectangle(cornerRadius: 8).fill(.red.opacity(0.08)))
+            }
+
             if viewModel.snapshots.isEmpty {
                 ContentUnavailableView(
                     "No Snapshots",
@@ -102,41 +111,21 @@ struct SnapshotManagerView: View {
         } message: { confirmation in
             Text(confirmation.message(for: project))
         }
-        .onChange(of: viewModel.snapshots) { _, snapshots in
-            if let selectedSnapshotID, !snapshots.contains(where: { $0.id == selectedSnapshotID }) {
-                self.selectedSnapshotID = snapshots.first?.id
-            } else if selectedSnapshotID == nil {
-                selectedSnapshotID = snapshots.first?.id
-            }
-        }
     }
 
     private var snapshotList: some View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(viewModel.snapshots) { snapshot in
                 HStack(spacing: 10) {
-                    Button {
-                        selectedSnapshotID = snapshot.id
-                    } label: {
-                        HStack(spacing: 10) {
-                            Image(systemName: selectedSnapshotID == snapshot.id ? "largecircle.fill.circle" : "circle")
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(snapshot.name)
-                                    .font(.callout.weight(.medium))
-                                if let databaseSuffix = snapshot.databaseSuffix {
-                                    Text(databaseSuffix)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(snapshot.name)
+                            .font(.callout.weight(.medium))
+                        if let databaseSuffix = snapshot.databaseSuffix {
+                            Text(databaseSuffix)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
-                        .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.primary)
-                    .help("Select snapshot")
-                    .accessibilityLabel("Select \(snapshot.name)")
 
                     Spacer(minLength: 0)
 
@@ -161,14 +150,7 @@ struct SnapshotManagerView: View {
     }
 
     private var confirmationBinding: Binding<Bool> {
-        Binding(
-            get: { pendingConfirmation != nil },
-            set: { isPresented in
-                if !isPresented {
-                    pendingConfirmation = nil
-                }
-            }
-        )
+        .isPresent($pendingConfirmation)
     }
 
     private var confirmationTitle: String {

@@ -1,14 +1,16 @@
 import Foundation
-import SwiftUI
+import Observation
 
 @MainActor
-public final class PrerequisiteMonitor: ObservableObject {
-    @Published public private(set) var state: PrerequisiteState = .initial
-    @Published public private(set) var isLaunching = false
+@Observable
+public final class PrerequisiteMonitor {
+    public private(set) var state: PrerequisiteState = .initial
+    public private(set) var isLaunching = false
+    public private(set) var launchErrorMessage: String?
 
     public let pollInterval: Duration
     private let service: PrerequisiteChecking
-    private var pollTask: Task<Void, Never>?
+    @ObservationIgnored private var pollTask: Task<Void, Never>?
 
     public init(
         service: PrerequisiteChecking = WorkspacePrerequisiteService(),
@@ -25,6 +27,13 @@ public final class PrerequisiteMonitor: ObservableObject {
             while !Task.isCancelled {
                 await self.refresh()
                 guard !Task.isCancelled else { return }
+                // Stop polling once everything is healthy — no point spawning docker/ddev
+                // subprocesses forever after the gate is cleared. Clearing pollTask lets
+                // start() re-arm on demand (e.g. when the scene returns to the foreground).
+                if self.state.allSatisfied {
+                    self.pollTask = nil
+                    return
+                }
                 try? await Task.sleep(for: self.pollInterval)
             }
         }
@@ -43,7 +52,12 @@ public final class PrerequisiteMonitor: ObservableObject {
 
     public func launch(_ runtime: DockerRuntime) async {
         isLaunching = true
-        await service.launch(runtime)
+        launchErrorMessage = nil
+        do {
+            try await service.launch(runtime)
+        } catch {
+            launchErrorMessage = "Couldn't start \(runtime.displayName): \(error.presentableMessage)"
+        }
         await refresh()
         isLaunching = false
     }

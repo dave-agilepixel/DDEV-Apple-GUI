@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 struct PrerequisiteSheet: View {
-    @ObservedObject var monitor: PrerequisiteMonitor
+    var monitor: PrerequisiteMonitor
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -20,6 +20,13 @@ struct PrerequisiteSheet: View {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(.quaternary.opacity(0.4))
             )
+
+            if let launchErrorMessage = monitor.launchErrorMessage {
+                Label(launchErrorMessage, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+                    .font(.callout)
+                    .textSelection(.enabled)
+            }
 
             HStack {
                 Button("Quit DDEVUI") {
@@ -252,9 +259,7 @@ private struct InstallMenu: View {
     }
 
     private func copy(_ text: String) {
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(text, forType: .string)
+        Pasteboard.copy(text)
     }
 }
 

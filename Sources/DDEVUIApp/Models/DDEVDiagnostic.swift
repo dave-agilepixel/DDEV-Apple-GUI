@@ -129,7 +129,9 @@ public struct DDEVDiagnosticReport: Equatable, Sendable {
     }
 
     public var copyableOutput: String {
-        entries.map(\.copyableOutput).joined(separator: "\n\n")
+        // Redact secret-looking values so a copied diagnostic report can't leak DB passwords /
+        // tokens / keys into a pasted bug report (audit S2).
+        DiagnosticsRedactor.redact(entries.map(\.copyableOutput).joined(separator: "\n\n"))
     }
 }
 

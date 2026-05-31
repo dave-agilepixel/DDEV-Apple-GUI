@@ -2,7 +2,7 @@ import SwiftUI
 
 struct FrameworkCommandLauncherView: View {
     let project: DDEVProject
-    @ObservedObject var viewModel: ProjectDashboardViewModel
+    var viewModel: ProjectDashboardViewModel
     @State private var pendingCommand: DDEVFrameworkCommand?
 
     private var commands: [DDEVFrameworkCommand] {
@@ -10,13 +10,17 @@ struct FrameworkCommandLauncherView: View {
     }
 
     private var groups: [FrameworkCommandGroup] {
-        commands.reduce(into: []) { groups, command in
-            if let index = groups.firstIndex(where: { $0.title == command.groupTitle }) {
-                groups[index].commands.append(command)
-            } else {
-                groups.append(FrameworkCommandGroup(title: command.groupTitle, commands: [command]))
+        // O(n) grouping that preserves first-seen group order, instead of the previous
+        // O(n²) reduce + firstIndex per command (audit L1).
+        var order: [String] = []
+        var commandsByTitle: [String: [DDEVFrameworkCommand]] = [:]
+        for command in commands {
+            if commandsByTitle[command.groupTitle] == nil {
+                order.append(command.groupTitle)
             }
+            commandsByTitle[command.groupTitle, default: []].append(command)
         }
+        return order.map { FrameworkCommandGroup(title: $0, commands: commandsByTitle[$0] ?? []) }
     }
 
     var body: some View {
@@ -24,10 +28,7 @@ struct FrameworkCommandLauncherView: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     Text("Commands")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
-                        .kerning(0.5)
+                        .sectionHeaderStyle()
                     Spacer()
                 }
 
@@ -53,14 +54,7 @@ struct FrameworkCommandLauncherView: View {
             }
             .confirmationDialog(
                 pendingCommand?.title ?? "Run Command?",
-                isPresented: Binding(
-                    get: { pendingCommand != nil },
-                    set: { isPresented in
-                        if !isPresented {
-                            pendingCommand = nil
-                        }
-                    }
-                ),
+                isPresented: .isPresent($pendingCommand),
                 presenting: pendingCommand
             ) { command in
                 Button("Run", role: command.risk == .destructive ? .destructive : nil) {

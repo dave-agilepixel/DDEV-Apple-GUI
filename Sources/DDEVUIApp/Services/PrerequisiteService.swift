@@ -3,18 +3,20 @@ import Foundation
 
 public protocol PrerequisiteChecking: Sendable {
     func check() async -> PrerequisiteState
-    func launch(_ runtime: DockerRuntime) async
+    func launch(_ runtime: DockerRuntime) async throws
 }
 
 public final class WorkspacePrerequisiteService: PrerequisiteChecking, @unchecked Sendable {
     private let commandRunner: CommandRunning
     private let ddevResolver: DDEVExecutableResolver
+    private let dockerResolver: DockerExecutableResolver
     private let installedRuntimeLookup: @Sendable (DockerRuntime) -> Bool
     private let runningRuntimeLookup: @Sendable (DockerRuntime) -> Bool
 
     public init(
         commandRunner: CommandRunning = ProcessCommandRunner(),
         ddevResolver: DDEVExecutableResolver = DDEVExecutableResolver(),
+        dockerResolver: DockerExecutableResolver = DockerExecutableResolver(),
         installedRuntimeLookup: @escaping @Sendable (DockerRuntime) -> Bool = { runtime in
             NSWorkspace.shared.urlForApplication(withBundleIdentifier: runtime.bundleIdentifier) != nil
         },
@@ -24,6 +26,7 @@ public final class WorkspacePrerequisiteService: PrerequisiteChecking, @unchecke
     ) {
         self.commandRunner = commandRunner
         self.ddevResolver = ddevResolver
+        self.dockerResolver = dockerResolver
         self.installedRuntimeLookup = installedRuntimeLookup
         self.runningRuntimeLookup = runningRuntimeLookup
     }
@@ -34,15 +37,13 @@ public final class WorkspacePrerequisiteService: PrerequisiteChecking, @unchecke
         return PrerequisiteState(docker: await docker, ddev: await ddev)
     }
 
-    public func launch(_ runtime: DockerRuntime) async {
+    public func launch(_ runtime: DockerRuntime) async throws {
         guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: runtime.bundleIdentifier) else { return }
         let config = NSWorkspace.OpenConfiguration()
         config.activates = false
-        do {
-            _ = try await NSWorkspace.shared.openApplication(at: url, configuration: config)
-        } catch {
-            // Subsequent polls will reflect whether the launch succeeded.
-        }
+        // Propagate launch failures (app damaged, Gatekeeper block) instead of swallowing them,
+        // so the prerequisite sheet can tell the user why Docker never started (audit L5).
+        _ = try await NSWorkspace.shared.openApplication(at: url, configuration: config)
     }
 
     private func checkDocker() async -> DockerStatus {
@@ -59,7 +60,11 @@ public final class WorkspacePrerequisiteService: PrerequisiteChecking, @unchecke
     private func dockerDaemonReady() async -> Bool {
         do {
             _ = try await commandRunner.run(
-                CommandSpec(executable: "docker", arguments: ["info", "--format", "{{.ServerVersion}}"])
+                CommandSpec(
+                    executable: dockerResolver.resolve(),
+                    arguments: ["info", "--format", "{{.ServerVersion}}"],
+                    timeout: .seconds(15)
+                )
             )
             return true
         } catch {
@@ -71,7 +76,7 @@ public final class WorkspacePrerequisiteService: PrerequisiteChecking, @unchecke
         let path = ddevResolver.resolve()
         do {
             let result = try await commandRunner.run(
-                CommandSpec(executable: path, arguments: ["version", "--json-output"])
+                CommandSpec(executable: path, arguments: ["version", "--json-output"], timeout: .seconds(15))
             )
             return .ok(version: Self.parseDDEVVersion(from: result.stdout))
         } catch {
@@ -124,7 +129,7 @@ public final class StaticPrerequisiteService: PrerequisiteChecking, @unchecked S
         }
     }
 
-    public func launch(_ runtime: DockerRuntime) async {
+    public func launch(_ runtime: DockerRuntime) async throws {
         launchHandler?(runtime)
     }
 }

@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct ProjectListView: View {
-    @ObservedObject var viewModel: ProjectDashboardViewModel
+    @Bindable var viewModel: ProjectDashboardViewModel
     @FocusState private var searchFocused: Bool
 
     var body: some View {
@@ -124,7 +124,7 @@ struct ProjectListView: View {
 
 private struct ProjectRow: View {
     let project: DDEVProject
-    @ObservedObject var viewModel: ProjectDashboardViewModel
+    var viewModel: ProjectDashboardViewModel
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {

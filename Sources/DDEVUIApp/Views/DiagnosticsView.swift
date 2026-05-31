@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 struct DiagnosticsView: View {
-    @ObservedObject var viewModel: ProjectDashboardViewModel
+    var viewModel: ProjectDashboardViewModel
     @State private var confirmMutagenReset = false
 
     private var selectedProject: DDEVProject? {
@@ -65,10 +65,7 @@ struct DiagnosticsView: View {
     private var runControls: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Health Checks")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-                .kerning(0.5)
+                .sectionHeaderStyle()
 
             HStack(spacing: 10) {
                 Button {
@@ -106,10 +103,7 @@ struct DiagnosticsView: View {
     private var mutagenControls: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Mutagen")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-                .kerning(0.5)
+                .sectionHeaderStyle()
 
             HStack(spacing: 8) {
                 mutagenButton(.status, title: "Status", systemImage: "waveform.path.ecg")
@@ -129,10 +123,7 @@ struct DiagnosticsView: View {
     private var resultsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Output")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-                .kerning(0.5)
+                .sectionHeaderStyle()
 
             if viewModel.diagnosticReport.entries.isEmpty {
                 ContentUnavailableView(
@@ -163,8 +154,7 @@ struct DiagnosticsView: View {
 
     private func copy(_ output: String) {
         guard !output.isEmpty else { return }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(output, forType: .string)
+        Pasteboard.copy(output)
     }
 }
 
