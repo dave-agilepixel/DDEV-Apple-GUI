@@ -739,7 +739,7 @@ ForEach(results) { entry <span class="tok-k">in</span> ... }</code></pre>
     </div>
   </details>
 
-  <details class="finding" data-sev="SECURITY">
+  <details class="finding done" data-sev="SECURITY">
     <summary>
       <span class="badge SECURITY">SEC</span>
       <span>
@@ -749,6 +749,7 @@ ForEach(results) { entry <span class="tok-k">in</span> ... }</code></pre>
       </span>
     </summary>
     <div class="body">
+      <div class="resolution"><b>RESOLVED 2026-05-31</b> — New <code>DiagnosticsRedactor</code> masks the value side of any <code>KEY=value</code>/<code>KEY: value</code> line whose key contains a sensitive token (<code>PASSWORD</code>, <code>SECRET</code>, <code>TOKEN</code>, <code>KEY</code>, <code>DB_</code>, <code>AWS_</code>) with <code>[REDACTED]</code>, applied in <code>DDEVDiagnosticReport.copyableOutput</code> so everything reaching the pasteboard is scrubbed; benign lines and command metadata are preserved. Covered by <code>DiagnosticsRedactorTests</code>.</div>
       <h4>What's wrong &amp; why</h4>
       <p><code>ddev utility diagnose</code> output can include DB passwords and environment variables; the Copy button puts the whole blob on the pasteboard, easy to paste into a public issue/chat.</p>
       <h4>Suggested fix</h4>
