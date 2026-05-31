@@ -315,7 +315,7 @@ commandStates = commandStates.filter { liveIDs.contains($0.key) || $0.value.isBu
     </div>
   </details>
 
-  <details class="finding" data-sev="MEDIUM">
+  <details class="finding done" data-sev="MEDIUM">
     <summary>
       <span class="badge MEDIUM">MEDIUM</span>
       <span>
@@ -325,6 +325,7 @@ commandStates = commandStates.filter { liveIDs.contains($0.key) || $0.value.isBu
       </span>
     </summary>
     <div class="body">
+      <div class="resolution"><b>RESOLVED 2026-05-31</b> — <code>ProjectCacheStoring.loadProjects/saveProjects</code> are now <code>async</code>. The stores are non-actor-isolated, so when the <code>@MainActor</code> view model <code>await</code>s them the JSON encode/decode + disk I/O run off the main actor instead of stuttering the hot refresh path. All four VM call sites and the tests were migrated to <code>await</code>.</div>
       <h4>What's wrong</h4>
       <p><code>FileProjectCacheStore.loadProjects()</code> / <code>saveProjects()</code> do synchronous <code>Data(contentsOf:)</code> / <code>data.write(to:)</code> plus JSON encode/decode, and are called from the <code>@MainActor</code> view model on every refresh and re-describe.</p>
       <h4>Why it matters</h4>

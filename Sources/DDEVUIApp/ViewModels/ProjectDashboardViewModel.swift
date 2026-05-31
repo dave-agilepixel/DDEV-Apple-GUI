@@ -245,7 +245,7 @@ public final class ProjectDashboardViewModel: ObservableObject {
     }
 
     public func loadCachedProjectsThenRefresh() async {
-        let loadedCachedProjects = loadCachedProjects()
+        let loadedCachedProjects = await loadCachedProjects()
 
         if loadedCachedProjects {
             await refreshProjectsFromDDEVInBackground()
@@ -766,7 +766,7 @@ public final class ProjectDashboardViewModel: ObservableObject {
         if selectedProjectFallback?.id == project.id {
             selectedProjectFallback = projects[index]
         }
-        try? projectCache.saveProjects(projects)
+        try? await projectCache.saveProjects(projects)
     }
 
     private func summary(_ result: CommandResult) -> String {
@@ -925,7 +925,7 @@ public final class ProjectDashboardViewModel: ObservableObject {
         let loadedProjects = try await ddevService.listProjects()
         let enrichedProjects = await enrichProjectsWithDetails(loadedProjects)
         applyProjects(enrichedProjects)
-        try? projectCache.saveProjects(enrichedProjects)
+        try? await projectCache.saveProjects(enrichedProjects)
     }
 
     private func refreshProjectsFromDDEVInBackground() async {
@@ -936,9 +936,9 @@ public final class ProjectDashboardViewModel: ObservableObject {
         }
     }
 
-    private func loadCachedProjects() -> Bool {
+    private func loadCachedProjects() async -> Bool {
         guard projects.isEmpty else { return false }
-        guard let cachedProjects = try? projectCache.loadProjects(), !cachedProjects.isEmpty else { return false }
+        guard let cachedProjects = try? await projectCache.loadProjects(), !cachedProjects.isEmpty else { return false }
 
         applyProjects(cachedProjects)
         return true

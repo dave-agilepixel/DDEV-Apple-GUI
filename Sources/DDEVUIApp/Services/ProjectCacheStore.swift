@@ -1,10 +1,13 @@
 import Foundation
 
 public protocol ProjectCacheStoring: Sendable {
-    func loadProjects() throws -> [DDEVProject]
-    func saveProjects(_ projects: [DDEVProject]) throws
+    func loadProjects() async throws -> [DDEVProject]
+    func saveProjects(_ projects: [DDEVProject]) async throws
 }
 
+/// The cache is a cold-start display hint, so eventual consistency is fine. The store is a
+/// non-actor-isolated value type and its members are `async`, so JSON encode/decode + disk I/O
+/// run off the `@MainActor` caller rather than stuttering the hot refresh path (audit M3).
 public struct FileProjectCacheStore: ProjectCacheStoring {
     private let cacheDirectory: URL
     private let cacheFileName = "projects-cache.json"
@@ -16,7 +19,7 @@ public struct FileProjectCacheStore: ProjectCacheStoring {
         )[0].appendingPathComponent("DDEVUI", isDirectory: true)
     }
 
-    public func loadProjects() throws -> [DDEVProject] {
+    public func loadProjects() async throws -> [DDEVProject] {
         let cacheFileURL = cacheDirectory.appendingPathComponent(cacheFileName, isDirectory: false)
         guard FileManager.default.fileExists(atPath: cacheFileURL.path) else {
             return []
@@ -26,7 +29,7 @@ public struct FileProjectCacheStore: ProjectCacheStoring {
         return try JSONDecoder().decode([DDEVProject].self, from: data)
     }
 
-    public func saveProjects(_ projects: [DDEVProject]) throws {
+    public func saveProjects(_ projects: [DDEVProject]) async throws {
         try FileManager.default.createDirectory(
             at: cacheDirectory,
             withIntermediateDirectories: true
@@ -91,7 +94,7 @@ public final class InMemoryProjectCacheStore: ProjectCacheStoring, @unchecked Se
         self.storedSaveError = saveError
     }
 
-    public func loadProjects() throws -> [DDEVProject] {
+    public func loadProjects() async throws -> [DDEVProject] {
         try lock.withLock {
             if let storedLoadError {
                 throw storedLoadError
@@ -101,7 +104,7 @@ public final class InMemoryProjectCacheStore: ProjectCacheStoring, @unchecked Se
         }
     }
 
-    public func saveProjects(_ projects: [DDEVProject]) throws {
+    public func saveProjects(_ projects: [DDEVProject]) async throws {
         try lock.withLock {
             if let storedSaveError {
                 throw storedSaveError
