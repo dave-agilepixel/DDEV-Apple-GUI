@@ -40,6 +40,9 @@ public struct FileProjectCacheStore: ProjectCacheStoring {
         let data = try JSONEncoder().encode(projects)
         let cacheFileURL = cacheDirectory.appendingPathComponent(cacheFileName, isDirectory: false)
         try data.write(to: cacheFileURL, options: .atomic)
+        // Owner-only: the cache holds appRoots later used as a process CWD and trash target, so
+        // it must not be world-readable/-writable by other local users (audit S1).
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: cacheFileURL.path)
     }
 }
 

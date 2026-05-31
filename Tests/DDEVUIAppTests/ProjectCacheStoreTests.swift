@@ -32,6 +32,18 @@ final class ProjectCacheStoreTests: XCTestCase {
         XCTAssertEqual(loaded, [.sampleWordPress])
     }
 
+    func testFileProjectCacheStoreWritesOwnerOnlyPermissions() async throws {
+        let directory = try temporaryDirectory()
+        let store = FileProjectCacheStore(cacheDirectory: directory)
+
+        try await store.saveProjects([.sampleWordPress])
+
+        let cacheFile = directory.appendingPathComponent("projects-cache.json").path
+        let attributes = try FileManager.default.attributesOfItem(atPath: cacheFile)
+        let permissions = (attributes[.posixPermissions] as? NSNumber)?.intValue
+        XCTAssertEqual(permissions, 0o600, "Cache must be written owner read/write only, not world-readable")
+    }
+
     func testInMemoryProjectCacheStoreExposesMutableProjects() async throws {
         let store = InMemoryProjectCacheStore(projects: [.sampleWordPress])
 

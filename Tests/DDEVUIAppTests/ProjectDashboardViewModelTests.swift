@@ -814,6 +814,28 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertNil(viewModel.globalErrorMessage, "…not the list-level global banner")
     }
 
+    // MARK: - S1: trash path is asserted under the home directory
+
+    func testTrashRefusesFolderOutsideHomeDirectory() {
+        let outsideProject = DDEVProject(
+            name: "evil", appRoot: "/opt/ddevui-evil-target", shortRoot: "/opt/ddevui-evil-target",
+            status: .stopped, statusDescription: "stopped", projectType: .php, docroot: "",
+            primaryURL: nil, httpURL: nil, httpsURL: nil, mailpitURL: nil, mailpitHTTPSURL: nil,
+            xhguiURL: nil, xhguiHTTPSURL: nil, xhguiStatus: nil,
+            mutagenEnabled: false, mutagenStatus: nil, phpVersion: nil
+        )
+        let viewModel = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: [outsideProject]))
+        viewModel.projects = [outsideProject]
+        viewModel.selectedProject = outsideProject
+
+        viewModel.moveSelectedProjectFolderToTrash()
+
+        XCTAssertTrue(viewModel.globalErrorMessage?.contains("outside your home directory") ?? false,
+                      "A cache-supplied appRoot outside the home directory is refused before trashing")
+        XCTAssertTrue(viewModel.projects.contains(where: { $0.id == outsideProject.id }),
+                      "The project is not removed when the trash is refused")
+    }
+
     // MARK: - M2: commandStates pruning
 
     func testApplyProjectsPrunesStaleCommandStates() async {

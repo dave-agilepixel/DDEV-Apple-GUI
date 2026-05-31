@@ -671,9 +671,19 @@ public final class ProjectDashboardViewModel: ObservableObject {
     public func moveSelectedProjectFolderToTrash() {
         guard let selectedProject else { return }
 
+        // The appRoot can originate from the on-disk cache, so don't trust it as the authority
+        // for a destructive op (audit S1). Refuse anything that doesn't resolve to a strict
+        // subpath of the user's home directory before handing it to the Trash.
+        let resolvedPath = URL(fileURLWithPath: selectedProject.appRoot).standardizedFileURL.path
+        let home = URL(fileURLWithPath: NSHomeDirectory()).standardizedFileURL.path
+        guard resolvedPath.hasPrefix(home + "/") else {
+            globalErrorMessage = "Refusing to move \"\(resolvedPath)\" to the Trash: it is outside your home directory."
+            return
+        }
+
         do {
             try FileManager.default.trashItem(
-                at: URL(fileURLWithPath: selectedProject.appRoot),
+                at: URL(fileURLWithPath: resolvedPath),
                 resultingItemURL: nil
             )
             let removedID = selectedProject.id

@@ -721,7 +721,7 @@ ForEach(results) { entry <span class="tok-k">in</span> ... }</code></pre>
 
   <!-- ===================== SECURITY ===================== -->
 
-  <details class="finding" data-sev="SECURITY">
+  <details class="finding done" data-sev="SECURITY">
     <summary>
       <span class="badge SECURITY">SEC</span>
       <span>
@@ -731,6 +731,7 @@ ForEach(results) { entry <span class="tok-k">in</span> ... }</code></pre>
       </span>
     </summary>
     <div class="body">
+      <div class="resolution"><b>RESOLVED 2026-05-31</b> — <code>FileProjectCacheStore.saveProjects</code> now sets <code>posixPermissions: 0o600</code> on the cache file (owner-only), removing the tamper vector at the source. As defence-in-depth, <code>moveSelectedProjectFolderToTrash</code> now standardises the <code>appRoot</code> and refuses to trash anything that isn't a strict subpath of <code>NSHomeDirectory()</code>, with a clear error. The process-CWD use of <code>appRoot</code> is non-destructive (a wrong CWD just makes the ddev command fail) and is covered by the same 0600 tamper-prevention. Covered by an owner-only-permissions test and a refuse-outside-home test.</div>
       <h4>What's wrong &amp; why</h4>
       <p><code>projects-cache.json</code> is written with the default umask in Application Support, then its decoded <code>appRoot</code> is used verbatim as the process working directory and as the <b>trash target</b> in <code>moveSelectedProjectFolderToTrash</code>. A tampered cache could redirect command execution into, or trash, an arbitrary directory before the next <code>ddev list</code> re-validates. Local-only, but the trash path is destructive.</p>
       <h4>Suggested fix</h4>
