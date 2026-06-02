@@ -24,6 +24,16 @@ public struct CommandSpec: Equatable, Sendable {
 
 public protocol CommandRunning: Sendable {
     func run(_ spec: CommandSpec) async throws -> CommandResult
+    /// Streaming variant: invokes `onOutputLine` once per completed output line (stdout+stderr
+    /// interleaved as produced) while the child runs. The buffered `CommandResult` is unchanged.
+    func run(_ spec: CommandSpec, onOutputLine: (@Sendable (String) -> Void)?) async throws -> CommandResult
+}
+
+public extension CommandRunning {
+    // Default for conformers that don't stream: ignore the handler, run buffered.
+    func run(_ spec: CommandSpec, onOutputLine: (@Sendable (String) -> Void)?) async throws -> CommandResult {
+        try await run(spec)
+    }
 }
 
 public enum CommandRunnerError: Error, Equatable {
@@ -44,13 +54,18 @@ public final class ProcessCommandRunner: CommandRunning, @unchecked Sendable {
     }
 
     public func run(_ spec: CommandSpec) async throws -> CommandResult {
+        try await run(spec, onOutputLine: nil)
+    }
+
+    public func run(_ spec: CommandSpec, onOutputLine: (@Sendable (String) -> Void)?) async throws -> CommandResult {
         let controller = ProcessController()
         let cap = maxCapturedBytes
         let result: CommandResult = try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<CommandResult, Error>) in
                 DispatchQueue.global(qos: .userInitiated).async {
                     do {
-                        continuation.resume(returning: try Self.executeBlocking(spec, controller: controller, maxCapturedBytes: cap))
+                        continuation.resume(returning: try Self.executeBlocking(
+                            spec, controller: controller, maxCapturedBytes: cap, onOutputLine: onOutputLine))
                     } catch {
                         continuation.resume(throwing: error)
                     }
@@ -73,7 +88,8 @@ public final class ProcessCommandRunner: CommandRunning, @unchecked Sendable {
     // Blocking implementation, intended to run on a background dispatch queue.
     // Drains stdout and stderr concurrently while the child runs so we don't deadlock
     // on output larger than the pipe kernel buffer (16-64 KiB).
-    private static func executeBlocking(_ spec: CommandSpec, controller: ProcessController, maxCapturedBytes: Int) throws -> CommandResult {
+    private static func executeBlocking(_ spec: CommandSpec, controller: ProcessController, maxCapturedBytes: Int,
+                                        onOutputLine: (@Sendable (String) -> Void)?) throws -> CommandResult {
         let startedAt = Date()
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
@@ -108,15 +124,18 @@ public final class ProcessCommandRunner: CommandRunning, @unchecked Sendable {
         let group = DispatchGroup()
         let readQueue = DispatchQueue(label: "ddevui.process-reader", attributes: .concurrent)
 
+        let stdoutLineBuffer = LineSplitter(onLine: onOutputLine)
+        let stderrLineBuffer = LineSplitter(onLine: onOutputLine)
+
         group.enter()
         readQueue.async {
-            Self.drain(stdoutPipe.fileHandleForReading, into: stdoutBuffer, cap: maxCapturedBytes)
+            Self.drain(stdoutPipe.fileHandleForReading, into: stdoutBuffer, cap: maxCapturedBytes, lineSplitter: stdoutLineBuffer)
             group.leave()
         }
 
         group.enter()
         readQueue.async {
-            Self.drain(stderrPipe.fileHandleForReading, into: stderrBuffer, cap: maxCapturedBytes)
+            Self.drain(stderrPipe.fileHandleForReading, into: stderrBuffer, cap: maxCapturedBytes, lineSplitter: stderrLineBuffer)
             group.leave()
         }
 
@@ -135,6 +154,8 @@ public final class ProcessCommandRunner: CommandRunning, @unchecked Sendable {
         process.waitUntilExit()
         watchdog?.cancel()
         group.wait()
+        stdoutLineBuffer.flush()
+        stderrLineBuffer.flush()
 
         let stdout = Self.decode(stdoutBuffer, cap: maxCapturedBytes)
         let stderr = Self.decode(stderrBuffer, cap: maxCapturedBytes)
@@ -153,11 +174,12 @@ public final class ProcessCommandRunner: CommandRunning, @unchecked Sendable {
 
     /// Reads `handle` to EOF in chunks, capturing at most `cap` bytes into `buffer` while still
     /// fully draining the pipe so the child never blocks writing to a full kernel buffer (audit M5).
-    private static func drain(_ handle: FileHandle, into buffer: PipeBuffer, cap: Int) {
+    private static func drain(_ handle: FileHandle, into buffer: PipeBuffer, cap: Int, lineSplitter: LineSplitter) {
         while true {
             let chunk = handle.availableData
             if chunk.isEmpty { break } // EOF
             buffer.appendCapped(chunk, cap: cap)
+            lineSplitter.consume(chunk)
         }
     }
 
@@ -167,6 +189,46 @@ public final class ProcessCommandRunner: CommandRunning, @unchecked Sendable {
         guard buffer.wasTruncated else { return text }
         let limit = cap >= 1024 * 1024 ? "\(cap / (1024 * 1024)) MiB" : "\(cap) bytes"
         return text + "\n…[output truncated at \(limit)]"
+    }
+
+    /// Splits a byte stream into UTF-8 lines and invokes `onLine` per complete line. Lock-guarded
+    /// because the two pipe drains run on a concurrent queue. A no-op when `onLine` is nil.
+    private final class LineSplitter: @unchecked Sendable {
+        private let lock = NSLock()
+        private let onLine: (@Sendable (String) -> Void)?
+        private var pending = Data()
+
+        init(onLine: (@Sendable (String) -> Void)?) { self.onLine = onLine }
+
+        func consume(_ chunk: Data) {
+            guard let onLine else { return }
+            let completed: [String] = lock.withLock {
+                pending.append(chunk)
+                var lines: [String] = []
+                while let nl = pending.firstIndex(of: 0x0A) {
+                    let lineData = pending[pending.startIndex..<nl]
+                    lines.append(String(decoding: lineData, as: UTF8.self)
+                        .trimmingCharacters(in: CharacterSet(charactersIn: "\r")))
+                    // Rebase the remainder to a fresh zero-based Data so subsequent
+                    // firstIndex / slicing arithmetic stays valid regardless of how
+                    // Data retains its original index range after a removeSubrange.
+                    pending = Data(pending[pending.index(after: nl)...])
+                }
+                return lines
+            }
+            completed.forEach(onLine)
+        }
+
+        func flush() {
+            guard let onLine else { return }
+            let leftover: String? = lock.withLock {
+                guard !pending.isEmpty else { return nil }
+                let s = String(decoding: pending, as: UTF8.self)
+                pending.removeAll()
+                return s.isEmpty ? nil : s
+            }
+            if let leftover { onLine(leftover) }
+        }
     }
 
     // Lock-guarded accumulator so the per-pipe drain on a background dispatch queue can

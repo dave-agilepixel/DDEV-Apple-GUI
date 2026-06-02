@@ -72,4 +72,28 @@ final class ProcessCommandRunnerTests: XCTestCase {
         XCTAssertEqual(result.exitCode, 0)
         XCTAssertFalse(result.wasCancelled)
     }
+
+    func testRunStreamsOutputLines() async throws {
+        let runner = ProcessCommandRunner()
+        let collector = LineCollector()
+        let result = try await runner.run(
+            CommandSpec(executable: "sh", arguments: ["-c", "printf 'a\\nb\\nc\\n'"]),
+            onOutputLine: { collector.append($0) }
+        )
+        XCTAssertEqual(result.exitCode, 0)
+        XCTAssertEqual(collector.snapshot(), ["a", "b", "c"])
+    }
+
+    func testRunWithoutHandlerStillReturnsBufferedOutput() async throws {
+        let runner = ProcessCommandRunner()
+        let result = try await runner.run(CommandSpec(executable: "echo", arguments: ["hello"]))
+        XCTAssertEqual(result.stdout.trimmingCharacters(in: .whitespacesAndNewlines), "hello")
+    }
+}
+
+private final class LineCollector: @unchecked Sendable {
+    private let lock = NSLock()
+    private var lines: [String] = []
+    func append(_ line: String) { lock.withLock { lines.append(line) } }
+    func snapshot() -> [String] { lock.withLock { lines } }
 }
