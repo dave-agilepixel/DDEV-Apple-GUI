@@ -22,18 +22,20 @@ struct ProjectListView: View {
     // B3 — batch start/stop the current view (sidebar section / group / search is the selection).
     // Routed through the per-project mutations, so the CommandScheduler caps real concurrency.
     private var batchBar: some View {
-        HStack(spacing: 8) {
+        // The verb scopes to the selection when 2+ projects are picked, else the whole view (B3).
+        let noun = viewModel.isMultiSelecting ? "Selected" : "All"
+        return HStack(spacing: 8) {
             Button {
                 Task { await viewModel.startProjectsInCurrentView() }
             } label: {
-                Label("Start All (\(viewModel.startableProjectsInCurrentView.count))", systemImage: "play.fill")
+                Label("Start \(noun) (\(viewModel.startableProjectsInCurrentView.count))", systemImage: "play.fill")
             }
             .disabled(viewModel.startableProjectsInCurrentView.isEmpty)
 
             Button {
                 Task { await viewModel.stopProjectsInCurrentView() }
             } label: {
-                Label("Stop All (\(viewModel.stoppableProjectsInCurrentView.count))", systemImage: "stop.fill")
+                Label("Stop \(noun) (\(viewModel.stoppableProjectsInCurrentView.count))", systemImage: "stop.fill")
             }
             .disabled(viewModel.stoppableProjectsInCurrentView.isEmpty)
 
@@ -44,7 +46,9 @@ struct ProjectListView: View {
         .labelStyle(.titleAndIcon)
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .help("Start or stop every project in the current view")
+        .help(viewModel.isMultiSelecting
+              ? "Start or stop the selected projects"
+              : "Start or stop every project in the current view")
     }
 
     private var searchBar: some View {
