@@ -1158,6 +1158,17 @@ public final class ProjectDashboardViewModel {
         let liveIDs = Set(projects.map(\.id))
         commandStates = commandStates.filter { liveIDs.contains($0.key) || $0.value.isBusy }
 
+        // Drop group memberships for projects that no longer exist so counts/filters stay honest.
+        var didPruneGroups = false
+        for index in groups.indices {
+            let kept = groups[index].memberIDs.filter { liveIDs.contains($0) }
+            if kept.count != groups[index].memberIDs.count {
+                groups[index].memberIDs = kept
+                didPruneGroups = true
+            }
+        }
+        if didPruneGroups { persistGroups() }
+
         if let selectedProjectID,
            let selectedProject = projects.first(where: { $0.id == selectedProjectID }) {
             selectedProjectFallback = selectedProject
@@ -1215,6 +1226,38 @@ public final class ProjectDashboardViewModel {
     public func deleteGroup(_ id: ProjectGroup.ID) {
         groups.removeAll { $0.id == id }
         if selectedGroupID == id { selectedGroupID = nil }
+        persistGroups()
+    }
+
+    public func assignProject(_ projectID: DDEVProject.ID, toGroup groupID: ProjectGroup.ID) {
+        // Single-membership: remove from every group first, then add to the target.
+        for index in groups.indices {
+            groups[index].memberIDs.removeAll { $0 == projectID }
+        }
+        guard let target = groups.firstIndex(where: { $0.id == groupID }) else { persistGroups(); return }
+        groups[target].memberIDs.append(projectID)
+        persistGroups()
+    }
+
+    public func removeProjectFromGroup(_ projectID: DDEVProject.ID) {
+        for index in groups.indices {
+            groups[index].memberIDs.removeAll { $0 == projectID }
+        }
+        persistGroups()
+    }
+
+    public func group(for projectID: DDEVProject.ID) -> ProjectGroup? {
+        groups.first { $0.memberIDs.contains(projectID) }
+    }
+
+    public func memberCount(of groupID: ProjectGroup.ID) -> Int {
+        guard let group = groups.first(where: { $0.id == groupID }) else { return 0 }
+        let liveIDs = Set(projects.map(\.id))
+        return group.memberIDs.filter { liveIDs.contains($0) }.count
+    }
+
+    public func moveGroups(fromOffsets source: IndexSet, toOffset destination: Int) {
+        groups.move(fromOffsets: source, toOffset: destination)
         persistGroups()
     }
 
