@@ -98,6 +98,10 @@ public enum ProjectSidebarItem: String, CaseIterable, Identifiable, Sendable {
 @Observable
 public final class ProjectDashboardViewModel {
     public var projects: [DDEVProject] = []
+    /// User-authored project groups (folders). Sidebar display order == array order.
+    public var groups: [ProjectGroup] = []
+    /// Selected group, when a group (not a Library item) is the active sidebar selection.
+    public var selectedGroupID: ProjectGroup.ID?
     public var selectedProjectID: DDEVProject.ID?
     public var selectedSidebarItem: ProjectSidebarItem = .projects
     public var searchText = ""
@@ -149,6 +153,7 @@ public final class ProjectDashboardViewModel {
 
     private let ddevService: DDEVServicing
     private let projectCache: ProjectCacheStoring
+    private let groupStore: ProjectGroupStoring
     private let scheduler: CommandScheduler
     private let notifier: NotificationScheduling
     private var selectedProjectFallback: DDEVProject?
@@ -162,13 +167,16 @@ public final class ProjectDashboardViewModel {
         preferencesStore: AppPreferencesStoring = UserDefaultsAppPreferencesStore(),
         appAvailability: AppAvailabilityChecking = WorkspaceAppAvailabilityService(),
         scheduler: CommandScheduler = CommandScheduler(maxConcurrent: 3),
-        notifier: NotificationScheduling = NoopNotificationScheduler()
+        notifier: NotificationScheduling = NoopNotificationScheduler(),
+        groupStore: ProjectGroupStoring = UserDefaultsProjectGroupStore()
     ) {
         self.ddevService = ddevService
         self.projectCache = projectCache
         self.scheduler = scheduler
         self.notifier = notifier
         self.preferencesModel = PreferencesModel(preferencesStore: preferencesStore, appAvailability: appAvailability)
+        self.groupStore = groupStore
+        self.groups = groupStore.loadGroups()
     }
 
     // MARK: - Preferences (forwarded to PreferencesModel)
@@ -1178,6 +1186,41 @@ public final class ProjectDashboardViewModel {
 
     /// Cap on concurrent `describe` subprocesses during a refresh fan-out (audit M1).
     private static let maxConcurrentDescribes = 4
+
+    // MARK: - Groups
+
+    @discardableResult
+    public func createGroup(name: String, color: GroupColor) -> ProjectGroup.ID? {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let group = ProjectGroup(name: trimmed, colorID: color)
+        groups.append(group)
+        persistGroups()
+        return group.id
+    }
+
+    public func renameGroup(_ id: ProjectGroup.ID, to name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let index = groups.firstIndex(where: { $0.id == id }) else { return }
+        groups[index].name = trimmed
+        persistGroups()
+    }
+
+    public func setColor(_ color: GroupColor, for id: ProjectGroup.ID) {
+        guard let index = groups.firstIndex(where: { $0.id == id }) else { return }
+        groups[index].colorID = color
+        persistGroups()
+    }
+
+    public func deleteGroup(_ id: ProjectGroup.ID) {
+        groups.removeAll { $0.id == id }
+        if selectedGroupID == id { selectedGroupID = nil }
+        persistGroups()
+    }
+
+    private func persistGroups() {
+        groupStore.saveGroups(groups)
+    }
 }
 
 private struct DiagnosticFailure: Error {

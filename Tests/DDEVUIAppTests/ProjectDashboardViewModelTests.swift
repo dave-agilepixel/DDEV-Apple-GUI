@@ -1083,6 +1083,50 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertNil(viewModel.state(for: "aqua-pura").startProgress,
                      "progress is cleared once the command completes")
     }
+
+    // MARK: - Groups (Task 3)
+
+    func testCreateGroupPersistsAndAppends() {
+        let store = InMemoryProjectGroupStore()
+        let vm = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: []), groupStore: store)
+        let id = vm.createGroup(name: "Client Work", color: .blue)
+        XCTAssertEqual(vm.groups.map(\.name), ["Client Work"])
+        XCTAssertEqual(vm.groups.first?.id, id)
+        XCTAssertEqual(store.loadGroups().map(\.name), ["Client Work"], "create persists")
+    }
+
+    func testRenameAndRecolorGroupPersist() {
+        let store = InMemoryProjectGroupStore()
+        let vm = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: []), groupStore: store)
+        let id = vm.createGroup(name: "A", color: .blue)
+        vm.renameGroup(id!, to: "Renamed")
+        vm.setColor(.red, for: id!)
+        XCTAssertEqual(vm.groups.first?.name, "Renamed")
+        XCTAssertEqual(vm.groups.first?.colorID, .red)
+        XCTAssertEqual(store.loadGroups().first?.name, "Renamed", "mutations persist")
+    }
+
+    func testEmptyOrWhitespaceGroupNameIsRejected() {
+        let vm = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: []), groupStore: InMemoryProjectGroupStore())
+        let id = vm.createGroup(name: "   ", color: .blue)
+        XCTAssertNil(id)
+        XCTAssertTrue(vm.groups.isEmpty)
+    }
+
+    func testDeleteGroupRemovesItOnly() {
+        let store = InMemoryProjectGroupStore()
+        let vm = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: []), groupStore: store)
+        let id = vm.createGroup(name: "A", color: .blue)!
+        vm.deleteGroup(id)
+        XCTAssertTrue(vm.groups.isEmpty)
+        XCTAssertTrue(store.loadGroups().isEmpty, "delete persists")
+    }
+
+    func testGroupsLoadFromStoreOnInit() {
+        let store = InMemoryProjectGroupStore(groups: [ProjectGroup(name: "Seeded", colorID: .green)])
+        let vm = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: []), groupStore: store)
+        XCTAssertEqual(vm.groups.map(\.name), ["Seeded"])
+    }
 }
 
 private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
