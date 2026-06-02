@@ -28,6 +28,10 @@ struct PrerequisiteSheet: View {
                     .textSelection(.enabled)
             }
 
+            if dockerNeedsAttention {
+                troubleshootSection
+            }
+
             HStack {
                 Button("Quit DDEVUI") {
                     NSApp.terminate(nil)
@@ -50,6 +54,64 @@ struct PrerequisiteSheet: View {
         }
         .padding(24)
         .frame(width: 560)
+    }
+
+    /// Docker is present but not healthy — the case where `ddev utility dockercheck` is useful.
+    /// Hidden while still checking or once Docker is OK.
+    private var dockerNeedsAttention: Bool {
+        switch monitor.state.docker {
+        case .ok, .checking: false
+        case .starting, .notRunning, .missing: true
+        }
+    }
+
+    @ViewBuilder
+    private var troubleshootSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Button {
+                    Task { await monitor.runDockerCheck() }
+                } label: {
+                    if monitor.isRunningDockerCheck {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Label("Troubleshoot Docker", systemImage: "stethoscope")
+                    }
+                }
+                .disabled(monitor.isRunningDockerCheck)
+                .help("Run `ddev utility dockercheck` to diagnose the Docker provider setup")
+
+                if let report = monitor.dockerCheckReport {
+                    Image(systemName: report.succeeded ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+                        .foregroundStyle(report.succeeded ? .green : .orange)
+
+                    Spacer()
+
+                    Button {
+                        Pasteboard.copy(report.output)
+                    } label: {
+                        Label("Copy", systemImage: "doc.on.doc")
+                    }
+                    .labelStyle(.iconOnly)
+                    .help("Copy the dockercheck report")
+                }
+            }
+
+            if let report = monitor.dockerCheckReport, !report.output.isEmpty {
+                ScrollView {
+                    Text(report.output)
+                        .font(.system(.caption, design: .monospaced))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(8)
+                }
+                .frame(maxHeight: 200)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(.quaternary.opacity(0.4))
+                )
+            }
+        }
     }
 
     private var header: some View {
