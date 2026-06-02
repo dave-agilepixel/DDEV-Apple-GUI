@@ -349,6 +349,61 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertFalse(commands.contains("stop:agilebugs"), "Already-stopped project is left alone")
     }
 
+    func testBatchScopeIsWholeViewWhenNotMultiSelecting() async {
+        let running = DDEVProject.sampleWordPress                    // aqua-pura, running
+        let stopped = DDEVProject.sampleLaravel.withStatus(.stopped) // agilebugs, stopped
+        let viewModel = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: [running, stopped]))
+        await viewModel.refresh() // auto-selects the first project → single selection, not multi
+
+        XCTAssertFalse(viewModel.isMultiSelecting)
+        XCTAssertEqual(Set(viewModel.batchScopeProjects.map(\.id)), ["aqua-pura", "agilebugs"])
+        XCTAssertEqual(viewModel.startableProjectsInCurrentView.map(\.id), ["agilebugs"])
+        XCTAssertEqual(viewModel.stoppableProjectsInCurrentView.map(\.id), ["aqua-pura"])
+    }
+
+    func testBatchScopeIsTheSelectedSubsetWhenMultiSelecting() {
+        let running = DDEVProject.sampleWordPress                    // aqua-pura, running
+        let stopped = DDEVProject.sampleLaravel.withStatus(.stopped) // agilebugs, stopped
+        let extra = DDEVProject.sampleDrupal                         // drupal-demo, running (excluded)
+        let viewModel = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: []))
+        viewModel.projects = [running, stopped, extra]
+
+        viewModel.selectedProjectIDs = ["aqua-pura", "agilebugs"] // exclude drupal-demo
+        XCTAssertTrue(viewModel.isMultiSelecting)
+        XCTAssertEqual(Set(viewModel.batchScopeProjects.map(\.id)), ["aqua-pura", "agilebugs"])
+        XCTAssertEqual(viewModel.startableProjectsInCurrentView.map(\.id), ["agilebugs"])
+        XCTAssertEqual(viewModel.stoppableProjectsInCurrentView.map(\.id), ["aqua-pura"])
+    }
+
+    func testBatchScopeExcludesSelectedProjectsHiddenBySearch() {
+        let viewModel = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: []))
+        viewModel.projects = [.sampleWordPress, .sampleLaravel] // aqua-pura, agilebugs
+
+        viewModel.selectedProjectIDs = ["aqua-pura", "agilebugs"]
+        viewModel.searchText = "aqua" // hides agilebugs from the view
+
+        XCTAssertTrue(viewModel.isMultiSelecting)
+        XCTAssertEqual(viewModel.batchScopeProjects.map(\.id), ["aqua-pura"],
+                       "A selected project hidden by search is never acted on")
+    }
+
+    func testBatchStartOverMultiSelectionStartsOnlySelectedStoppedProjects() async {
+        let running = DDEVProject.sampleWordPress                             // aqua-pura, running (selected)
+        let selectedStopped = DDEVProject.sampleLaravel.withStatus(.stopped)  // agilebugs, stopped (selected)
+        let unselectedStopped = DDEVProject.sampleDrupal.withStatus(.stopped) // drupal-demo, stopped (NOT selected)
+        let service = FakeDDEVService(projects: [running, selectedStopped, unselectedStopped])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        await viewModel.refresh()
+
+        viewModel.selectedProjectIDs = ["aqua-pura", "agilebugs"] // exclude drupal-demo
+        await viewModel.startProjectsInCurrentView()
+
+        let commands = service.commands
+        XCTAssertTrue(commands.contains("start:agilebugs"), "Selected stopped project is started")
+        XCTAssertFalse(commands.contains("start:drupal-demo"), "Unselected project is left alone")
+        XCTAssertFalse(commands.contains("start:aqua-pura"), "Already-running selected project is left alone")
+    }
+
     func testRowActionTargetsGivenProjectNotSelection() async {
         let service = FakeDDEVService(projects: [.sampleWordPress, .sampleLaravel])
         let viewModel = ProjectDashboardViewModel(ddevService: service)

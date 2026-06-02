@@ -533,14 +533,23 @@ public final class ProjectDashboardViewModel {
     // group and hitting "Start All" batch-starts exactly that group. Fan-out goes through the same
     // per-project mutations, so the CommandScheduler's max-concurrency cap applies for free.
 
-    /// Projects in the current view that aren't running (candidates for a batch start).
-    public var startableProjectsInCurrentView: [DDEVProject] {
-        filteredProjects.filter { $0.status != .running }
+    /// The set of projects a batch action operates on. When 2+ are selected this is the selection,
+    /// intersected with the currently-visible (filtered) projects and kept in visible order — so a
+    /// stale search filter can't make a batch touch a project the user can't see. Otherwise it's the
+    /// whole current view (the original B3 behaviour).
+    public var batchScopeProjects: [DDEVProject] {
+        guard isMultiSelecting else { return filteredProjects }
+        return filteredProjects.filter { selectedProjectIDs.contains($0.id) }
     }
 
-    /// Projects in the current view that are running (candidates for a batch stop).
+    /// Projects in the batch scope that aren't running (candidates for a batch start).
+    public var startableProjectsInCurrentView: [DDEVProject] {
+        batchScopeProjects.filter { $0.status != .running }
+    }
+
+    /// Projects in the batch scope that are running (candidates for a batch stop).
     public var stoppableProjectsInCurrentView: [DDEVProject] {
-        filteredProjects.filter { $0.status == .running }
+        batchScopeProjects.filter { $0.status == .running }
     }
 
     public func startProjectsInCurrentView() async {
