@@ -715,6 +715,7 @@
   <details class="feat" data-v="BIGBET">
     <summary>
       <span class="badge BIGBET">BIG BET</span>
+      <span class="status done">Implemented</span>
       <span class="sgrow">
         <span class="stitle">B1 · Menu-bar extra (quick controls)</span>
         <div class="smeta"><span class="id">SwiftUI</span> <span class="cmd">MenuBarExtra</span></div>
@@ -733,6 +734,7 @@
       <h4>Native-GUI fit</h4>
       <p>Excellent and deeply native — exactly what Mac users expect from a tool like this. No CLI equivalent.</p>
       <div class="verdict BIGBET"><b>Verdict:</b> The marquee learning project. Do it after the quick wins (so the menu has rich data to show) and ideally after B2 (so it stays fresh). Highest "I'd actually use this constantly" payoff in Part B.</div>
+      <div class="verdict BIGBET"><b>Built 2026-06-02 (after B2, as advised):</b> a <code>MenuBarExtra</code> scene. The view model + prerequisite monitor were <b>lifted from ContentView to the App</b> so the menu and the window share one live source. The menu lists every project (🟢/⚪︎ + count) with inline <b>Start/Stop/Restart/Open Site</b>, plus Refresh and "Open DDEVUI Window" (<code>openWindow(id:)</code> + activate). Freshness comes from B2's status poll; the Refresh item covers window-closed use. <b>Launch-at-login deferred</b> — it needs a login-item helper/entitlement, out of proportion for this slice. <code>** BUILD SUCCEEDED **</code> for the .app bundle.</div>
     </div>
   </details>
 
