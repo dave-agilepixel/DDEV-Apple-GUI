@@ -29,6 +29,7 @@ public protocol DDEVServicing: Sendable {
     func applyConfigChange(_ change: DDEVConfigChange, in appRoot: String) async throws -> CommandResult
     func runProjectCommand(arguments: [String], in appRoot: String) async throws -> CommandResult
     func version() async throws -> CommandResult
+    func versionInfo() async throws -> DDEVVersionInfo
     func utilityDiagnose(in appRoot: String?) async throws -> CommandResult
     func utilityConfigYAML(omitKeys: [String], in appRoot: String) async throws -> CommandResult
     func utilityCheckCustomConfig(in appRoot: String) async throws -> CommandResult
@@ -148,6 +149,11 @@ public final class ProjectDashboardViewModel {
     public var addonRawOutput: String?
     public var diagnosticReport = DDEVDiagnosticReport()
     public var diagnosticsErrorMessage: String?
+
+    /// Decoded `ddev version -j` (A18): DDEV + component image versions and the host toolchain.
+    /// Loaded on demand for the Diagnostics screen's About/Versions panel; not persisted.
+    public var ddevVersionInfo: DDEVVersionInfo?
+    public var versionInfoErrorMessage: String?
 
     /// Preferences + installed-app concern, extracted to its own model (audit M9). The public
     /// API below forwards to it so views/tests are unchanged; both are `@Observable`, so views
@@ -694,6 +700,17 @@ public final class ProjectDashboardViewModel {
         guard let selectedProject else { return }
         await runProjectMutation(selectedProject) {
             try await self.ddevService.runProjectCommand(arguments: command.arguments, in: selectedProject.appRoot)
+        }
+    }
+
+    /// Loads `ddev version -j` for the About/Versions panel (A18). Read-only and global — no
+    /// project context needed. Failures surface as a message rather than throwing into the UI.
+    public func loadVersionInfo() async {
+        versionInfoErrorMessage = nil
+        do {
+            ddevVersionInfo = try await ddevService.versionInfo()
+        } catch {
+            versionInfoErrorMessage = "Couldn't read DDEV version info: \(error.localizedDescription)"
         }
     }
 
