@@ -35,4 +35,17 @@ final class StartProgressParserTests: XCTestCase {
         if let afterEarly { XCTAssertGreaterThanOrEqual(afterEarly, 0.0) }
         XCTAssertGreaterThanOrEqual(parser.fraction ?? 0, 0.7)
     }
+
+    func testCapturedRealOutputProducesMonotonicRamp() throws {
+        let url = try XCTUnwrap(Bundle.module.url(forResource: "ddev-start-output", withExtension: "txt"))
+        let text = try String(contentsOf: url, encoding: .utf8)
+        var parser = StartProgressParser()
+        var emitted: [Double] = []
+        for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
+            if let f = parser.consume(String(line)) { emitted.append(f) }
+        }
+        XCTAssertGreaterThanOrEqual(emitted.count, 2, "real output advances through at least two stages")
+        XCTAssertEqual(emitted, emitted.sorted())
+        XCTAssertTrue(emitted.allSatisfy { $0 < 1.0 })
+    }
 }

@@ -11,16 +11,13 @@ public struct StartProgressParser {
     /// in which case the highest wins. Tuned against captured DDEV v1.25.2 output (see
     /// Tests/DDEVUIAppTests/Fixtures/ddev-start-output.txt).
     private static let stages: [(needle: String, fraction: Double)] = [
-        ("starting", 0.10),
-        ("building", 0.20),
-        ("recreating", 0.30),
-        ("creating", 0.30),
-        ("started", 0.55),
+        ("starting", 0.08),
+        ("building", 0.18),
+        ("created", 0.28),
+        ("started", 0.45),
         ("waiting for", 0.70),
         ("pushing", 0.82),
-        ("syncing", 0.82),
-        ("successfully started", 0.95),
-        ("ready", 0.95)
+        ("successfully started", 0.95)
     ]
 
     public private(set) var fraction: Double?

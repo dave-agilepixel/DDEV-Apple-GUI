@@ -17,7 +17,8 @@ let package = Package(
         .testTarget(
             name: "DDEVUIAppTests",
             dependencies: ["DDEVUIApp"],
-            path: "Tests/DDEVUIAppTests"
+            path: "Tests/DDEVUIAppTests",
+            resources: [.copy("Fixtures/ddev-start-output.txt")]
         )
     ]
 )
