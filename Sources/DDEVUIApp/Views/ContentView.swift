@@ -143,13 +143,17 @@ struct ContentView: View {
         }
         .task {
             prerequisites.start()
+            viewModel.startStatusPolling()
         }
         .onChange(of: scenePhase) { _, phase in
-            // Pause the prerequisite poll while backgrounded; re-arm (and re-validate) on return.
+            // Pause the prerequisite + status polls while backgrounded; re-arm on return (B2 — the
+            // poll loops have a clean off-switch, so they never run unattended in the background).
             if phase == .active {
                 prerequisites.start()
+                viewModel.startStatusPolling()
             } else {
                 prerequisites.stop()
+                viewModel.stopStatusPolling()
             }
         }
     }

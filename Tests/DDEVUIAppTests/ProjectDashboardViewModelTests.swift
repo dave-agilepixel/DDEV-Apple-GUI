@@ -3,6 +3,37 @@ import XCTest
 
 @MainActor
 final class ProjectDashboardViewModelTests: XCTestCase {
+    func testStatusPollingRefreshesWhileActiveAndStopsOnStop() async throws {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service, statusPollInterval: .milliseconds(20))
+
+        viewModel.startStatusPolling()
+        XCTAssertTrue(viewModel.isStatusPollingActive)
+        try await Task.sleep(for: .milliseconds(120))
+        let listsWhilePolling = service.commands.filter { $0 == "list" }.count
+        XCTAssertGreaterThan(listsWhilePolling, 0, "Polls the project list while active")
+
+        viewModel.stopStatusPolling()
+        XCTAssertFalse(viewModel.isStatusPollingActive)
+        // Let any in-flight poll settle, snapshot, then confirm no further polls land.
+        try await Task.sleep(for: .milliseconds(60))
+        let settled = service.commands.filter { $0 == "list" }.count
+        try await Task.sleep(for: .milliseconds(80))
+        XCTAssertEqual(service.commands.filter { $0 == "list" }.count, settled, "No polling after stop")
+    }
+
+    func testStartStatusPollingIsIdempotent() async throws {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service, statusPollInterval: .seconds(60))
+
+        viewModel.startStatusPolling()
+        viewModel.startStatusPolling() // second call must not start a second loop
+        XCTAssertTrue(viewModel.isStatusPollingActive)
+
+        viewModel.stopStatusPolling()
+        XCTAssertFalse(viewModel.isStatusPollingActive)
+    }
+
     func testRefreshLoadsProjectsAndSelectsFirstProject() async {
         let service = FakeDDEVService(projects: [.sampleWordPress])
         let viewModel = ProjectDashboardViewModel(ddevService: service)

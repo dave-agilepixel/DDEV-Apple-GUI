@@ -739,6 +739,7 @@
   <details class="feat" data-v="NICE">
     <summary>
       <span class="badge NICE">NICE TO HAVE</span>
+      <span class="status done">Implemented</span>
       <span class="sgrow">
         <span class="stitle">B2 · Smarter live status (less manual refresh)</span>
         <div class="smeta"><span class="id">verify current behavior</span> <span class="cmd">ddev list -j</span></div>
@@ -757,6 +758,7 @@
       <h4>Native-GUI fit</h4>
       <p>Core to feeling like a live dashboard rather than a CLI snapshot.</p>
       <div class="verdict NICE"><b>Verdict:</b> Backlog, but do it <i>before</i> B1 — a stale menu-bar list is worse than no menu-bar list. Confirm exactly what the current poll does first.</div>
+      <div class="verdict NICE"><b>Built 2026-06-02 (confirmed first, as advised):</b> the project list had <i>no</i> timer poll — only launch + manual Refresh + post-mutation re-describe (the audit's H1 poll was the prerequisite monitor, already self-disarming). Added a foreground status poll: a cancellable loop calling the existing silent, in-flight-guarded <code>refreshProjectsFromDDEVInBackground()</code> every 10s, started in ContentView's <code>.task</code> and <b>paused/resumed on scenePhase</b> — so it has the clean off-switch the audit wanted and never runs backgrounded. Optimistic start/restart transitions already exist via the progress mutation. (Prereq for B1.)</div>
     </div>
   </details>
 
