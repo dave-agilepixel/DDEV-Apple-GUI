@@ -262,6 +262,7 @@ private actor GatedDDEVService: DDEVServicing {
     func setPHPVersion(_ version: String, in appRoot: String) async throws -> CommandResult { try await runGated("php") }
     func launchDatabaseTool(_ tool: DDEVDatabaseTool, in appRoot: String) async throws -> CommandResult { try await runGated("db") }
     func importDatabase(_ options: DDEVDatabaseImportOptions, in appRoot: String) async throws -> CommandResult { try await runGated("import") }
+    func importFiles(_ options: DDEVImportFilesOptions, in appRoot: String) async throws -> CommandResult { try await runGated("import-files") }
     func exportDatabase(_ options: DDEVDatabaseExportOptions, in appRoot: String) async throws -> CommandResult { try await runGated("export") }
     func createSnapshot(name: String?, in appRoot: String) async throws -> CommandResult { try await runGated("snapshot") }
     func listSnapshots(in appRoot: String) async throws -> CommandResult { recorded.append("snapshot-list"); return runImmediate() }
@@ -277,6 +278,7 @@ private actor GatedDDEVService: DDEVServicing {
     func applyConfigChange(_ change: DDEVConfigChange, in appRoot: String) async throws -> CommandResult { try await runGated("config-change") }
     func runProjectCommand(arguments: [String], in appRoot: String) async throws -> CommandResult { try await runGated("project-command") }
     func version() async throws -> CommandResult { recorded.append("version"); return runImmediate() }
+    func versionInfo() async throws -> DDEVVersionInfo { recorded.append("version-info"); return DDEVVersionInfo(items: []) }
     func poweroff() async throws -> CommandResult { recorded.append("poweroff"); return runImmediate() }
     func deleteImages() async throws -> CommandResult { recorded.append("delete-images"); return runImmediate() }
     func downloadImages() async throws -> CommandResult { recorded.append("download-images"); return runImmediate() }
