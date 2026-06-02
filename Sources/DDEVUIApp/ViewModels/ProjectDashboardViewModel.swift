@@ -221,6 +221,15 @@ public final class ProjectDashboardViewModel {
         }
     }
 
+    /// Title for the middle column / nav bar: the selected group's name when a group is active,
+    /// otherwise the Library item's title.
+    public var currentSectionTitle: String {
+        if case .group(let id) = selection, let group = groups.first(where: { $0.id == id }) {
+            return group.name
+        }
+        return selectedSidebarItem.title
+    }
+
     public var filteredProjects: [DDEVProject] {
         filteredProjects(in: projects)
     }

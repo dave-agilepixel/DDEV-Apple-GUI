@@ -12,7 +12,7 @@ struct ProjectListView: View {
             }
             contentBody
         }
-        .navigationTitle(viewModel.selectedSidebarItem.title)
+        .navigationTitle(viewModel.currentSectionTitle)
     }
 
     private var searchBar: some View {
@@ -80,7 +80,7 @@ struct ProjectListView: View {
                         }
                     } header: {
                         HStack {
-                            Text(viewModel.selectedSidebarItem.title)
+                            Text(viewModel.currentSectionTitle)
                                 .font(.headline)
                             Spacer()
                             Text("\(viewModel.filteredProjects.count)")
@@ -105,6 +105,7 @@ struct ProjectListView: View {
 
     private var emptyTitle: String {
         if !viewModel.searchText.isEmpty { return "No Matches" }
+        if case .group = viewModel.selection { return "No Projects in This Group" }
         switch viewModel.selectedSidebarItem {
         case .running: return "Nothing Running"
         case .wordpress: return "No WordPress Projects"
@@ -115,6 +116,9 @@ struct ProjectListView: View {
     private var emptyDescription: String {
         if !viewModel.searchText.isEmpty {
             return "Try a different search term."
+        }
+        if case .group = viewModel.selection {
+            return "Drag a project here, or use Move to Group on a project."
         }
         switch viewModel.selectedSidebarItem {
         case .running: return "Start a project to see it here."

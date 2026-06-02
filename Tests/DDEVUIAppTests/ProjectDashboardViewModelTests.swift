@@ -1226,6 +1226,16 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         vm.deleteGroup(a)
         if case .library = vm.selection { /* ok */ } else { XCTFail("selection should fall back to library") }
     }
+
+    func testCurrentSectionTitleReflectsSelectedGroup() {
+        let vm = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: []), groupStore: InMemoryProjectGroupStore())
+        XCTAssertEqual(vm.currentSectionTitle, ProjectSidebarItem.projects.title)
+        let id = vm.createGroup(name: "Client Work", color: .blue)!
+        vm.selection = .group(id)
+        XCTAssertEqual(vm.currentSectionTitle, "Client Work")
+        vm.selection = .library(.running)
+        XCTAssertEqual(vm.currentSectionTitle, ProjectSidebarItem.running.title)
+    }
 }
 
 private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
