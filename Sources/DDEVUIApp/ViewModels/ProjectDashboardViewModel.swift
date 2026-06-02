@@ -107,9 +107,17 @@ public final class ProjectDashboardViewModel {
     public var groups: [ProjectGroup] = []
     /// Selected group, when a group (not a Library item) is the active sidebar selection.
     public var selectedGroupID: ProjectGroup.ID?
-    public var selectedProjectID: DDEVProject.ID?
+    public var selectedProjectID: DDEVProject.ID? {
+        didSet {
+            // Track recency for the "Recently Used" sort (B5). Session-scoped — resets on relaunch.
+            if let id = selectedProjectID, oldValue != id { recordRecentProject(id) }
+        }
+    }
     public var selectedSidebarItem: ProjectSidebarItem = .projects
     public var searchText = ""
+
+    /// Most-recently-selected project ids, most-recent-first (B5). Session-scoped (not persisted).
+    public private(set) var recentProjectIDs: [String] = []
 
     /// Per-project command state, keyed by project id (the project name). The single source
     /// of truth for busy/queued lifecycle, last result, error, history, and output expansion.
@@ -190,6 +198,18 @@ public final class ProjectDashboardViewModel {
     public var installedEditors: [EditorChoice] { preferencesModel.installedEditors }
     public var installedDatabaseTools: [DDEVDatabaseTool] { preferencesModel.installedDatabaseTools }
 
+    /// Current project-list sort (B5), persisted via preferences.
+    public var projectSort: ProjectSort { preferencesModel.preferences.projectSort }
+    public func setProjectSort(_ sort: ProjectSort) { preferencesModel.setProjectSort(sort) }
+
+    private func recordRecentProject(_ id: String) {
+        recentProjectIDs.removeAll { $0 == id }
+        recentProjectIDs.insert(id, at: 0)
+        if recentProjectIDs.count > 30 {
+            recentProjectIDs.removeLast(recentProjectIDs.count - 30)
+        }
+    }
+
     public var selectedProject: DDEVProject? {
         get {
             guard let selectedProjectID else { return nil }
@@ -261,14 +281,20 @@ public final class ProjectDashboardViewModel {
             }
         }
 
-        guard !query.isEmpty else { return sectionProjects }
-
-        return sectionProjects.filter { project in
-            project.name.localizedCaseInsensitiveContains(query)
-                || project.shortRoot.localizedCaseInsensitiveContains(query)
-                || project.projectType.rawValue.localizedCaseInsensitiveContains(query)
-                || (project.phpVersion?.localizedCaseInsensitiveContains(query) ?? false)
+        let matched: [DDEVProject]
+        if query.isEmpty {
+            matched = sectionProjects
+        } else {
+            matched = sectionProjects.filter { project in
+                project.name.localizedCaseInsensitiveContains(query)
+                    || project.shortRoot.localizedCaseInsensitiveContains(query)
+                    || project.projectType.rawValue.localizedCaseInsensitiveContains(query)
+                    || (project.phpVersion?.localizedCaseInsensitiveContains(query) ?? false)
+            }
         }
+
+        // B5 — order by the chosen sort (recency is session-scoped via recentProjectIDs).
+        return projectSort.sort(matched, recentIDs: recentProjectIDs)
     }
 
     public func setDefaultEditor(_ editor: EditorChoice?) {

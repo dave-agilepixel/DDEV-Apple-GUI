@@ -811,6 +811,7 @@
   <details class="feat" data-v="NICE">
     <summary>
       <span class="badge NICE">NICE TO HAVE</span>
+      <span class="status done">Implemented</span>
       <span class="sgrow">
         <span class="stitle">B5 · Favorites / pinning / sorting</span>
         <div class="smeta"><span class="id">UserDefaults</span></div>
@@ -829,6 +830,7 @@
       <h4>Native-GUI fit</h4>
       <p>Good, standard list UX.</p>
       <div class="verdict NICE"><b>Verdict:</b> Backlog. Value scales with how many projects you keep around.</div>
+      <div class="verdict NICE"><b>Built 2026-06-02 (sorting only; pinning deferred):</b> A sort menu in the project list — <b>Name</b>, <b>Status</b> (running first), <b>Recently Used</b> — with the choice persisted via <code>UserDefaultsAppPreferencesStore</code>. <b>Pinning/favorites was deliberately deferred</b>: it now overlaps the shipped <i>project groups</i> feature (a user-made "Favorites" group covers it), so building a parallel pin mechanism isn't worth the duplication. Recency is session-scoped (resets on relaunch).</div>
     </div>
   </details>
 
