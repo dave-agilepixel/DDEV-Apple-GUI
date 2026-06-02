@@ -801,6 +801,7 @@
   <details class="feat" data-v="NICE">
     <summary>
       <span class="badge NICE">NICE TO HAVE</span>
+      <span class="status done">Implemented</span>
       <span class="sgrow">
         <span class="stitle">B4 · Surface command / output history</span>
         <div class="smeta"><span class="id">already in model</span> <span class="cmd">commandHistory (capped 50)</span></div>
@@ -819,6 +820,7 @@
       <h4>Native-GUI fit</h4>
       <p>Good — a scrollable, searchable history is a clear GUI win over scrollback.</p>
       <div class="verdict NICE"><b>Verdict:</b> Backlog. Unusually cheap because the data already exists; promote it if the diagnostics/output area starts feeling thin.</div>
+      <div class="verdict NICE"><b>Built 2026-06-02:</b> The capped history was <i>already</i> surfaced in the Logs tab (invocation + exit + output). This closes the named gaps: a per-entry actions menu with <b>Copy Command</b>, <b>Copy Output</b>, and <b>Re-run</b>. Re-run is gated by <code>CommandResult.isSafelyRerunnable</code>, which <b>excludes destructive/guarded ops</b> (delete, import-db, snapshot restore, unlist, poweroff, clean) so a one-click history re-run can't bypass their confirmations.</div>
     </div>
   </details>
 

@@ -635,6 +635,39 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.selectedProjectState.lastResult?.succeeded, true)
     }
 
+    func testRerunCommandReExecutesSafeArguments() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+        let now = Date()
+        let result = CommandResult(
+            executable: "ddev", arguments: ["composer", "install"], workingDirectory: nil,
+            exitCode: 0, stdout: "", stderr: "", startedAt: now, finishedAt: now, wasCancelled: false
+        )
+
+        await viewModel.rerunCommandForSelectedProject(result)
+
+        XCTAssertEqual(service.commands, [
+            "project-command:/Users/dave/Development/agilepixel/aqua-pura:composer,install",
+            "describe:aqua-pura"
+        ])
+    }
+
+    func testRerunCommandIgnoresDestructiveArguments() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+        let now = Date()
+        let destructive = CommandResult(
+            executable: "ddev", arguments: ["delete", "aqua-pura"], workingDirectory: nil,
+            exitCode: 0, stdout: "", stderr: "", startedAt: now, finishedAt: now, wasCancelled: false
+        )
+
+        await viewModel.rerunCommandForSelectedProject(destructive)
+
+        XCTAssertTrue(service.commands.isEmpty, "Destructive commands are not re-runnable from history")
+    }
+
     func testImportDatabaseUsesSelectedProjectFolderAndRefreshes() async {
         let service = FakeDDEVService(projects: [.sampleWordPress])
         let viewModel = ProjectDashboardViewModel(ddevService: service)
