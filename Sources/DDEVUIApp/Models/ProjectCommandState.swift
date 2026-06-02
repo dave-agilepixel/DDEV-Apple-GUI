@@ -31,6 +31,8 @@ public struct ProjectCommandState: Equatable, Sendable {
     public var lastErrorMessage: String?
     public var history: [CommandHistoryEntry] = []
     public var outputExpansionRequest = 0
+    /// Determinate progress (0…1) for an in-flight start/restart, or `nil` for indeterminate.
+    public var startProgress: Double?
 
     public init() {}
 

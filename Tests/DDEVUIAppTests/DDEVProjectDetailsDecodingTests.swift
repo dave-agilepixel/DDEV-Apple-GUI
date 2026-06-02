@@ -65,6 +65,20 @@ final class DDEVProjectDetailsDecodingTests: XCTestCase {
         XCTAssertEqual(details.addonServiceLinks.first?.url.absoluteString, "https://adminer.aucoot.ddev.site")
     }
 
+    func testDecodesProjectStatus() throws {
+        let data = #"{"raw":{"php_version":"8.4","status":"running","status_desc":"running"}}"#.data(using: .utf8)!
+        let details = try DDEVProjectDetails.decodeDescribePayload(data)
+        XCTAssertEqual(details.status, .running)
+        XCTAssertEqual(details.statusDescription, "running")
+    }
+
+    func testMissingStatusDecodesToUnknown() throws {
+        let data = #"{"raw":{"php_version":"8.4"}}"#.data(using: .utf8)!
+        let details = try DDEVProjectDetails.decodeDescribePayload(data)
+        XCTAssertEqual(details.status, .unknown)
+        XCTAssertEqual(details.statusDescription, "")
+    }
+
     func testThinPayloadStillDecodesWithDefaults() throws {
         let data = #"{"raw":{"php_version":"8.4","xhgui_status":"enabled"}}"#.data(using: .utf8)!
 

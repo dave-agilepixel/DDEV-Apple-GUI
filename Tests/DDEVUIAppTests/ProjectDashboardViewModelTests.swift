@@ -289,7 +289,7 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertEqual(service.commands, ["delete:aqua-pura", "list", "describe:aqua-pura"])
     }
 
-    func testConfigureProjectRunsDDEVConfigForFolder() async {
+    func testConfigureProjectRunsConfigThenStartThenRefreshes() async {
         let service = FakeDDEVService(projects: [])
         let viewModel = ProjectDashboardViewModel(ddevService: service)
 
@@ -300,7 +300,7 @@ final class ProjectDashboardViewModelTests: XCTestCase {
             docroot: "web"
         )
 
-        XCTAssertEqual(service.commands, ["config:/Users/dave/new-site:new-site:wordpress:web", "list"])
+        XCTAssertEqual(service.commands, ["config:/Users/dave/new-site:new-site:wordpress:web", "start-folder:/Users/dave/new-site", "list"])
     }
 
     func testSetPHPVersionUsesSelectedProjectFolder() async {
@@ -969,6 +969,120 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertNotNil(viewModel.commandStates["ghost-busy"],
                         "A busy entry is retained so an in-flight command briefly off the list isn't lost")
     }
+
+    func testConfigureProjectStartsItAfterConfiguring() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+
+        await viewModel.configureProject(folder: "/tmp/newsite", name: "newsite", type: .wordpress, docroot: "")
+
+        let commands = service.commands
+        let configIdx = commands.firstIndex { $0.hasPrefix("config:/tmp/newsite") }
+        let startIdx = commands.firstIndex { $0.hasPrefix("start-folder:/tmp/newsite") }
+        XCTAssertNotNil(configIdx, "config must run")
+        XCTAssertNotNil(startIdx, "start must run after configuring")
+        XCTAssertLessThan(configIdx!, startIdx!, "config precedes start")
+        XCTAssertNil(viewModel.globalErrorMessage)
+    }
+
+    func testConfigureFailureDoesNotStart() async {
+        let service = FakeDDEVService(
+            projects: [.sampleWordPress],
+            configureError: CommandRunnerError.nonZeroExit(
+                CommandResult(executable: "ddev", arguments: ["config"], workingDirectory: "/tmp/newsite",
+                              exitCode: 1, stdout: "", stderr: "bad config",
+                              startedAt: .distantPast, finishedAt: .distantPast, wasCancelled: false))
+        )
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+
+        await viewModel.configureProject(folder: "/tmp/newsite", name: "newsite", type: .wordpress, docroot: "")
+
+        XCTAssertFalse(service.commands.contains { $0.hasPrefix("start-folder") }, "no start when config fails")
+        XCTAssertNotNil(viewModel.globalErrorMessage)
+    }
+
+    func testStartFailureAfterConfigStillRefreshesAndSurfacesError() async {
+        let service = FakeDDEVService(
+            projects: [.sampleWordPress],
+            startFolderError: CommandRunnerError.nonZeroExit(
+                CommandResult(executable: "ddev", arguments: ["start"], workingDirectory: "/tmp/newsite",
+                              exitCode: 1, stdout: "", stderr: "port in use",
+                              startedAt: .distantPast, finishedAt: .distantPast, wasCancelled: false))
+        )
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+
+        await viewModel.configureProject(folder: "/tmp/newsite", name: "newsite", type: .wordpress, docroot: "")
+
+        XCTAssertTrue(service.commands.contains { $0.hasPrefix("config:") })
+        XCTAssertTrue(service.commands.contains { $0.hasPrefix("start-folder:") })
+        XCTAssertTrue(service.commands.contains("list"), "list still refreshes so the configured project appears")
+        XCTAssertNotNil(viewModel.globalErrorMessage, "start failure is surfaced, not swallowed")
+    }
+
+    func testApplyingDetailsAdoptsLiveStatus() {
+        let stopped = DDEVProject.sampleWordPress.withStatus(.stopped)
+        let running = DDEVProjectDetails(phpVersion: "8.3", status: .running, statusDescription: "running")
+        XCTAssertEqual(stopped.applying(details: running).status, .running)
+    }
+
+    func testApplyingUnknownStatusKeepsExistingStatus() {
+        let running = DDEVProject.sampleWordPress // .running
+        let detailWithoutStatus = DDEVProjectDetails(phpVersion: "8.3") // status defaults to .unknown
+        XCTAssertEqual(running.applying(details: detailWithoutStatus).status, .running,
+                       "an unknown describe status must not clobber a known one")
+    }
+
+    func testStartReflectsRunningStatusAndRefreshesSelectedDetail() async {
+        let runningDetails = DDEVProjectDetails(phpVersion: "8.3", status: .running, statusDescription: "running")
+        let stopped = DDEVProject.sampleWordPress.withStatus(.stopped)
+        let service = FakeDDEVService(projects: [stopped], describeDetails: ["aqua-pura": runningDetails])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.projects = [stopped]               // seed directly to avoid refresh-time enrichment
+        viewModel.selectedProject = stopped
+
+        await viewModel.start(stopped)
+
+        XCTAssertEqual(viewModel.projects.first?.status, .running,
+                       "the re-describe after start flips the cached status to running")
+        XCTAssertEqual(viewModel.selectedProjectDetails?.status, .running,
+                       "the inspector overview detail is refreshed for the selected project")
+        XCTAssertFalse(service.commands.contains("list"),
+                       "minimal fix: only the affected project is re-described, no global list")
+    }
+
+    func testStartRequestsStreamingAndClearsProgressOnCompletion() async {
+        let service = FakeDDEVService(
+            projects: [DDEVProject.sampleWordPress.withStatus(.stopped)],
+            startOutputLines: ["Starting aqua-pura...", "Container ddev-aqua-pura-web  Started"]
+        )
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        let stopped = DDEVProject.sampleWordPress.withStatus(.stopped)
+        viewModel.projects = [stopped]
+        viewModel.selectedProject = stopped
+
+        await viewModel.start(stopped)
+
+        XCTAssertTrue(service.startStreamed, "start passes a non-nil progress handler")
+        XCTAssertNil(viewModel.state(for: "aqua-pura").startProgress,
+                     "progress is cleared once the command completes")
+    }
+
+    func testRestartRequestsStreamingAndClearsProgressOnCompletion() async {
+        let service = FakeDDEVService(
+            projects: [DDEVProject.sampleWordPress],
+            startOutputLines: ["Starting aqua-pura...", "Container ddev-aqua-pura-web  Started"]
+        )
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        let running = DDEVProject.sampleWordPress // .running
+        viewModel.projects = [running]
+        viewModel.selectedProject = running
+
+        await viewModel.restart(running)
+
+        XCTAssertTrue(service.restartStreamed, "restart passes a non-nil progress handler")
+        XCTAssertNil(viewModel.state(for: "aqua-pura").startProgress,
+                     "progress is cleared once the command completes")
+    }
 }
 
 private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
@@ -989,11 +1103,19 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
     private let addonSearchOutput: String
     private let addonError: Error?
     private let diagnosticError: Error?
+    private let configureError: Error?
+    private let startFolderError: Error?
+    private let startOutputLines: [String]
+    private var startStreamedFlag = false
+    private var restartStreamedFlag = false
     private var recordedCommands: [String] = []
 
     var commands: [String] {
         lock.withLock { recordedCommands }
     }
+
+    var startStreamed: Bool { lock.withLock { startStreamedFlag } }
+    var restartStreamed: Bool { lock.withLock { restartStreamedFlag } }
 
     init(
         projects: [DDEVProject],
@@ -1011,7 +1133,10 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
         addonListOutput: String = "",
         addonSearchOutput: String = "",
         addonError: Error? = nil,
-        diagnosticError: Error? = nil
+        diagnosticError: Error? = nil,
+        configureError: Error? = nil,
+        startFolderError: Error? = nil,
+        startOutputLines: [String] = []
     ) {
         self.loadedProjects = projects
         self.phpVersions = phpVersions
@@ -1029,6 +1154,9 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
         self.addonSearchOutput = addonSearchOutput
         self.addonError = addonError
         self.diagnosticError = diagnosticError
+        self.configureError = configureError
+        self.startFolderError = startFolderError
+        self.startOutputLines = startOutputLines
     }
 
     func listProjects() async throws -> [DDEVProject] {
@@ -1052,6 +1180,13 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
         return commandResult(arguments: ["start", projectName])
     }
 
+    func start(projectName: String, onOutputLine: (@Sendable (String) -> Void)?) async throws -> CommandResult {
+        record("start:\(projectName)")
+        if onOutputLine != nil { lock.withLock { startStreamedFlag = true } }
+        for line in startOutputLines { onOutputLine?(line) }
+        return commandResult(arguments: ["start", projectName])
+    }
+
     func stop(projectName: String) async throws -> CommandResult {
         record("stop:\(projectName)")
         return commandResult(arguments: ["stop", projectName])
@@ -1059,6 +1194,13 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
 
     func restart(projectName: String) async throws -> CommandResult {
         record("restart:\(projectName)")
+        return commandResult(arguments: ["restart", projectName])
+    }
+
+    func restart(projectName: String, onOutputLine: (@Sendable (String) -> Void)?) async throws -> CommandResult {
+        record("restart:\(projectName)")
+        if onOutputLine != nil { lock.withLock { restartStreamedFlag = true } }
+        for line in startOutputLines { onOutputLine?(line) }
         return commandResult(arguments: ["restart", projectName])
     }
 
@@ -1074,11 +1216,13 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
 
     func startProject(in appRoot: String) async throws -> CommandResult {
         record("start-folder:\(appRoot)")
+        if let startFolderError { throw startFolderError }
         return commandResult(arguments: ["start"], workingDirectory: appRoot)
     }
 
     func configureProject(in appRoot: String, name: String, type: DDEVProjectType, docroot: String) async throws -> CommandResult {
         record("config:\(appRoot):\(name):\(type.rawValue):\(docroot)")
+        if let configureError { throw configureError }
         return commandResult(
             arguments: ["config", "--project-name=\(name)", "--project-type=\(type.rawValue)", "--docroot=\(docroot)"],
             workingDirectory: appRoot

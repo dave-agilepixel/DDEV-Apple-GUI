@@ -39,6 +39,17 @@ public protocol DDEVServicing: Sendable {
     func updateWordPressCore(in appRoot: String) async throws -> CommandResult
     func updateWordPressPlugins(in appRoot: String) async throws -> CommandResult
     func updateWordPressThemes(in appRoot: String) async throws -> CommandResult
+    func start(projectName: String, onOutputLine: (@Sendable (String) -> Void)?) async throws -> CommandResult
+    func restart(projectName: String, onOutputLine: (@Sendable (String) -> Void)?) async throws -> CommandResult
+}
+
+public extension DDEVServicing {
+    func start(projectName: String, onOutputLine: (@Sendable (String) -> Void)?) async throws -> CommandResult {
+        try await start(projectName: projectName)
+    }
+    func restart(projectName: String, onOutputLine: (@Sendable (String) -> Void)?) async throws -> CommandResult {
+        try await restart(projectName: projectName)
+    }
 }
 
 extension DDEVCommandService: DDEVServicing {}
@@ -308,8 +319,8 @@ public final class ProjectDashboardViewModel {
     }
 
     public func start(_ project: DDEVProject) async {
-        await runProjectMutation(project) {
-            try await self.ddevService.start(projectName: project.name)
+        await runProgressMutation(project) { onLine in
+            try await self.ddevService.start(projectName: project.name, onOutputLine: onLine)
         }
     }
 
@@ -320,8 +331,8 @@ public final class ProjectDashboardViewModel {
     }
 
     public func restart(_ project: DDEVProject) async {
-        await runProjectMutation(project) {
-            try await self.ddevService.restart(projectName: project.name)
+        await runProgressMutation(project) { onLine in
+            try await self.ddevService.restart(projectName: project.name, onOutputLine: onLine)
         }
     }
 
@@ -361,9 +372,40 @@ public final class ProjectDashboardViewModel {
     }
 
     public func configureProject(folder: String, name: String, type: DDEVProjectType, docroot: String) async {
-        await runGlobalMutation {
-            try await self.ddevService.configureProject(in: folder, name: name, type: type, docroot: docroot)
+        isRunningGlobalCommand = true
+        globalErrorMessage = nil
+        defer { isRunningGlobalCommand = false }
+
+        // 1. Configure. A failure here means nothing was registered — surface it and stop.
+        do {
+            _ = try await ddevService.configureProject(in: folder, name: name, type: type, docroot: docroot)
+        } catch CommandRunnerError.nonZeroExit(let result) {
+            let detail = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+            globalErrorMessage = detail.isEmpty
+                ? "Command failed with exit code \(result.exitCode)."
+                : "Configuration failed: \(detail)"
+            return
+        } catch {
+            globalErrorMessage = error.presentableMessage
+            return
         }
+
+        // 2. Auto-start the freshly-configured project. A start failure must NOT roll back the
+        //    registration (the project is legitimately configured), so we record the error but
+        //    still fall through to the refresh below.
+        do {
+            _ = try await ddevService.startProject(in: folder)
+        } catch CommandRunnerError.nonZeroExit(let result) {
+            let detail = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+            globalErrorMessage = detail.isEmpty
+                ? "Project configured, but start failed (exit code \(result.exitCode))."
+                : "Project configured, but start failed: \(detail)"
+        } catch {
+            globalErrorMessage = "Project configured, but start failed: \(error.presentableMessage)"
+        }
+
+        // 3. Refresh regardless of start outcome so the new project always appears in the list.
+        do { try await refreshProjectsFromDDEV() } catch { /* keep any start-failure message */ }
     }
 
     public func launchDatabaseTool(_ tool: DDEVDatabaseTool) async {
@@ -818,6 +860,43 @@ public final class ProjectDashboardViewModel {
         await finish(outcome, for: project, refresh: refresh)
     }
 
+    /// Like `runProjectMutation`, but streams the command's output lines through a
+    /// `StartProgressParser` to publish a determinate `startProgress` for the row donut. Lines are
+    /// marshalled onto the main actor via an `AsyncStream`, so `commandStates` is only mutated here.
+    /// Progress clears back to `nil` when the command finishes (success or failure).
+    private func runProgressMutation(
+        _ project: DDEVProject,
+        refresh: RefreshScope = .project,
+        _ operation: @escaping (_ onLine: @escaping @Sendable (String) -> Void) async throws -> CommandResult
+    ) async {
+        let id = project.id
+        guard !isBusy(project) else { return }
+
+        setActivity(.queued, for: id)
+        do { try await scheduler.acquire() } catch { setActivity(.idle, for: id); return }
+        setActivity(.running, for: id)
+
+        let (stream, continuation) = AsyncStream<String>.makeStream()
+        let consumer = Task { @MainActor in
+            var parser = StartProgressParser()
+            for await line in stream {
+                if let fraction = parser.consume(line) {
+                    commandStates[id, default: .init()].startProgress = fraction
+                }
+            }
+        }
+
+        let outcome = await execute { try await operation { line in continuation.yield(line) } }
+        continuation.finish()
+        await consumer.value
+
+        commandStates[id, default: .init()].startProgress = nil  // clear the donut
+        await scheduler.release()
+        setActivity(.idle, for: id)
+
+        await finish(outcome, for: project, refresh: refresh)
+    }
+
     /// Shared tail for mutation pipelines: records the result (unless the caller already
     /// recorded each step), applies the refresh scope, and fires a background notification.
     private func finish(
@@ -877,6 +956,12 @@ public final class ProjectDashboardViewModel {
         projects[index] = projects[index].applying(details: refreshed)
         if selectedProjectFallback?.id == project.id {
             selectedProjectFallback = projects[index]
+        }
+        // Refresh the inspector's live overview (services/DB) for the selected project from the
+        // SAME describe — no second subprocess. Guarded so a stale describe can't overwrite a
+        // newer selection's detail.
+        if selectedProjectID == project.id {
+            selectedProjectDetails = refreshed
         }
         try? await projectCache.saveProjects(projects)
     }

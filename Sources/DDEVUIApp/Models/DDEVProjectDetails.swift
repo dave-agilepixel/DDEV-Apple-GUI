@@ -14,6 +14,8 @@ public struct DDEVProjectDetails: Equatable, Sendable {
     public let sshAgentStatus: String?
     public let databaseInfo: DDEVDatabaseInfo?
     public let services: [DDEVServiceInfo]
+    public let status: DDEVProjectStatus
+    public let statusDescription: String
 
     // NOTE: describe's `xdebug_enabled` is deliberately NOT modelled here — it reports the config
     // default, not the live runtime state. Live Xdebug state comes from `ddev xdebug status`
@@ -26,7 +28,9 @@ public struct DDEVProjectDetails: Equatable, Sendable {
         routerStatus: String? = nil,
         sshAgentStatus: String? = nil,
         databaseInfo: DDEVDatabaseInfo? = nil,
-        services: [DDEVServiceInfo] = []
+        services: [DDEVServiceInfo] = [],
+        status: DDEVProjectStatus = .unknown,
+        statusDescription: String = ""
     ) {
         self.phpVersion = phpVersion
         self.xhguiStatus = xhguiStatus
@@ -35,6 +39,8 @@ public struct DDEVProjectDetails: Equatable, Sendable {
         self.sshAgentStatus = sshAgentStatus
         self.databaseInfo = databaseInfo
         self.services = services
+        self.status = status
+        self.statusDescription = statusDescription
     }
 
     /// Services that are add-on/utility UIs worth surfacing in the Open/Launch hub (A1): anything
@@ -175,6 +181,8 @@ private struct RawDDEVProjectDetails: Decodable {
     let sshAgentStatus: String?
     let dbinfo: RawDBInfo?
     let services: [String: RawService]?
+    let status: String?
+    let statusDesc: String?
 
     private enum CodingKeys: String, CodingKey {
         case phpVersion = "php_version"
@@ -184,6 +192,8 @@ private struct RawDDEVProjectDetails: Decodable {
         case sshAgentStatus = "ssh_agent_status"
         case dbinfo
         case services
+        case status
+        case statusDesc = "status_desc"
     }
 
     func toDetails() -> DDEVProjectDetails {
@@ -194,7 +204,9 @@ private struct RawDDEVProjectDetails: Decodable {
             routerStatus: routerStatus,
             sshAgentStatus: sshAgentStatus,
             databaseInfo: dbinfo?.toDatabaseInfo(),
-            services: decodeServices()
+            services: decodeServices(),
+            status: status.flatMap { DDEVProjectStatus(rawValue: $0) } ?? .unknown,
+            statusDescription: statusDesc ?? ""
         )
     }
 

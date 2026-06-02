@@ -1,0 +1,14 @@
+Starting agilebugs...
+Building project images...Project images built in 1s.
+ Network ddev-agilebugs_default Created
+ Container ddev-agilebugs-db Started
+ Container ddev-agilebugs-web Started
+Starting Mutagen sync process...Mutagen sync flush completed in 3s.
+For details on sync status 'ddev mutagen st agilebugs -l'
+Waiting for containers to become ready: [web db]... ready in 5.0s
+Starting ddev-router, pushing config...
+ Container ddev-router Recreate
+ Container ddev-router Started
+Waiting for ddev-router to become ready... ready in 1.0s
+Successfully started agilebugs
+Your project can be reached at https://agilebugs.ddev.site

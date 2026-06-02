@@ -41,6 +41,16 @@ public final class DDEVCommandService: Sendable {
     }
 
     @discardableResult
+    public func start(projectName: String, onOutputLine: (@Sendable (String) -> Void)?) async throws -> CommandResult {
+        try await runDDEV(["start", projectName], onOutputLine: onOutputLine)
+    }
+
+    @discardableResult
+    public func restart(projectName: String, onOutputLine: (@Sendable (String) -> Void)?) async throws -> CommandResult {
+        try await runDDEV(["restart", projectName], onOutputLine: onOutputLine)
+    }
+
+    @discardableResult
     public func unlink(projectName: String) async throws -> CommandResult {
         try await runDDEV(["stop", "--unlist", projectName])
     }
@@ -286,6 +296,14 @@ public final class DDEVCommandService: Sendable {
 
     private func runDDEV(_ arguments: [String], workingDirectory: String? = nil) async throws -> CommandResult {
         try await commandRunner.run(CommandSpec(executable: ddevExecutable, arguments: arguments, workingDirectory: workingDirectory))
+    }
+
+    private func runDDEV(_ arguments: [String], workingDirectory: String? = nil,
+                         onOutputLine: (@Sendable (String) -> Void)?) async throws -> CommandResult {
+        try await commandRunner.run(
+            CommandSpec(executable: ddevExecutable, arguments: arguments, workingDirectory: workingDirectory),
+            onOutputLine: onOutputLine
+        )
     }
 }
 
