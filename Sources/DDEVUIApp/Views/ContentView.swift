@@ -6,6 +6,8 @@ struct ContentView: View {
     @State private var folderToConfigure: FolderToConfigure?
     @State private var showNewGroupEditor = false
     @State private var groupToRename: ProjectGroup?
+    /// The group row a project is currently being dragged over, for drop-target highlighting.
+    @State private var dropTargetGroupID: ProjectGroup.ID?
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
@@ -41,9 +43,16 @@ struct ContentView: View {
                             GroupSidebarRow(group: group, count: viewModel.memberCount(of: group.id))
                                 .tag(SidebarSelection.group(group.id))
                                 .contextMenu { groupContextMenu(group) }
+                                .listRowBackground(
+                                    dropTargetGroupID == group.id
+                                        ? RoundedRectangle(cornerRadius: 6).fill(.tint.opacity(0.25))
+                                        : nil
+                                )
                                 .dropDestination(for: ProjectTransfer.self) { items, _ in
                                     for item in items { viewModel.assignProject(item.projectID, toGroup: group.id) }
                                     return !items.isEmpty
+                                } isTargeted: { targeted in
+                                    dropTargetGroupID = targeted ? group.id : (dropTargetGroupID == group.id ? nil : dropTargetGroupID)
                                 }
                         }
                         .onMove { viewModel.moveGroups(fromOffsets: $0, toOffset: $1) }

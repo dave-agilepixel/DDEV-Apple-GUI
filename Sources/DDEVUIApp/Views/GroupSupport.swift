@@ -1,5 +1,4 @@
 import SwiftUI
-import UniformTypeIdentifiers
 
 extension GroupColor {
     var color: Color {
@@ -17,15 +16,16 @@ extension GroupColor {
 }
 
 /// Drag payload for assigning a project (a list row) onto a sidebar group.
-struct ProjectTransfer: Codable, Transferable {
+///
+/// Uses a plain-text proxy of the project id so it relies only on the always-registered text
+/// UTType. A custom `UTType(exportedAs:)` would require an `Info.plist` `UTExportedTypeDeclarations`
+/// entry — absent here (`GENERATE_INFOPLIST_FILE = YES`, no Info.plist) — and without that
+/// declaration the system doesn't recognise the type identifier, so the drop silently no-ops.
+struct ProjectTransfer: Transferable {
     let projectID: String
     static var transferRepresentation: some TransferRepresentation {
-        CodableRepresentation(contentType: .ddevuiProjectRow)
+        ProxyRepresentation(exporting: \.projectID)
     }
-}
-
-extension UTType {
-    static let ddevuiProjectRow = UTType(exportedAs: "io.agilepixel.ddevui.project-row")
 }
 
 /// A sidebar row for one group: colour dot + name + member-count badge.
