@@ -54,6 +54,11 @@ public final class PreferencesModel {
         preferencesStore.saveDefaultDatabaseTool(databaseTool)
     }
 
+    public func setProjectSort(_ sort: ProjectSort) {
+        preferences.projectSort = sort
+        preferencesStore.saveProjectSort(sort)
+    }
+
     public func refreshInstalledApps() {
         installedEditors = appAvailability.installedEditors()
         installedDatabaseTools = appAvailability.installedDatabaseTools()
