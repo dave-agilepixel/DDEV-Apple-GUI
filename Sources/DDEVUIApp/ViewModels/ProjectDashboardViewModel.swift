@@ -14,6 +14,7 @@ public protocol DDEVServicing: Sendable {
     func setPHPVersion(_ version: String, in appRoot: String) async throws -> CommandResult
     func launchDatabaseTool(_ tool: DDEVDatabaseTool, in appRoot: String) async throws -> CommandResult
     func importDatabase(_ options: DDEVDatabaseImportOptions, in appRoot: String) async throws -> CommandResult
+    func importFiles(_ options: DDEVImportFilesOptions, in appRoot: String) async throws -> CommandResult
     func exportDatabase(_ options: DDEVDatabaseExportOptions, in appRoot: String) async throws -> CommandResult
     func createSnapshot(name: String?, in appRoot: String) async throws -> CommandResult
     func listSnapshots(in appRoot: String) async throws -> CommandResult
@@ -28,7 +29,14 @@ public protocol DDEVServicing: Sendable {
     func removeAddOn(named name: String, projectName: String, in appRoot: String) async throws -> CommandResult
     func applyConfigChange(_ change: DDEVConfigChange, in appRoot: String) async throws -> CommandResult
     func runProjectCommand(arguments: [String], in appRoot: String) async throws -> CommandResult
+    func exec(command: String, service: DDEVExecService, in appRoot: String) async throws -> CommandResult
     func version() async throws -> CommandResult
+    func versionInfo() async throws -> DDEVVersionInfo
+    func poweroff() async throws -> CommandResult
+    func deleteImages() async throws -> CommandResult
+    func downloadImages() async throws -> CommandResult
+    func globalConfig() async throws -> DDEVGlobalConfig
+    func applyGlobalConfig(_ changes: [DDEVGlobalConfigChange]) async throws -> CommandResult
     func utilityDiagnose(in appRoot: String?) async throws -> CommandResult
     func utilityConfigYAML(omitKeys: [String], in appRoot: String) async throws -> CommandResult
     func utilityCheckCustomConfig(in appRoot: String) async throws -> CommandResult
@@ -124,11 +132,21 @@ public final class ProjectDashboardViewModel {
     /// configured type/version, so the inspector can surface an ambient drift warning (A5).
     public var dbMatchWarning: String?
 
+    /// User-defined custom commands discovered for the selected project (A13), from
+    /// `.ddev/commands/{host,web,db}` (project + global). Refreshed per selection.
+    public var customCommands: [DDEVCustomCommand] = []
+
     /// Live Xdebug on/off state for the selected running project, sourced from `ddev xdebug status`.
     /// NOTE: `describe -j`'s `xdebug_enabled` reflects the *configured* value (config.yaml), not the
     /// runtime state toggled by `ddev xdebug on/off`, so the live toggle must not bind to it.
     /// `nil` when unknown (project not running, or status not yet loaded).
     public var selectedProjectXdebugEnabled: Bool?
+
+    /// Live XHGui/XHProf on/off state for the selected running project, from `ddev xhgui status`.
+    /// XHGui *is* DDEV's XHProf UI (there is no separate `ddev xhprof` command); like Xdebug, the
+    /// live runtime state is authoritative over describe's config-time `xhgui_status`.
+    /// `nil` when unknown (project not running, or status not yet loaded).
+    public var selectedProjectXHGuiEnabled: Bool?
 
     /// Busy/error for genuinely project-less operations: global list refresh, global
     /// diagnostics, and new-project creation (which has no project id yet).
@@ -149,6 +167,16 @@ public final class ProjectDashboardViewModel {
     public var diagnosticReport = DDEVDiagnosticReport()
     public var diagnosticsErrorMessage: String?
 
+    /// Decoded `ddev version -j` (A18): DDEV + component image versions and the host toolchain.
+    /// Loaded on demand for the Diagnostics screen's About/Versions panel; not persisted.
+    public var ddevVersionInfo: DDEVVersionInfo?
+    public var versionInfoErrorMessage: String?
+
+    /// Current global DDEV configuration (A14), loaded on demand for the Settings global-config
+    /// section. `nil` until first loaded.
+    public var globalConfig: DDEVGlobalConfig?
+    public var globalConfigErrorMessage: String?
+
     /// Preferences + installed-app concern, extracted to its own model (audit M9). The public
     /// API below forwards to it so views/tests are unchanged; both are `@Observable`, so views
     /// reading the forwarders still track the underlying changes.
@@ -159,6 +187,7 @@ public final class ProjectDashboardViewModel {
     private let ddevService: DDEVServicing
     private let projectCache: ProjectCacheStoring
     private let groupStore: ProjectGroupStoring
+    private let customCommandDiscovery: CustomCommandDiscovering
     private let scheduler: CommandScheduler
     private let notifier: NotificationScheduling
     private var selectedProjectFallback: DDEVProject?
@@ -173,7 +202,8 @@ public final class ProjectDashboardViewModel {
         appAvailability: AppAvailabilityChecking = WorkspaceAppAvailabilityService(),
         scheduler: CommandScheduler = CommandScheduler(maxConcurrent: 3),
         notifier: NotificationScheduling = NoopNotificationScheduler(),
-        groupStore: ProjectGroupStoring = UserDefaultsProjectGroupStore()
+        groupStore: ProjectGroupStoring = UserDefaultsProjectGroupStore(),
+        customCommandDiscovery: CustomCommandDiscovering = FileSystemCustomCommandDiscovery()
     ) {
         self.ddevService = ddevService
         self.projectCache = projectCache
@@ -181,6 +211,7 @@ public final class ProjectDashboardViewModel {
         self.notifier = notifier
         self.preferencesModel = PreferencesModel(preferencesStore: preferencesStore, appAvailability: appAvailability)
         self.groupStore = groupStore
+        self.customCommandDiscovery = customCommandDiscovery
         self.groups = groupStore.loadGroups()
     }
 
@@ -470,6 +501,14 @@ public final class ProjectDashboardViewModel {
         }
     }
 
+    /// Imports an uploaded-files archive/directory into the selected project's upload dir (A19).
+    public func importFiles(_ options: DDEVImportFilesOptions) async {
+        guard let selectedProject else { return }
+        await runProjectMutation(selectedProject) {
+            try await self.ddevService.importFiles(options, in: selectedProject.appRoot)
+        }
+    }
+
     public func exportDatabase(_ options: DDEVDatabaseExportOptions) async {
         guard let selectedProject else { return }
         await runProjectMutation(selectedProject, refresh: .none) {
@@ -707,6 +746,57 @@ public final class ProjectDashboardViewModel {
         }
     }
 
+    /// Discovers the selected project's custom commands (A13). Best-effort and quiet — a project
+    /// with no custom commands simply yields an empty list.
+    public func loadCustomCommandsForSelectedProject() async {
+        guard let selectedProject else {
+            customCommands = []
+            return
+        }
+        let targetID = selectedProject.id
+        let discovered = await customCommandDiscovery.discoverCustomCommands(appRoot: selectedProject.appRoot)
+        guard selectedProjectID == targetID else { return } // selection moved on
+        customCommands = discovered
+    }
+
+    /// Runs a discovered custom command (`ddev <name>`) through the normal project-command channel.
+    public func runCustomCommandForSelectedProject(_ command: DDEVCustomCommand) async {
+        guard let selectedProject else { return }
+        await runProjectMutation(selectedProject) {
+            try await self.ddevService.runProjectCommand(arguments: [command.name], in: selectedProject.appRoot)
+        }
+    }
+
+    /// Runs an arbitrary one-shot command in the selected project's chosen service container (A9).
+    /// Output flows through the normal command-output/history channel.
+    public func runExecForSelectedProject(command: String, service: DDEVExecService) async {
+        guard let selectedProject else { return }
+        await runProjectMutation(selectedProject) {
+            try await self.ddevService.exec(command: command, service: service, in: selectedProject.appRoot)
+        }
+    }
+
+    /// Runs a DDEV tool wrapper with free-text arguments (A10): `ddev <tool> <args…>`. Arguments are
+    /// tokenized quote-aware, then run through the normal project-command channel.
+    public func runToolForSelectedProject(_ tool: DDEVTool, argumentString: String) async {
+        guard let selectedProject else { return }
+        let arguments = [tool.rawValue] + DDEVTool.tokenizeArguments(argumentString)
+        await runProjectMutation(selectedProject) {
+            try await self.ddevService.runProjectCommand(arguments: arguments, in: selectedProject.appRoot)
+        }
+    }
+
+    /// Loads `ddev version -j` for the About/Versions panel (A18). Read-only and global — no
+    /// project context needed. Failures surface as a message rather than throwing into the UI.
+    public func loadVersionInfo() async {
+        versionInfoErrorMessage = nil
+        do {
+            ddevVersionInfo = try await ddevService.versionInfo()
+        } catch {
+            versionInfoErrorMessage = "Couldn't read DDEV version info: \(error.localizedDescription)"
+        }
+    }
+
     public func runGlobalDiagnostics() async {
         await runDiagnostics {
             [
@@ -717,6 +807,69 @@ public final class ProjectDashboardViewModel {
                     try await self.ddevService.utilityDiagnose(in: nil)
                 }
             ]
+        }
+    }
+
+    // MARK: - Global housekeeping (A15)
+
+    /// Stops all running projects/containers (`ddev poweroff`), then refreshes the list so the
+    /// stopped statuses are reflected.
+    public func powerOffAllProjects() async {
+        isRunningGlobalCommand = true
+        globalErrorMessage = nil
+        defer { isRunningGlobalCommand = false }
+        do {
+            _ = try await ddevService.poweroff()
+            try await refreshProjectsFromDDEV()
+        } catch {
+            globalErrorMessage = error.presentableMessage
+        }
+    }
+
+    /// Removes DDEV Docker images to reclaim disk (`ddev delete images -y`).
+    public func deleteDDEVImages() async {
+        await runGlobalHousekeeping { try await self.ddevService.deleteImages() }
+    }
+
+    /// Pre-pulls DDEV's images (`ddev utility download-images`).
+    public func downloadDDEVImages() async {
+        await runGlobalHousekeeping { try await self.ddevService.downloadImages() }
+    }
+
+    // MARK: - Global configuration (A14)
+
+    /// Loads the current global DDEV config for the Settings global-config section.
+    public func loadGlobalConfig() async {
+        globalConfigErrorMessage = nil
+        do {
+            globalConfig = try await ddevService.globalConfig()
+        } catch {
+            globalConfigErrorMessage = "Couldn't read global config: \(error.presentableMessage)"
+        }
+    }
+
+    /// Applies global config changes (`ddev config global --flags`) then reloads to reflect them.
+    public func applyGlobalConfig(_ changes: [DDEVGlobalConfigChange]) async {
+        guard !changes.isEmpty else { return }
+        isRunningGlobalCommand = true
+        globalConfigErrorMessage = nil
+        defer { isRunningGlobalCommand = false }
+        do {
+            _ = try await ddevService.applyGlobalConfig(changes)
+            globalConfig = try await ddevService.globalConfig()
+        } catch {
+            globalConfigErrorMessage = "Couldn't update global config: \(error.presentableMessage)"
+        }
+    }
+
+    private func runGlobalHousekeeping(_ operation: @escaping () async throws -> CommandResult) async {
+        isRunningGlobalCommand = true
+        globalErrorMessage = nil
+        defer { isRunningGlobalCommand = false }
+        do {
+            _ = try await operation()
+        } catch {
+            globalErrorMessage = error.presentableMessage
         }
     }
 
@@ -812,6 +965,44 @@ public final class ProjectDashboardViewModel {
     /// Parses `ddev xdebug status` output ("xdebug enabled" / "xdebug disabled") into a Bool.
     /// `disabled` is checked first because it must not match the `enabled` branch.
     private static func parseXdebugEnabled(_ output: String) -> Bool? {
+        let lower = output.lowercased()
+        if lower.contains("disabled") { return false }
+        if lower.contains("enabled") { return true }
+        return nil
+    }
+
+    /// Reads the *live* XHGui/XHProf state for the selected running project via `ddev xhgui status`.
+    /// XHGui is DDEV's XHProf UI; mirrors the Xdebug live-status pattern (A17).
+    public func loadXHGuiStatusForSelectedProject() async {
+        guard let selectedProject, selectedProject.status == .running else {
+            selectedProjectXHGuiEnabled = nil
+            return
+        }
+        let targetID = selectedProject.id
+        selectedProjectXHGuiEnabled = nil
+        guard let result = try? await ddevService.xhgui(.status, in: selectedProject.appRoot) else { return }
+        guard selectedProjectID == targetID else { return } // selection moved on
+        selectedProjectXHGuiEnabled = Self.parseXHGuiEnabled(result.stdout)
+    }
+
+    /// Live XHGui/XHProf on/off toggle (A17). Flips XHProf profiling on the running project,
+    /// optimistically reflecting the requested state, then reconciling against `ddev xhgui status`.
+    public func setXHGuiForSelectedProject(_ enabled: Bool) async {
+        guard let selectedProject else { return }
+        selectedProjectXHGuiEnabled = enabled // optimistic; reconciled below
+        await runProjectMutation(selectedProject, refresh: .none) {
+            let result = try await self.ddevService.xhgui(enabled ? .on : .off, in: selectedProject.appRoot)
+            if let status = try? await self.ddevService.xhgui(.status, in: selectedProject.appRoot),
+               self.selectedProjectID == selectedProject.id {
+                self.selectedProjectXHGuiEnabled = Self.parseXHGuiEnabled(status.stdout) ?? enabled
+            }
+            return result
+        }
+    }
+
+    /// Parses `ddev xhgui status` output ("XHGui is enabled/disabled") into a Bool.
+    /// `disabled` is checked first because it must not match the `enabled` branch.
+    private static func parseXHGuiEnabled(_ output: String) -> Bool? {
         let lower = output.lowercased()
         if lower.contains("disabled") { return false }
         if lower.contains("enabled") { return true }
