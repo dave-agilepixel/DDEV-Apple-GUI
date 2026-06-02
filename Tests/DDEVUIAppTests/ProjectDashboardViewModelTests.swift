@@ -450,6 +450,29 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertFalse(service.commands.contains { $0.hasPrefix("check-db-match") })
     }
 
+    func testMigrateDatabaseRunsMigrationThenRechecksDrift() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.migrateDatabaseForSelectedProject(to: .mysql, version: "8.0")
+
+        XCTAssertTrue(service.commands.contains("migrate-database:/Users/dave/Development/agilepixel/aqua-pura:mysql:8.0"))
+        XCTAssertTrue(service.commands.contains("check-db-match:/Users/dave/Development/agilepixel/aqua-pura"),
+                      "Drift is re-checked after a migration")
+    }
+
+    func testMigrateDatabaseRejectsPostgresTarget() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.migrateDatabaseForSelectedProject(to: .postgres, version: "16")
+
+        XCTAssertFalse(service.commands.contains { $0.hasPrefix("migrate-database") },
+                       "migrate-database is MySQL/MariaDB only")
+    }
+
     func testImportDatabaseUsesSelectedProjectFolderAndRefreshes() async {
         let service = FakeDDEVService(projects: [.sampleWordPress])
         let viewModel = ProjectDashboardViewModel(ddevService: service)
@@ -1537,6 +1560,11 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
             throw diagnosticError
         }
         return commandResult(arguments: ["utility", "check-db-match"], workingDirectory: appRoot)
+    }
+
+    func migrateDatabase(to type: DDEVDatabaseType, version: String, in appRoot: String) async throws -> CommandResult {
+        record("migrate-database:\(appRoot):\(type.rawValue):\(version)")
+        return commandResult(arguments: ["utility", "migrate-database", "\(type.rawValue):\(version)"], workingDirectory: appRoot)
     }
 
     func mutagen(_ command: DDEVMutagenCommand, in appRoot: String) async throws -> CommandResult {

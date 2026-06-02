@@ -25,6 +25,21 @@ final class DDEVCommandServiceTests: XCTestCase {
         ])
     }
 
+    func testMigrateDatabaseRunsUtilityMigrateDatabaseWithDBTypeVersion() async throws {
+        let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
+        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
+
+        _ = try await service.migrateDatabase(to: .mysql, version: "8.0", in: "/Users/dave/site")
+
+        XCTAssertEqual(runner.commands, [
+            CommandSpec(
+                executable: "ddev",
+                arguments: ["utility", "migrate-database", "mysql:8.0"],
+                workingDirectory: "/Users/dave/site"
+            )
+        ])
+    }
+
     func testLifecycleCommandsUseProjectName() async throws {
         let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
         let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
