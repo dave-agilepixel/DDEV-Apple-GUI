@@ -125,6 +125,22 @@ final class ProjectConcurrencyTests: XCTestCase {
         XCTAssertTrue(spy.snapshot().isEmpty, "No notification for the focused project")
     }
 
+    func testMutationOfAProjectInTheMultiSelectionDoesNotNotify() async {
+        let service = GatedDDEVService(projects: [.sampleWordPress, .sampleLaravel])
+        let spy = SpyNotificationScheduler()
+        let viewModel = ProjectDashboardViewModel(ddevService: service, notifier: spy)
+        await viewModel.refresh()
+        // Both projects are in the active multi-selection — neither should notify on completion.
+        viewModel.selectedProjectIDs = ["aqua-pura", "agilebugs"]
+
+        let task = Task { await viewModel.stop(.sampleLaravel) } // agilebugs is part of the selection the user is acting on
+        await service.waitForInFlight(count: 1)
+        await service.releaseAll()
+        await task.value
+
+        XCTAssertTrue(spy.snapshot().isEmpty, "No notification for a project in the active selection")
+    }
+
     func testOverlappingRefreshIsDroppedByInFlightGuard() async {
         let service = GatedDDEVService(projects: [.sampleWordPress], gateList: true)
         let viewModel = ProjectDashboardViewModel(ddevService: service)

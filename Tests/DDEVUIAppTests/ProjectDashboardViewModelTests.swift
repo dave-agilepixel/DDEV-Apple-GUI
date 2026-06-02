@@ -161,6 +161,41 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.selectedProjectID, "aqua-pura")
     }
 
+    func testSelectedProjectIDFacadeMapsToTheSelectionSet() {
+        let viewModel = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: []))
+
+        viewModel.selectedProjectID = "aqua-pura"
+        XCTAssertEqual(viewModel.selectedProjectIDs, ["aqua-pura"])
+        XCTAssertEqual(viewModel.selectedProjectID, "aqua-pura")
+        XCTAssertFalse(viewModel.isMultiSelecting)
+
+        // A 2+ selection has no single "focused" id (the inspector falls back to the summary).
+        viewModel.selectedProjectIDs = ["aqua-pura", "agilebugs"]
+        XCTAssertNil(viewModel.selectedProjectID)
+        XCTAssertTrue(viewModel.isMultiSelecting)
+
+        viewModel.selectedProjectID = nil
+        XCTAssertTrue(viewModel.selectedProjectIDs.isEmpty)
+        XCTAssertFalse(viewModel.isMultiSelecting)
+    }
+
+    func testSettlingOnASingleSelectionRecordsRecency() {
+        let viewModel = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: []))
+
+        // Establish two recents so there is a meaningful front-of-list to disturb.
+        viewModel.selectedProjectIDs = ["agilebugs"]
+        viewModel.selectedProjectIDs = ["aqua-pura"]
+        XCTAssertEqual(viewModel.recentProjectIDs, ["aqua-pura", "agilebugs"])
+
+        // Re-selecting the same single project must NOT move it to front again (didSet guard).
+        viewModel.selectedProjectIDs = ["aqua-pura"]
+        XCTAssertEqual(viewModel.recentProjectIDs, ["aqua-pura", "agilebugs"])
+
+        // A 2+ selection records nothing new.
+        viewModel.selectedProjectIDs = ["aqua-pura", "agilebugs"]
+        XCTAssertEqual(viewModel.recentProjectIDs, ["aqua-pura", "agilebugs"])
+    }
+
     func testSearchFiltersProjectsByNamePathAndType() {
         let viewModel = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: []))
         viewModel.projects = [.sampleWordPress, .sampleLaravel]
@@ -312,6 +347,61 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         let commands = service.commands
         XCTAssertTrue(commands.contains("stop:aqua-pura"), "Running project is stopped")
         XCTAssertFalse(commands.contains("stop:agilebugs"), "Already-stopped project is left alone")
+    }
+
+    func testBatchScopeIsWholeViewWhenNotMultiSelecting() async {
+        let running = DDEVProject.sampleWordPress                    // aqua-pura, running
+        let stopped = DDEVProject.sampleLaravel.withStatus(.stopped) // agilebugs, stopped
+        let viewModel = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: [running, stopped]))
+        await viewModel.refresh() // auto-selects the first project → single selection, not multi
+
+        XCTAssertFalse(viewModel.isMultiSelecting)
+        XCTAssertEqual(Set(viewModel.batchScopeProjects.map(\.id)), ["aqua-pura", "agilebugs"])
+        XCTAssertEqual(viewModel.startableProjectsInCurrentView.map(\.id), ["agilebugs"])
+        XCTAssertEqual(viewModel.stoppableProjectsInCurrentView.map(\.id), ["aqua-pura"])
+    }
+
+    func testBatchScopeIsTheSelectedSubsetWhenMultiSelecting() {
+        let running = DDEVProject.sampleWordPress                    // aqua-pura, running
+        let stopped = DDEVProject.sampleLaravel.withStatus(.stopped) // agilebugs, stopped
+        let extra = DDEVProject.sampleDrupal                         // drupal-demo, running (excluded)
+        let viewModel = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: []))
+        viewModel.projects = [running, stopped, extra]
+
+        viewModel.selectedProjectIDs = ["aqua-pura", "agilebugs"] // exclude drupal-demo
+        XCTAssertTrue(viewModel.isMultiSelecting)
+        XCTAssertEqual(Set(viewModel.batchScopeProjects.map(\.id)), ["aqua-pura", "agilebugs"])
+        XCTAssertEqual(viewModel.startableProjectsInCurrentView.map(\.id), ["agilebugs"])
+        XCTAssertEqual(viewModel.stoppableProjectsInCurrentView.map(\.id), ["aqua-pura"])
+    }
+
+    func testBatchScopeExcludesSelectedProjectsHiddenBySearch() {
+        let viewModel = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: []))
+        viewModel.projects = [.sampleWordPress, .sampleLaravel] // aqua-pura, agilebugs
+
+        viewModel.selectedProjectIDs = ["aqua-pura", "agilebugs"]
+        viewModel.searchText = "aqua" // hides agilebugs from the view
+
+        XCTAssertTrue(viewModel.isMultiSelecting)
+        XCTAssertEqual(viewModel.batchScopeProjects.map(\.id), ["aqua-pura"],
+                       "A selected project hidden by search is never acted on")
+    }
+
+    func testBatchStartOverMultiSelectionStartsOnlySelectedStoppedProjects() async {
+        let running = DDEVProject.sampleWordPress                             // aqua-pura, running (selected)
+        let selectedStopped = DDEVProject.sampleLaravel.withStatus(.stopped)  // agilebugs, stopped (selected)
+        let unselectedStopped = DDEVProject.sampleDrupal.withStatus(.stopped) // drupal-demo, stopped (NOT selected)
+        let service = FakeDDEVService(projects: [running, selectedStopped, unselectedStopped])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        await viewModel.refresh()
+
+        viewModel.selectedProjectIDs = ["aqua-pura", "agilebugs"] // exclude drupal-demo
+        await viewModel.startProjectsInCurrentView()
+
+        let commands = service.commands
+        XCTAssertTrue(commands.contains("start:agilebugs"), "Selected stopped project is started")
+        XCTAssertFalse(commands.contains("start:drupal-demo"), "Unselected project is left alone")
+        XCTAssertFalse(commands.contains("start:aqua-pura"), "Already-running selected project is left alone")
     }
 
     func testRowActionTargetsGivenProjectNotSelection() async {
@@ -1599,6 +1689,46 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         vm.selection = .library(.running)
         XCTAssertEqual(vm.currentSectionTitle, ProjectSidebarItem.running.title)
     }
+
+    func testRefreshPrunesSelectionToLiveProjects() async {
+        // First refresh sees two projects; the user multi-selects both.
+        let service = FakeDDEVService(projects: [.sampleWordPress, .sampleLaravel])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        await viewModel.refresh()
+        viewModel.selectedProjectIDs = ["aqua-pura", "agilebugs"]
+
+        // A later refresh no longer lists agilebugs — it must drop out of the selection.
+        service.setProjects([.sampleWordPress])
+        await viewModel.refresh()
+
+        XCTAssertEqual(viewModel.selectedProjectIDs, ["aqua-pura"])
+    }
+
+    func testRefreshThatEmptiesSelectionFallsBackToFirstVisibleProject() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress, .sampleLaravel])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        await viewModel.refresh()
+        viewModel.selectedProjectIDs = ["agilebugs"]
+
+        // agilebugs disappears entirely — selection empties, so fall back to the first visible project.
+        service.setProjects([.sampleWordPress])
+        await viewModel.refresh()
+
+        XCTAssertEqual(viewModel.selectedProjectID, "aqua-pura")
+    }
+
+    func testRefreshKeepsAMultiSelectionWhenAllSelectedProjectsStillExist() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress, .sampleLaravel])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        await viewModel.refresh()
+        viewModel.selectedProjectIDs = ["aqua-pura", "agilebugs"]
+
+        // A refresh where both selected projects still exist must NOT collapse the multi-selection
+        // down to a single fallback project (the pre-pruning behaviour did exactly that).
+        await viewModel.refresh()
+
+        XCTAssertEqual(viewModel.selectedProjectIDs, ["aqua-pura", "agilebugs"])
+    }
 }
 
 private struct StubCustomCommandDiscovery: CustomCommandDiscovering {
@@ -1608,7 +1738,7 @@ private struct StubCustomCommandDiscovery: CustomCommandDiscovering {
 
 private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
     private let lock = NSLock()
-    private let loadedProjects: [DDEVProject]
+    private var loadedProjects: [DDEVProject]
     private let phpVersions: [String: String]
     private let xhguiStatuses: [String: DDEVXHGuiStatus]
     private let describeDetails: [String: DDEVProjectDetails]
@@ -1688,7 +1818,13 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
         if let listError {
             throw listError
         }
-        return loadedProjects
+        return lock.withLock { loadedProjects }
+    }
+
+    /// Test seam: change the list returned by the next `listProjects()` (simulates a project
+    /// appearing or disappearing between refreshes).
+    func setProjects(_ projects: [DDEVProject]) {
+        lock.withLock { loadedProjects = projects }
     }
 
     func describe(projectName: String) async throws -> DDEVProjectDetails {

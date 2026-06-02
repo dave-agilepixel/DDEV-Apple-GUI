@@ -127,12 +127,31 @@ public final class ProjectDashboardViewModel {
     public var groups: [ProjectGroup] = []
     /// Selected group, when a group (not a Library item) is the active sidebar selection.
     public var selectedGroupID: ProjectGroup.ID?
-    public var selectedProjectID: DDEVProject.ID? {
+    /// The list selection (the source of truth, bound directly to `List(selection:)`). Supports
+    /// shift-click range and cmd-click toggle natively on macOS. Single-selection callers use the
+    /// `selectedProjectID` facade below.
+    public var selectedProjectIDs: Set<DDEVProject.ID> = [] {
         didSet {
-            // Track recency for the "Recently Used" sort (B5). Session-scoped — resets on relaunch.
-            if let id = selectedProjectID, oldValue != id { recordRecentProject(id) }
+            // Track recency for "Recently Used" (B5) only when the selection settles on one project;
+            // a multi-selection has no single focused project. `recordRecentProject` is idempotent
+            // (moves the id to the front), so a repeat is harmless. Session-scoped — resets on relaunch.
+            if selectedProjectIDs.count == 1, let id = selectedProjectIDs.first, oldValue != selectedProjectIDs {
+                recordRecentProject(id)
+            }
         }
     }
+
+    /// Single-selection facade over `selectedProjectIDs`, kept for the inspector, the quick switcher
+    /// (B6), `selectedProject`, and the per-project read/mutation guards. One selected → that id;
+    /// zero or 2+ selected → nil.
+    public var selectedProjectID: DDEVProject.ID? {
+        get { selectedProjectIDs.count == 1 ? selectedProjectIDs.first : nil }
+        set { selectedProjectIDs = newValue.map { [$0] } ?? [] }
+    }
+
+    /// True when 2+ projects are selected — the bottom bar and detail pane switch into selection mode.
+    public var isMultiSelecting: Bool { selectedProjectIDs.count >= 2 }
+
     public var selectedSidebarItem: ProjectSidebarItem = .projects
     public var searchText = ""
 
@@ -514,14 +533,23 @@ public final class ProjectDashboardViewModel {
     // group and hitting "Start All" batch-starts exactly that group. Fan-out goes through the same
     // per-project mutations, so the CommandScheduler's max-concurrency cap applies for free.
 
-    /// Projects in the current view that aren't running (candidates for a batch start).
-    public var startableProjectsInCurrentView: [DDEVProject] {
-        filteredProjects.filter { $0.status != .running }
+    /// The set of projects a batch action operates on. When 2+ are selected this is the selection,
+    /// intersected with the currently-visible (filtered) projects and kept in visible order — so a
+    /// stale search filter can't make a batch touch a project the user can't see. Otherwise it's the
+    /// whole current view (the original B3 behaviour).
+    public var batchScopeProjects: [DDEVProject] {
+        guard isMultiSelecting else { return filteredProjects }
+        return filteredProjects.filter { selectedProjectIDs.contains($0.id) }
     }
 
-    /// Projects in the current view that are running (candidates for a batch stop).
+    /// Projects in the batch scope that aren't running (candidates for a batch start).
+    public var startableProjectsInCurrentView: [DDEVProject] {
+        batchScopeProjects.filter { $0.status != .running }
+    }
+
+    /// Projects in the batch scope that are running (candidates for a batch stop).
     public var stoppableProjectsInCurrentView: [DDEVProject] {
-        filteredProjects.filter { $0.status == .running }
+        batchScopeProjects.filter { $0.status == .running }
     }
 
     public func startProjectsInCurrentView() async {
@@ -1448,7 +1476,7 @@ public final class ProjectDashboardViewModel {
     }
 
     private func notifyIfBackground(project: DDEVProject, succeeded: Bool, summary: String) async {
-        guard project.id != selectedProjectID else { return }
+        guard !selectedProjectIDs.contains(project.id) else { return }
         await notifier.notifyCommandFinished(projectName: project.name, summary: summary, succeeded: succeeded)
     }
 
@@ -1637,13 +1665,19 @@ public final class ProjectDashboardViewModel {
         }
         if didPruneGroups { persistGroups() }
 
-        if let selectedProjectID,
-           let selectedProject = projects.first(where: { $0.id == selectedProjectID }) {
-            selectedProjectFallback = selectedProject
-        } else {
+        // Prune the multi-selection to projects that still exist (mirrors the group-member pruning
+        // above) so vanished projects don't linger as ghost selections.
+        let liveSelection = selectedProjectIDs.intersection(liveIDs)
+        if liveSelection != selectedProjectIDs { selectedProjectIDs = liveSelection }
+
+        if selectedProjectIDs.isEmpty {
+            // Nothing valid selected — fall back to the first visible project (original behaviour).
             let fallbackProject = filteredProjects(in: projects).first ?? projects.first
             selectedProjectID = fallbackProject?.id
             selectedProjectFallback = fallbackProject
+        } else if let id = selectedProjectID, let selectedProject = projects.first(where: { $0.id == id }) {
+            // Exactly one still selected — keep the inspector's fallback project fresh.
+            selectedProjectFallback = selectedProject
         }
     }
 

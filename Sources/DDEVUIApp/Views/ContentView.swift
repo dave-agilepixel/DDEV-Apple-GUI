@@ -98,6 +98,9 @@ struct ContentView: View {
                     description: Text("Run global checks or select a project before opening Diagnostics for project-specific checks.")
                 )
                 .navigationSplitViewColumnWidth(min: 360, ideal: 420)
+            } else if viewModel.isMultiSelecting {
+                MultiSelectionSummaryView(viewModel: viewModel)
+                    .navigationSplitViewColumnWidth(min: 540, ideal: 720)
             } else {
                 ProjectInspectorView(viewModel: viewModel)
                     .navigationSplitViewColumnWidth(min: 540, ideal: 720)
