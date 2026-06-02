@@ -277,6 +277,7 @@ private actor GatedDDEVService: DDEVServicing {
     func applyConfigChange(_ change: DDEVConfigChange, in appRoot: String) async throws -> CommandResult { try await runGated("config-change") }
     func runProjectCommand(arguments: [String], in appRoot: String) async throws -> CommandResult { try await runGated("project-command") }
     func version() async throws -> CommandResult { recorded.append("version"); return runImmediate() }
+    func versionInfo() async throws -> DDEVVersionInfo { recorded.append("version-info"); return DDEVVersionInfo(items: []) }
     func utilityDiagnose(in appRoot: String?) async throws -> CommandResult { recorded.append("diagnose"); return runImmediate() }
     func utilityConfigYAML(omitKeys: [String], in appRoot: String) async throws -> CommandResult { recorded.append("configyaml"); return runImmediate() }
     func utilityCheckCustomConfig(in appRoot: String) async throws -> CommandResult { recorded.append("check-custom-config"); return runImmediate() }
