@@ -193,6 +193,15 @@ public final class DDEVCommandService: Sendable {
         return try await runDDEV(["add-on", "search", query, "--json-output"], workingDirectory: appRoot)
     }
 
+    /// Lists the full add-on registry (A16). Hits the network, so it carries a wall-clock timeout
+    /// (the research saw `--all` hang ~30s) rather than risking an indefinite spinner.
+    public func listAllAddOns() async throws -> [DDEVAddon] {
+        let result = try await commandRunner.run(
+            CommandSpec(executable: ddevExecutable, arguments: ["add-on", "list", "--json-output"], timeout: .seconds(45))
+        )
+        return try DDEVAddon.parseListOutput(result.stdout)
+    }
+
     @discardableResult
     public func getAddOn(_ repository: String, projectName: String, in appRoot: String) async throws -> CommandResult {
         try Self.rejectDashPrefixed(repository, field: "add-on repository")

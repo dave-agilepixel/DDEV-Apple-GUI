@@ -761,6 +761,18 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertNil(viewModel.addonErrorMessage)
     }
 
+    func testLoadRegistryAddOnsSortsOfficialFirstAndRecordsCall() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+
+        await viewModel.loadRegistryAddOns()
+
+        XCTAssertEqual(viewModel.addonSearchResults.map(\.repository), ["ddev/ddev-redis", "someone/ddev-thing"])
+        XCTAssertEqual(viewModel.addonSearchResults.first?.stars, 80)
+        XCTAssertFalse(viewModel.isLoadingRegistry)
+        XCTAssertTrue(service.commands.contains("addon-list-all"))
+    }
+
     func testSearchAddOnsUsesSelectedProjectFolderAndParsesResults() async {
         let service = FakeDDEVService(
             projects: [.sampleWordPress],
@@ -1471,6 +1483,17 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
             throw addonError
         }
         return commandResult(arguments: ["add-on", "search", query], workingDirectory: appRoot, stdout: addonSearchOutput)
+    }
+
+    func listAllAddOns() async throws -> [DDEVAddon] {
+        record("addon-list-all")
+        if let addonError {
+            throw addonError
+        }
+        return [
+            DDEVAddon(repository: "ddev/ddev-redis", description: "Redis", type: .official, stars: 80),
+            DDEVAddon(repository: "someone/ddev-thing", description: "Thing", type: .contrib, stars: 12)
+        ]
     }
 
     func getAddOn(_ repository: String, projectName: String, in appRoot: String) async throws -> CommandResult {

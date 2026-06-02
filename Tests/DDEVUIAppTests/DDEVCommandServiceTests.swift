@@ -25,6 +25,18 @@ final class DDEVCommandServiceTests: XCTestCase {
         ])
     }
 
+    func testListAllAddOnsRunsAddOnListJSONAndDecodesStars() async throws {
+        let runner = RecordingCommandRunner(result: .success(CommandResult.success(
+            stdout: #"{"raw":[{"title":"ddev/ddev-redis","type":"official","stars":80}]}"#)))
+        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
+
+        let addons = try await service.listAllAddOns()
+
+        XCTAssertEqual(addons.first?.repository, "ddev/ddev-redis")
+        XCTAssertEqual(addons.first?.stars, 80)
+        XCTAssertEqual(runner.commands.first?.arguments, ["add-on", "list", "--json-output"])
+    }
+
     func testLifecycleCommandsUseProjectName() async throws {
         let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
         let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
