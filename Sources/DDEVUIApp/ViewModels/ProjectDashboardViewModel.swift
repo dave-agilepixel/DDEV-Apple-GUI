@@ -234,6 +234,26 @@ public final class ProjectDashboardViewModel {
         filteredProjects(in: projects)
     }
 
+    /// Projects whose name or path matches `query` (case-insensitive), across *all* sections — backs
+    /// the ⌘K quick switcher (B6). An empty query returns everything, name-sorted.
+    public func projectsMatching(_ query: String) -> [DDEVProject] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let pool = projects.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        guard !trimmed.isEmpty else { return pool }
+        return pool.filter {
+            $0.name.localizedCaseInsensitiveContains(trimmed)
+                || $0.shortRoot.localizedCaseInsensitiveContains(trimmed)
+        }
+    }
+
+    /// Jumps to the Projects section and selects `id` — used by the quick switcher so the picked
+    /// project is both selected and visible regardless of the current section/group filter (B6).
+    public func revealAndSelectProject(_ id: DDEVProject.ID) {
+        selectedGroupID = nil
+        selectedSidebarItem = .projects
+        selectedProjectID = id
+    }
+
     public var availableEditors: [EditorChoice] { preferencesModel.availableEditors }
     public var availableDatabaseTools: [DDEVDatabaseTool] { preferencesModel.availableDatabaseTools }
     public var effectiveDefaultEditor: EditorChoice { preferencesModel.effectiveDefaultEditor }

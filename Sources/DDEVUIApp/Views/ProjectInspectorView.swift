@@ -277,15 +277,18 @@ struct ProjectInspectorView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
+                .keyboardShortcut("o", modifiers: .command)
                 .disabled(!isRunning || project.primaryURL == nil)
 
                 if isRunning {
+                    // B6 — ⌘R is the primary lifecycle action (Restart when running, Start when stopped).
                     Button {
                         Task { await viewModel.restartSelectedProject() }
                     } label: {
                         Label("Restart", systemImage: "arrow.clockwise")
                     }
                     .controlSize(.large)
+                    .keyboardShortcut("r", modifiers: .command)
 
                     Button {
                         Task { await viewModel.stopSelectedProject() }
@@ -293,6 +296,7 @@ struct ProjectInspectorView: View {
                         Label("Stop", systemImage: "stop.fill")
                     }
                     .controlSize(.large)
+                    .keyboardShortcut(".", modifiers: .command)
                 } else {
                     Button {
                         Task { await viewModel.startSelectedProject() }
@@ -300,6 +304,7 @@ struct ProjectInspectorView: View {
                         Label("Start", systemImage: "play.fill")
                     }
                     .controlSize(.large)
+                    .keyboardShortcut("r", modifiers: .command)
                 }
 
                 Spacer(minLength: 0)
