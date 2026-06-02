@@ -157,6 +157,19 @@ private struct AddonSearchSheet: View {
                     Label("Search", systemImage: "magnifyingglass")
                 }
                 .disabled(viewModel.isSelectedProjectBusy)
+
+                Button {
+                    query = ""
+                    Task { await viewModel.loadRegistryAddOns() }
+                } label: {
+                    if viewModel.isLoadingRegistry {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Label("Browse All", systemImage: "square.grid.2x2")
+                    }
+                }
+                .disabled(viewModel.isLoadingRegistry)
+                .help("Load the full add-on registry (official first, by stars)")
             }
 
             if let addonErrorMessage = viewModel.addonErrorMessage {
@@ -233,6 +246,17 @@ private struct AddonRow: View {
                         Text("Official")
                             .font(.caption2.weight(.semibold))
                             .foregroundStyle(.green)
+                    } else {
+                        Text("Community")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if let stars = addon.stars {
+                        Label("\(stars)", systemImage: "star.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.yellow)
+                            .labelStyle(.titleAndIcon)
                     }
 
                     if let version = addon.version {

@@ -25,6 +25,7 @@ public protocol DDEVServicing: Sendable {
     func logs(projectName: String, service: String, tail: Int, includeTimestamps: Bool, in appRoot: String) async throws -> CommandResult
     func listInstalledAddOns(projectName: String, in appRoot: String) async throws -> CommandResult
     func searchAddOns(query: String, in appRoot: String) async throws -> CommandResult
+    func listAllAddOns() async throws -> [DDEVAddon]
     func getAddOn(_ repository: String, projectName: String, in appRoot: String) async throws -> CommandResult
     func removeAddOn(named name: String, projectName: String, in appRoot: String) async throws -> CommandResult
     func applyConfigChange(_ change: DDEVConfigChange, in appRoot: String) async throws -> CommandResult
@@ -723,6 +724,33 @@ public final class ProjectDashboardViewModel {
                 self.addonErrorMessage = "Command failed with exit code \(result.exitCode)."
                 throw CommandRunnerError.nonZeroExit(result)
             }
+        }
+    }
+
+    /// Loading flag for the full registry browse (A16) — distinct from the per-project read spinner.
+    public var isLoadingRegistry = false
+
+    /// Loads the full add-on registry for the browse experience (A16), sorted official-first then by
+    /// stars. Network-bound, so it runs with the service's timeout and surfaces failures as a message.
+    public func loadRegistryAddOns() async {
+        isLoadingRegistry = true
+        addonErrorMessage = nil
+        defer { isLoadingRegistry = false }
+        do {
+            addonSearchResults = Self.sortedForBrowse(try await ddevService.listAllAddOns())
+        } catch {
+            addonErrorMessage = "Couldn't load the add-on registry: \(error.presentableMessage)"
+        }
+    }
+
+    /// Browse order (A16): official add-ons first, then by GitHub stars (desc), then name.
+    nonisolated static func sortedForBrowse(_ addons: [DDEVAddon]) -> [DDEVAddon] {
+        addons.sorted { a, b in
+            if a.isOfficial != b.isOfficial { return a.isOfficial }
+            let sa = a.stars ?? -1
+            let sb = b.stars ?? -1
+            if sa != sb { return sa > sb }
+            return a.repository.localizedCaseInsensitiveCompare(b.repository) == .orderedAscending
         }
     }
 

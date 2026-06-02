@@ -624,6 +624,7 @@
   <details class="feat" data-v="NICE">
     <summary>
       <span class="badge NICE">NICE TO HAVE</span>
+      <span class="status done">Implemented</span>
       <span class="sgrow">
         <span class="stitle">A16 · Richer add-on registry browse (official/community + stars)</span>
         <div class="smeta"><span class="id">maps to</span> <span class="cmd">ddev add-on list --all</span> <span class="cmd">addons.ddev.com</span></div>
@@ -642,6 +643,7 @@
       <h4>Native-GUI fit</h4>
       <p>Good — browsing/trust-signals are nicer visually than CLI text.</p>
       <div class="verdict NICE"><b>Verdict:</b> Backlog. Polish on an already-decent feature, not a gap.</div>
+      <div class="verdict NICE"><b>Built 2026-06-02:</b> Added <code>stars</code> to the add-on model (decoded from the registry's <code>--json-output</code>), a <code>listAllAddOns()</code> service call with a <b>45s timeout</b> (the network call can hang — note <code>--all</code> is now deprecated/default), and a <b>Browse All</b> button in the add-on sheet that loads the full registry <b>sorted official-first then by stars</b>. Rows now show an <b>Official/Community</b> badge and a ★ star count.</div>
     </div>
   </details>
 

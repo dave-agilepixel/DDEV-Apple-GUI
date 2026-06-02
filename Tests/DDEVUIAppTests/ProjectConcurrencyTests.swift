@@ -273,6 +273,7 @@ private actor GatedDDEVService: DDEVServicing {
     func logs(projectName: String, service: String, tail: Int, includeTimestamps: Bool, in appRoot: String) async throws -> CommandResult { recorded.append("logs"); return runImmediate() }
     func listInstalledAddOns(projectName: String, in appRoot: String) async throws -> CommandResult { recorded.append("addon-list"); return runImmediate() }
     func searchAddOns(query: String, in appRoot: String) async throws -> CommandResult { recorded.append("addon-search"); return runImmediate() }
+    func listAllAddOns() async throws -> [DDEVAddon] { recorded.append("addon-list-all"); return [] }
     func getAddOn(_ repository: String, projectName: String, in appRoot: String) async throws -> CommandResult { try await runGated("addon-get") }
     func removeAddOn(named name: String, projectName: String, in appRoot: String) async throws -> CommandResult { try await runGated("addon-remove") }
     func applyConfigChange(_ change: DDEVConfigChange, in appRoot: String) async throws -> CommandResult { try await runGated("config-change") }
