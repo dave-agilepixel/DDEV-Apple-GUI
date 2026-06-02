@@ -1037,6 +1037,89 @@ private struct CustomCommandsView: View {
     }
 }
 
+/// A8 — expose the project on a temporary public URL via `ddev share`. Shows the parsed tunnel URL
+/// with open/copy, and a prominent Stop control. The tunnel is a long-running process owned by the
+/// view model.
+private struct ShareView: View {
+    let project: DDEVProject
+    var viewModel: ProjectDashboardViewModel
+    private let workspaceOpener = MacWorkspaceOpener()
+
+    var body: some View {
+        InspectorSection("Share") {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Expose this project on a temporary public URL (ddev share). Anyone with the link can reach your local site — stop sharing when you're done.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                content
+
+                if project.status != .running {
+                    Text("Start the project to share it.")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch viewModel.shareState {
+        case .idle, .stopped, .failed:
+            Button {
+                viewModel.startSharing()
+            } label: {
+                Label("Start Sharing", systemImage: "antenna.radiowaves.left.and.right")
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            .disabled(project.status != .running)
+
+            if case .failed(let message) = viewModel.shareState {
+                Label(message, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+
+        case .starting:
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("Starting tunnel…").foregroundStyle(.secondary)
+                Spacer()
+                Button("Stop", role: .destructive) { viewModel.stopSharing() }
+                    .controlSize(.small)
+            }
+
+        case .running(let url):
+            HStack(spacing: 8) {
+                Image(systemName: "antenna.radiowaves.left.and.right")
+                    .foregroundStyle(.green)
+                if let url {
+                    Text(url)
+                        .font(.system(.callout, design: .monospaced))
+                        .textSelection(.enabled)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Button {
+                        if let parsed = URL(string: url) { workspaceOpener.openURL(parsed) }
+                    } label: { Image(systemName: "safari") }
+                        .buttonStyle(.borderless)
+                        .help("Open the public URL")
+                    Button { Pasteboard.copy(url) } label: { Image(systemName: "doc.on.doc") }
+                        .buttonStyle(.borderless)
+                        .help("Copy the public URL")
+                } else {
+                    Text("Tunnel running…").foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Stop Sharing", role: .destructive) { viewModel.stopSharing() }
+                    .controlSize(.small)
+            }
+        }
+    }
+}
+
 private struct ManageTabContent: View {
     let project: DDEVProject
     var viewModel: ProjectDashboardViewModel
@@ -1049,6 +1132,7 @@ private struct ManageTabContent: View {
                 ToolRunnerView(project: project, viewModel: viewModel)
                 ExecConsoleView(project: project, viewModel: viewModel)
                 DatabaseOperationsView(project: project, viewModel: viewModel)
+                ShareView(project: project, viewModel: viewModel)
                 SnapshotManagerView(project: project, viewModel: viewModel)
                 AddonManagerView(project: project, viewModel: viewModel)
             }

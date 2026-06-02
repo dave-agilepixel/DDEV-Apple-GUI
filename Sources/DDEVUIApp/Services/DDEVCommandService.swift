@@ -50,6 +50,13 @@ public final class DDEVCommandService: Sendable {
         try await runDDEV(["restart", projectName], onOutputLine: onOutputLine)
     }
 
+    /// Opens a public tunnel to the project (`ddev share`, A8). Long-running — no timeout — so it
+    /// streams output until the owning task is cancelled (the "Stop sharing" control).
+    @discardableResult
+    public func share(in appRoot: String, onOutputLine: (@Sendable (String) -> Void)?) async throws -> CommandResult {
+        try await runDDEV(["share"], workingDirectory: appRoot, onOutputLine: onOutputLine)
+    }
+
     @discardableResult
     public func unlink(projectName: String) async throws -> CommandResult {
         try await runDDEV(["stop", "--unlist", projectName])

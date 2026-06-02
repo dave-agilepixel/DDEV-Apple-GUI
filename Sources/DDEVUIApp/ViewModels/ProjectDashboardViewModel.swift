@@ -51,6 +51,7 @@ public protocol DDEVServicing: Sendable {
     func updateWordPressThemes(in appRoot: String) async throws -> CommandResult
     func start(projectName: String, onOutputLine: (@Sendable (String) -> Void)?) async throws -> CommandResult
     func restart(projectName: String, onOutputLine: (@Sendable (String) -> Void)?) async throws -> CommandResult
+    func share(in appRoot: String, onOutputLine: (@Sendable (String) -> Void)?) async throws -> CommandResult
 }
 
 public extension DDEVServicing {
@@ -109,6 +110,15 @@ public enum SidebarSelection: Hashable, Sendable {
     case group(ProjectGroup.ID)
 }
 
+/// State of the `ddev share` public tunnel (A8).
+public enum ShareState: Equatable, Sendable {
+    case idle
+    case starting
+    case running(url: String?)
+    case stopped
+    case failed(String)
+}
+
 @MainActor
 @Observable
 public final class ProjectDashboardViewModel {
@@ -157,6 +167,11 @@ public final class ProjectDashboardViewModel {
     /// live runtime state is authoritative over describe's config-time `xhgui_status`.
     /// `nil` when unknown (project not running, or status not yet loaded).
     public var selectedProjectXHGuiEnabled: Bool?
+
+    /// State of the `ddev share` public tunnel for the selected project (A8). The tunnel is a
+    /// long-running streamed process; `shareTask` owns it and `stopSharing()` (or deinit) ends it.
+    public private(set) var shareState: ShareState = .idle
+    @ObservationIgnored private var shareTask: Task<Void, Never>?
 
     /// Busy/error for genuinely project-less operations: global list refresh, global
     /// diagnostics, and new-project creation (which has no project id yet).
@@ -234,6 +249,7 @@ public final class ProjectDashboardViewModel {
 
     deinit {
         statusPollTask?.cancel()
+        shareTask?.cancel()
     }
 
     // MARK: - Preferences (forwarded to PreferencesModel)
@@ -522,6 +538,70 @@ public final class ProjectDashboardViewModel {
                 group.addTask { await action(project) }
             }
         }
+    }
+
+    // MARK: - Public tunnel / share (A8)
+
+    public var isSharing: Bool {
+        switch shareState {
+        case .starting, .running: true
+        case .idle, .stopped, .failed: false
+        }
+    }
+
+    /// Opens a `ddev share` tunnel for the selected project and parses its streamed output for the
+    /// public URL. The process runs until `stopSharing()` cancels it.
+    public func startSharing() {
+        guard let selectedProject, shareTask == nil else { return }
+        shareState = .starting
+        let appRoot = selectedProject.appRoot
+        let service = ddevService
+        shareTask = Task { [weak self] in
+            // Off-main line sink that hops back to the main actor to update state.
+            let onLine: @Sendable (String) -> Void = { line in
+                Task { @MainActor in self?.ingestShareLine(line) }
+            }
+            do {
+                _ = try await service.share(in: appRoot, onOutputLine: onLine)
+                // The tunnel process exited on its own (provider closed it) rather than via cancel.
+                self?.finishSharing(with: .stopped)
+            } catch is CancellationError {
+                // User stopped it — stopSharing() already set the state.
+            } catch {
+                self?.finishSharing(with: .failed(error.presentableMessage))
+            }
+        }
+    }
+
+    /// Settles tunnel state when the share process ends by itself (not via `stopSharing()`).
+    private func finishSharing(with state: ShareState) {
+        guard shareTask != nil else { return }
+        shareState = state
+        shareTask = nil
+    }
+
+    public func stopSharing() {
+        shareTask?.cancel()
+        shareTask = nil
+        shareState = .stopped
+    }
+
+    private func ingestShareLine(_ line: String) {
+        guard isSharing else { return }
+        if let url = Self.parseShareURL(line) {
+            shareState = .running(url: url)
+        } else if case .starting = shareState {
+            shareState = .running(url: nil)
+        }
+    }
+
+    /// Extracts the public URL from a share provider's output line (ngrok/cloudflared print an
+    /// `https://…` forwarding URL). `nil` when the line carries no URL.
+    nonisolated static func parseShareURL(_ line: String) -> String? {
+        guard let range = line.range(of: #"https?://[^\s'"]+"#, options: .regularExpression) else {
+            return nil
+        }
+        return String(line[range])
     }
 
     public func startSelectedProject() async {

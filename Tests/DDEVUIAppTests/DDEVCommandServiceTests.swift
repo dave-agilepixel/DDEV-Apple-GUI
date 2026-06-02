@@ -88,6 +88,16 @@ final class DDEVCommandServiceTests: XCTestCase {
         XCTAssertEqual(runner.commands.first?.arguments, ["add-on", "list", "--json-output"])
     }
 
+    func testShareRunsDDEVShareInProjectDirectory() async throws {
+        let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
+        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
+
+        _ = try await service.share(in: "/Users/dave/site", onOutputLine: nil)
+
+        XCTAssertEqual(runner.commands.first?.arguments, ["share"])
+        XCTAssertEqual(runner.commands.first?.workingDirectory, "/Users/dave/site")
+    }
+
     func testLifecycleCommandsUseProjectName() async throws {
         let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
         let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")

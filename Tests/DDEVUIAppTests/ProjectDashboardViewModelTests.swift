@@ -34,6 +34,34 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertFalse(viewModel.isStatusPollingActive)
     }
 
+    func testParseShareURLExtractsForwardingURL() {
+        XCTAssertEqual(
+            ProjectDashboardViewModel.parseShareURL("Forwarding https://demo-1234.ngrok-free.app -> http://localhost:80"),
+            "https://demo-1234.ngrok-free.app"
+        )
+        XCTAssertNil(ProjectDashboardViewModel.parseShareURL("Starting tunnel, please wait…"))
+    }
+
+    func testStartSharingParsesURLThenStopResets() async throws {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        viewModel.startSharing()
+        for _ in 0..<200 where !{ if case .running = viewModel.shareState { return true } else { return false } }() {
+            await Task.yield()
+        }
+        if case .running(let url) = viewModel.shareState {
+            XCTAssertEqual(url, "https://demo-1234.ngrok-free.app")
+        } else {
+            XCTFail("Expected a running tunnel with a parsed URL, got \(viewModel.shareState)")
+        }
+        XCTAssertTrue(service.commands.contains("share:/Users/dave/Development/agilepixel/aqua-pura"))
+
+        viewModel.stopSharing()
+        XCTAssertFalse(viewModel.isSharing)
+    }
+
     func testRefreshLoadsProjectsAndSelectsFirstProject() async {
         let service = FakeDDEVService(projects: [.sampleWordPress])
         let viewModel = ProjectDashboardViewModel(ddevService: service)
@@ -1681,6 +1709,14 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
         if onOutputLine != nil { lock.withLock { startStreamedFlag = true } }
         for line in startOutputLines { onOutputLine?(line) }
         return commandResult(arguments: ["start", projectName])
+    }
+
+    func share(in appRoot: String, onOutputLine: (@Sendable (String) -> Void)?) async throws -> CommandResult {
+        record("share:\(appRoot)")
+        onOutputLine?("Forwarding https://demo-1234.ngrok-free.app -> http://localhost:80")
+        // Model a real tunnel: stay open until the owning task is cancelled (stopSharing).
+        try await Task.sleep(for: .seconds(3600))
+        return commandResult(arguments: ["share"], workingDirectory: appRoot)
     }
 
     func stop(projectName: String) async throws -> CommandResult {

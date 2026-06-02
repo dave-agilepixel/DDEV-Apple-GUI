@@ -444,6 +444,7 @@
   <details class="feat" data-v="NICE">
     <summary>
       <span class="badge NICE">NICE TO HAVE</span>
+      <span class="status done">Implemented</span>
       <span class="sgrow">
         <span class="stitle">A8 · ddev share (public tunnel)</span>
         <div class="smeta"><span class="id">maps to</span> <span class="cmd">ddev share</span></div>
@@ -462,6 +463,7 @@
       <h4>Native-GUI fit</h4>
       <p>OK. Needs persistent-process management and a clear running/stopped state, but the payoff (grab URL, demo, stop) is genuinely nicer in a GUI than babysitting a terminal.</p>
       <div class="verdict NICE"><b>Verdict:</b> Backlog it as a payoff of A6. On its own it's occasional-use; bundled with the streaming work it's nearly free.</div>
+      <div class="verdict NICE"><b>Built 2026-06-02:</b> A <b>Share</b> section in the Manage tab — Start/Stop a <code>ddev share</code> tunnel, with the public URL parsed live from the stream and shown with open/copy. <b>The streaming runner the roadmap said A8 depends on (A6) already exists</b> (<code>run(_:onOutputLine:)</code> with cancellation, from PR #12), so A8 is just persistent-process lifecycle in the view model: a <code>shareTask</code> owns the long-running process, <code>stopSharing()</code> cancels it (SIGTERM→SIGKILL), and a <code>ShareState</code> machine (idle/starting/running/stopped/failed) drives the UI.</div>
     </div>
   </details>
 

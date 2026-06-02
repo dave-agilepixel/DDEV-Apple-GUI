@@ -63,6 +63,7 @@ private final class SuspendedConfigDDEVService: DDEVServicing, @unchecked Sendab
     func start(projectName: String) async throws -> CommandResult { throw UnexpectedCallError() }
     func stop(projectName: String) async throws -> CommandResult { throw UnexpectedCallError() }
     func restart(projectName: String) async throws -> CommandResult { throw UnexpectedCallError() }
+    func share(in appRoot: String, onOutputLine: (@Sendable (String) -> Void)?) async throws -> CommandResult { throw UnexpectedCallError() }
     func unlink(projectName: String) async throws -> CommandResult { throw UnexpectedCallError() }
     func deleteDDEVData(projectName: String) async throws -> CommandResult { throw UnexpectedCallError() }
     func startProject(in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
