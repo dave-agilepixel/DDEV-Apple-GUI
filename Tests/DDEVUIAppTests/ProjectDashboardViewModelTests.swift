@@ -450,6 +450,20 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertFalse(service.commands.contains { $0.hasPrefix("check-db-match") })
     }
 
+    func testRunExecForSelectedProjectRunsExecAndRecordsOutput() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.runExecForSelectedProject(command: "php -v", service: .web)
+
+        XCTAssertEqual(service.commands, [
+            "exec:/Users/dave/Development/agilepixel/aqua-pura:web:php -v",
+            "describe:aqua-pura"
+        ])
+        XCTAssertEqual(viewModel.selectedProjectState.lastResult?.succeeded, true)
+    }
+
     func testImportDatabaseUsesSelectedProjectFolderAndRefreshes() async {
         let service = FakeDDEVService(projects: [.sampleWordPress])
         let viewModel = ProjectDashboardViewModel(ddevService: service)
@@ -1497,6 +1511,11 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
     func runProjectCommand(arguments: [String], in appRoot: String) async throws -> CommandResult {
         record("project-command:\(appRoot):\(arguments.joined(separator: ","))")
         return commandResult(arguments: arguments, workingDirectory: appRoot)
+    }
+
+    func exec(command: String, service: DDEVExecService, in appRoot: String) async throws -> CommandResult {
+        record("exec:\(appRoot):\(service.rawValue):\(command)")
+        return commandResult(arguments: ["exec", "--service=\(service.rawValue)", "bash", "-c", command], workingDirectory: appRoot)
     }
 
     func version() async throws -> CommandResult {

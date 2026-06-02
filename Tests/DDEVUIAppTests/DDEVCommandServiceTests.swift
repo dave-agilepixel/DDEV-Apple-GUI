@@ -156,6 +156,50 @@ final class DDEVCommandServiceTests: XCTestCase {
         ])
     }
 
+    func testExecRunsBashCInWebServiceByDefault() async throws {
+        let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
+        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
+
+        _ = try await service.exec(command: "php -v", service: .web, in: "/Users/dave/site")
+
+        XCTAssertEqual(runner.commands, [
+            CommandSpec(
+                executable: "ddev",
+                arguments: ["exec", "--service=web", "bash", "-c", "php -v"],
+                workingDirectory: "/Users/dave/site"
+            )
+        ])
+    }
+
+    func testExecTargetsChosenServiceAndTrimsCommand() async throws {
+        let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
+        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
+
+        _ = try await service.exec(command: "  ls -la /var/www  ", service: .db, in: "/Users/dave/site")
+
+        XCTAssertEqual(runner.commands, [
+            CommandSpec(
+                executable: "ddev",
+                arguments: ["exec", "--service=db", "bash", "-c", "ls -la /var/www"],
+                workingDirectory: "/Users/dave/site"
+            )
+        ])
+    }
+
+    func testExecRejectsBlankCommandWithoutInvokingDDEV() async throws {
+        let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
+        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
+
+        do {
+            _ = try await service.exec(command: "   ", service: .web, in: "/Users/dave/site")
+            XCTFail("Expected an empty-command validation error")
+        } catch let error as DDEVCommandValidationError {
+            XCTAssertEqual(error, .emptyProjectCommand)
+        }
+
+        XCTAssertTrue(runner.commands.isEmpty)
+    }
+
     func testDatabaseExportCompressionOptionsRunInProjectDirectory() async throws {
         let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
         let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
