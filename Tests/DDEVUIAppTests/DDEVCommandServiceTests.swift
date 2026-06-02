@@ -40,6 +40,27 @@ final class DDEVCommandServiceTests: XCTestCase {
         ])
     }
 
+    func testGlobalConfigReadsAndAppliesFlags() async throws {
+        let runner = RecordingCommandRunner(result: .success(CommandResult.success(
+            stdout: "performance-mode=mutagen\nproject-tld=ddev.site\n")))
+        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
+
+        let config = try await service.globalConfig()
+        XCTAssertEqual(config.performanceMode, "mutagen")
+        XCTAssertEqual(config.projectTLD, "ddev.site")
+
+        _ = try await service.applyGlobalConfig([.instrumentationOptIn(false), .routerHTTPPort("8080")])
+
+        XCTAssertEqual(runner.commands, [
+            CommandSpec(executable: "ddev", arguments: ["config", "global"], workingDirectory: nil),
+            CommandSpec(
+                executable: "ddev",
+                arguments: ["config", "global", "--instrumentation-opt-in=false", "--router-http-port=8080"],
+                workingDirectory: nil
+            )
+        ])
+    }
+
     func testLifecycleCommandsUseProjectName() async throws {
         let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
         let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
