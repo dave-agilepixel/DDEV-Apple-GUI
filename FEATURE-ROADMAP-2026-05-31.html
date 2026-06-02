@@ -494,6 +494,7 @@
   <details class="feat" data-v="NICE">
     <summary>
       <span class="badge NICE">NICE TO HAVE</span>
+      <span class="status done">Implemented</span>
       <span class="sgrow">
         <span class="stitle">A10 · Tooling passthrough console (composer / npm / drush / wp …)</span>
         <div class="smeta"><span class="id">maps to</span> <span class="cmd">ddev composer</span> <span class="cmd">ddev npm</span> <span class="cmd">ddev drush</span> <span class="cmd">ddev wp</span></div>
@@ -512,6 +513,7 @@
       <h4>Native-GUI fit</h4>
       <p>Good for one-shots with an output pane; you already have the pattern.</p>
       <div class="verdict NICE"><b>Verdict:</b> Backlog. A natural extension of what you've built, not a new concept — do it when the presets feel too limiting.</div>
+      <div class="verdict NICE"><b>Built 2026-06-02:</b> A <b>Tools</b> section in the Manage tab with a row per tool (Composer/npm always; Drush for Drupal; WP-CLI for WordPress — derived from project type) and a free-text arg field running <code>ddev &lt;tool&gt; &lt;args&gt;</code>. Args are split with a quote-aware tokenizer (so <code>"a b"</code> survives), reusing the existing project-command channel; output lands in the Logs tab. Stacked on A9.</div>
     </div>
   </details>
 

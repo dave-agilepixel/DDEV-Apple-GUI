@@ -707,6 +707,16 @@ public final class ProjectDashboardViewModel {
         }
     }
 
+    /// Runs a DDEV tool wrapper with free-text arguments (A10): `ddev <tool> <args…>`. Arguments are
+    /// tokenized quote-aware, then run through the normal project-command channel.
+    public func runToolForSelectedProject(_ tool: DDEVTool, argumentString: String) async {
+        guard let selectedProject else { return }
+        let arguments = [tool.rawValue] + DDEVTool.tokenizeArguments(argumentString)
+        await runProjectMutation(selectedProject) {
+            try await self.ddevService.runProjectCommand(arguments: arguments, in: selectedProject.appRoot)
+        }
+    }
+
     public func runGlobalDiagnostics() async {
         await runDiagnostics {
             [

@@ -864,6 +864,71 @@ private struct ServiceHealthRow: View {
 
 // MARK: - Manage tab
 
+/// A10 — tool passthrough: run `ddev composer/npm/drush/wp` with free-text arguments. The available
+/// tools are derived from the project type. Output flows into the Logs-tab command output.
+private struct ToolRunnerView: View {
+    let project: DDEVProject
+    var viewModel: ProjectDashboardViewModel
+
+    private var tools: [DDEVTool] { DDEVTool.tools(for: project.projectType) }
+
+    var body: some View {
+        InspectorSection("Tools") {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Run a tool inside the web container with your own arguments (ddev <tool> …). Output appears under the Logs tab.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                ForEach(tools) { tool in
+                    ToolRow(tool: tool, project: project, viewModel: viewModel)
+                }
+
+                if project.status != .running {
+                    Text("Start the project to run tools.")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+        }
+    }
+}
+
+private struct ToolRow: View {
+    let tool: DDEVTool
+    let project: DDEVProject
+    var viewModel: ProjectDashboardViewModel
+
+    @State private var args = ""
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(tool.displayName)
+                .font(.callout.weight(.medium))
+                .frame(width: 84, alignment: .leading)
+
+            TextField(tool.placeholder, text: $args)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(.body, design: .monospaced))
+                .onSubmit(run)
+
+            Button("Run", action: run)
+                .disabled(!canRun)
+        }
+    }
+
+    private var canRun: Bool {
+        project.status == .running
+            && !viewModel.isSelectedProjectBusy
+            && !args.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func run() {
+        guard canRun else { return }
+        let toRun = args
+        Task { await viewModel.runToolForSelectedProject(tool, argumentString: toRun) }
+    }
+}
+
 /// A9 — run an arbitrary one-shot command inside a service container (`ddev exec`). Output flows
 /// into the normal command-output channel (Logs tab). The command is run via `bash -c`, so pipes
 /// and shell features work.
@@ -930,6 +995,7 @@ private struct ManageTabContent: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 FrameworkCommandLauncherView(project: project, viewModel: viewModel)
+                ToolRunnerView(project: project, viewModel: viewModel)
                 ExecConsoleView(project: project, viewModel: viewModel)
                 DatabaseOperationsView(project: project, viewModel: viewModel)
                 SnapshotManagerView(project: project, viewModel: viewModel)
