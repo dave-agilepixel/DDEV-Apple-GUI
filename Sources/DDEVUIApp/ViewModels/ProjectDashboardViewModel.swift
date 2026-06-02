@@ -132,6 +132,10 @@ public final class ProjectDashboardViewModel {
     /// configured type/version, so the inspector can surface an ambient drift warning (A5).
     public var dbMatchWarning: String?
 
+    /// User-defined custom commands discovered for the selected project (A13), from
+    /// `.ddev/commands/{host,web,db}` (project + global). Refreshed per selection.
+    public var customCommands: [DDEVCustomCommand] = []
+
     /// Live Xdebug on/off state for the selected running project, sourced from `ddev xdebug status`.
     /// NOTE: `describe -j`'s `xdebug_enabled` reflects the *configured* value (config.yaml), not the
     /// runtime state toggled by `ddev xdebug on/off`, so the live toggle must not bind to it.
@@ -183,6 +187,7 @@ public final class ProjectDashboardViewModel {
     private let ddevService: DDEVServicing
     private let projectCache: ProjectCacheStoring
     private let groupStore: ProjectGroupStoring
+    private let customCommandDiscovery: CustomCommandDiscovering
     private let scheduler: CommandScheduler
     private let notifier: NotificationScheduling
     private var selectedProjectFallback: DDEVProject?
@@ -197,7 +202,8 @@ public final class ProjectDashboardViewModel {
         appAvailability: AppAvailabilityChecking = WorkspaceAppAvailabilityService(),
         scheduler: CommandScheduler = CommandScheduler(maxConcurrent: 3),
         notifier: NotificationScheduling = NoopNotificationScheduler(),
-        groupStore: ProjectGroupStoring = UserDefaultsProjectGroupStore()
+        groupStore: ProjectGroupStoring = UserDefaultsProjectGroupStore(),
+        customCommandDiscovery: CustomCommandDiscovering = FileSystemCustomCommandDiscovery()
     ) {
         self.ddevService = ddevService
         self.projectCache = projectCache
@@ -205,6 +211,7 @@ public final class ProjectDashboardViewModel {
         self.notifier = notifier
         self.preferencesModel = PreferencesModel(preferencesStore: preferencesStore, appAvailability: appAvailability)
         self.groupStore = groupStore
+        self.customCommandDiscovery = customCommandDiscovery
         self.groups = groupStore.loadGroups()
     }
 
@@ -726,6 +733,27 @@ public final class ProjectDashboardViewModel {
         guard let selectedProject else { return }
         await runProjectMutation(selectedProject) {
             try await self.ddevService.runProjectCommand(arguments: command.arguments, in: selectedProject.appRoot)
+        }
+    }
+
+    /// Discovers the selected project's custom commands (A13). Best-effort and quiet — a project
+    /// with no custom commands simply yields an empty list.
+    public func loadCustomCommandsForSelectedProject() async {
+        guard let selectedProject else {
+            customCommands = []
+            return
+        }
+        let targetID = selectedProject.id
+        let discovered = await customCommandDiscovery.discoverCustomCommands(appRoot: selectedProject.appRoot)
+        guard selectedProjectID == targetID else { return } // selection moved on
+        customCommands = discovered
+    }
+
+    /// Runs a discovered custom command (`ddev <name>`) through the normal project-command channel.
+    public func runCustomCommandForSelectedProject(_ command: DDEVCustomCommand) async {
+        guard let selectedProject else { return }
+        await runProjectMutation(selectedProject) {
+            try await self.ddevService.runProjectCommand(arguments: [command.name], in: selectedProject.appRoot)
         }
     }
 

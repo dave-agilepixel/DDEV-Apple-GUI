@@ -52,7 +52,8 @@ struct ProjectInspectorView: View {
                     async let xdebug: Void = viewModel.loadXdebugStatusForSelectedProject()
                     async let xhgui: Void = viewModel.loadXHGuiStatusForSelectedProject()
                     async let driftCheck: Void = viewModel.checkDBMatchForSelectedProject()
-                    _ = await (details, xdebug, xhgui, driftCheck)
+                    async let customCommands: Void = viewModel.loadCustomCommandsForSelectedProject()
+                    _ = await (details, xdebug, xhgui, driftCheck, customCommands)
                 }
                 .toolbar {
                     ToolbarItem(placement: .primaryAction) {
@@ -1004,6 +1005,33 @@ private struct ExecConsoleView: View {
     }
 }
 
+/// A13 — surfaces user-defined custom commands (`.ddev/commands/…`) discovered at runtime as
+/// buttons. Hidden entirely when the project defines none.
+private struct CustomCommandsView: View {
+    let project: DDEVProject
+    var viewModel: ProjectDashboardViewModel
+
+    var body: some View {
+        if !viewModel.customCommands.isEmpty {
+            InspectorSection("Custom Commands") {
+                FlowHStack(spacing: 8) {
+                    ForEach(viewModel.customCommands) { command in
+                        Button {
+                            Task { await viewModel.runCustomCommandForSelectedProject(command) }
+                        } label: {
+                            Label(command.name, systemImage: "terminal")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .help(command.description ?? "ddev \(command.name) (\(command.scope.rawValue))")
+                    }
+                }
+                .disabled(viewModel.isSelectedProjectBusy)
+            }
+        }
+    }
+}
+
 private struct ManageTabContent: View {
     let project: DDEVProject
     var viewModel: ProjectDashboardViewModel
@@ -1012,6 +1040,7 @@ private struct ManageTabContent: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 FrameworkCommandLauncherView(project: project, viewModel: viewModel)
+                CustomCommandsView(project: project, viewModel: viewModel)
                 ToolRunnerView(project: project, viewModel: viewModel)
                 ExecConsoleView(project: project, viewModel: viewModel)
                 DatabaseOperationsView(project: project, viewModel: viewModel)
