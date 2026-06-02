@@ -183,6 +183,9 @@ private struct ProjectRow: View {
                         Text("PHP \(php)")
                             .monospacedDigit()
                     }
+                    if let group = viewModel.group(for: project.id) {
+                        groupTag(group)
+                    }
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -251,6 +254,23 @@ private struct ProjectRow: View {
         case .stopped: .secondary
         case .unknown: .yellow
         }
+    }
+
+    /// A small coloured pill showing the project's group, so membership is visible at a glance in
+    /// the main listing (the dot carries the group colour; the label stays legible in secondary).
+    @ViewBuilder
+    private func groupTag(_ group: ProjectGroup) -> some View {
+        HStack(spacing: 3) {
+            Circle()
+                .fill(group.colorID.color)
+                .frame(width: 6, height: 6)
+            Text(group.name)
+                .lineLimit(1)
+        }
+        .font(.caption2)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 1)
+        .background(Capsule().fill(group.colorID.color.opacity(0.16)))
     }
 }
 
