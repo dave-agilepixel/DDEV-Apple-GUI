@@ -94,6 +94,11 @@ public enum ProjectSidebarItem: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+public enum SidebarSelection: Hashable, Sendable {
+    case library(ProjectSidebarItem)
+    case group(ProjectGroup.ID)
+}
+
 @MainActor
 @Observable
 public final class ProjectDashboardViewModel {
@@ -196,6 +201,26 @@ public final class ProjectDashboardViewModel {
         }
     }
 
+    /// Unified sidebar selection. `.group` wins when a still-existing group is selected, else the
+    /// Library item. Setting `.library` clears the group selection.
+    public var selection: SidebarSelection {
+        get {
+            if let selectedGroupID, groups.contains(where: { $0.id == selectedGroupID }) {
+                return .group(selectedGroupID)
+            }
+            return .library(selectedSidebarItem)
+        }
+        set {
+            switch newValue {
+            case .library(let item):
+                selectedSidebarItem = item
+                selectedGroupID = nil
+            case .group(let id):
+                selectedGroupID = id
+            }
+        }
+    }
+
     public var filteredProjects: [DDEVProject] {
         filteredProjects(in: projects)
     }
@@ -211,18 +236,19 @@ public final class ProjectDashboardViewModel {
 
     private func filteredProjects(in sourceProjects: [DDEVProject]) -> [DDEVProject] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let sectionProjects = sourceProjects.filter { project in
-            switch selectedSidebarItem {
-            case .projects:
-                true
-            case .running:
-                project.status == .running
-            case .wordpress:
-                project.isWordPress
-            case .diagnostics:
-                false
-            case .settings:
-                false
+        let sectionProjects: [DDEVProject]
+        if let selectedGroupID, let group = groups.first(where: { $0.id == selectedGroupID }) {
+            let memberSet = Set(group.memberIDs)
+            sectionProjects = sourceProjects.filter { memberSet.contains($0.id) }
+        } else {
+            sectionProjects = sourceProjects.filter { project in
+                switch selectedSidebarItem {
+                case .projects: true
+                case .running: project.status == .running
+                case .wordpress: project.isWordPress
+                case .diagnostics: false
+                case .settings: false
+                }
             }
         }
 

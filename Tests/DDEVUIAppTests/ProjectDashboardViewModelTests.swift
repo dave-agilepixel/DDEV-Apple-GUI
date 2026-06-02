@@ -1183,6 +1183,49 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertEqual(vm.groups.map(\.name), ["B", "C", "A"])
         XCTAssertEqual(store.loadGroups().map(\.name), ["B", "C", "A"], "reorder persists")
     }
+
+    // MARK: - Groups (Task 5)
+
+    func testFilteredProjectsForSelectedGroup() async {
+        let store = InMemoryProjectGroupStore()
+        let vm = ProjectDashboardViewModel(
+            ddevService: FakeDDEVService(projects: [.sampleWordPress, .sampleLaravel]), groupStore: store)
+        await vm.refresh() // aqua-pura, agilebugs
+        let a = vm.createGroup(name: "A", color: .blue)!
+        vm.assignProject("agilebugs", toGroup: a)
+        vm.selection = .group(a)
+        XCTAssertEqual(vm.filteredProjects.map(\.id), ["agilebugs"])
+    }
+
+    func testSearchNarrowsWithinSelectedGroup() async {
+        let vm = ProjectDashboardViewModel(
+            ddevService: FakeDDEVService(projects: [.sampleWordPress, .sampleLaravel]), groupStore: InMemoryProjectGroupStore())
+        await vm.refresh()
+        let a = vm.createGroup(name: "A", color: .blue)!
+        vm.assignProject("aqua-pura", toGroup: a)
+        vm.assignProject("agilebugs", toGroup: a)
+        vm.selection = .group(a)
+        vm.searchText = "aqua"
+        XCTAssertEqual(vm.filteredProjects.map(\.id), ["aqua-pura"])
+    }
+
+    func testSelectingLibraryClearsGroupSelection() {
+        let vm = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: []), groupStore: InMemoryProjectGroupStore())
+        let a = vm.createGroup(name: "A", color: .blue)!
+        vm.selection = .group(a)
+        XCTAssertEqual(vm.selectedGroupID, a)
+        vm.selection = .library(.running)
+        XCTAssertNil(vm.selectedGroupID)
+        XCTAssertEqual(vm.selectedSidebarItem, .running)
+    }
+
+    func testDeletingSelectedGroupResetsSelectionToLibrary() {
+        let vm = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: []), groupStore: InMemoryProjectGroupStore())
+        let a = vm.createGroup(name: "A", color: .blue)!
+        vm.selection = .group(a)
+        vm.deleteGroup(a)
+        if case .library = vm.selection { /* ok */ } else { XCTFail("selection should fall back to library") }
+    }
 }
 
 private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
