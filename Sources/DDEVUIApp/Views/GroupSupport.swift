@@ -15,18 +15,12 @@ extension GroupColor {
     }
 }
 
-/// Drag payload for assigning a project (a list row) onto a sidebar group.
-///
-/// Uses a plain-text proxy of the project id so it relies only on the always-registered text
-/// UTType. A custom `UTType(exportedAs:)` would require an `Info.plist` `UTExportedTypeDeclarations`
-/// entry — absent here (`GENERATE_INFOPLIST_FILE = YES`, no Info.plist) — and without that
-/// declaration the system doesn't recognise the type identifier, so the drop silently no-ops.
-struct ProjectTransfer: Transferable {
-    let projectID: String
-    static var transferRepresentation: some TransferRepresentation {
-        ProxyRepresentation(exporting: \.projectID)
-    }
-}
+// Project rows are dragged onto groups as their plain `String` id (`.draggable(project.id)`), and the
+// sidebar group rows receive them via `.dropDestination(for: String.self)`. We deliberately use the
+// String type rather than a custom `Transferable`: a custom `UTType(exportedAs:)` needs an Info.plist
+// `UTExportedTypeDeclarations` entry (absent here — `GENERATE_INFOPLIST_FILE = YES`), and an
+// export-only `ProxyRepresentation` leaves the type un-importable so drops silently no-op. String's
+// Transferable conformance is Apple-maintained and bidirectional, so neither trap applies.
 
 /// A sidebar row for one group: colour dot + name + member-count badge.
 struct GroupSidebarRow: View {

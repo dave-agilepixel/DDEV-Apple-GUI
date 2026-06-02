@@ -48,9 +48,14 @@ struct ContentView: View {
                                         ? RoundedRectangle(cornerRadius: 6).fill(.tint.opacity(0.25))
                                         : nil
                                 )
-                                .dropDestination(for: ProjectTransfer.self) { items, _ in
-                                    for item in items { viewModel.assignProject(item.projectID, toGroup: group.id) }
-                                    return !items.isEmpty
+                                .dropDestination(for: String.self) { droppedIDs, _ in
+                                    // Drag payload is a project id (a plain String). Filter to ids we
+                                    // actually know so a stray text drag can't create a phantom member.
+                                    let knownIDs = droppedIDs.filter { id in
+                                        viewModel.projects.contains { $0.id == id }
+                                    }
+                                    for id in knownIDs { viewModel.assignProject(id, toGroup: group.id) }
+                                    return !knownIDs.isEmpty
                                 } isTargeted: { targeted in
                                     dropTargetGroupID = targeted ? group.id : (dropTargetGroupID == group.id ? nil : dropTargetGroupID)
                                 }

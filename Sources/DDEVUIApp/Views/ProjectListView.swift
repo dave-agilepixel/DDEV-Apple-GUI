@@ -75,7 +75,7 @@ struct ProjectListView: View {
                             ProjectRow(project: project, viewModel: viewModel)
                                 .tag(project.id)
                                 .listRowSeparator(.visible)
-                                .draggable(ProjectTransfer(projectID: project.id))
+                                .draggable(project.id)
                                 .contextMenu { moveToGroupMenu(project) }
                         }
                     } header: {
