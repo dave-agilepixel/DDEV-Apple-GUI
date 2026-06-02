@@ -37,6 +37,28 @@ public struct CommandResult: Equatable, Sendable {
         exitCode == 0 && !wasCancelled
     }
 
+    /// The full invocation as a single line (e.g. `ddev composer install`), for display and copy (B4).
+    public var commandLine: String {
+        ([executable] + arguments).joined(separator: " ")
+    }
+
+    /// Whether re-running this exact invocation from the history list is safe without re-prompting
+    /// (B4). Destructive/guarded data & lifecycle ops are excluded so a one-click history re-run can't
+    /// bypass the confirmations their normal UI enforces (DB drop, project delete, snapshot restore…).
+    public var isSafelyRerunnable: Bool {
+        guard let first = arguments.first else { return false }
+        switch first {
+        case "delete", "import-db", "poweroff", "clean":
+            return false
+        case "snapshot" where arguments.contains("restore"):
+            return false
+        case "stop" where arguments.contains("--unlist"):
+            return false
+        default:
+            return true
+        }
+    }
+
     public static func success(stdout: String = "", stderr: String = "") -> CommandResult {
         let now = Date()
         return CommandResult(

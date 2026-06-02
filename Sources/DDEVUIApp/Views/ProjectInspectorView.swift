@@ -932,7 +932,10 @@ private struct LogsTabContent: View {
                 CommandOutputView(
                     result: viewModel.selectedProjectState.lastResult,
                     history: viewModel.selectedProjectState.history,
-                    errorMessage: viewModel.selectedProjectState.lastErrorMessage
+                    errorMessage: viewModel.selectedProjectState.lastErrorMessage,
+                    onRerun: { result in
+                        Task { await viewModel.rerunCommandForSelectedProject(result) }
+                    }
                 )
             }
         }

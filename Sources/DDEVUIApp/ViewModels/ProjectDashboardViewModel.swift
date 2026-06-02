@@ -697,6 +697,16 @@ public final class ProjectDashboardViewModel {
         }
     }
 
+    /// Re-runs a past command from the history (B4). Only safe (non-destructive) invocations are
+    /// re-runnable — destructive ones are filtered out so a one-click re-run can't bypass the
+    /// confirmations their normal UI enforces.
+    public func rerunCommandForSelectedProject(_ result: CommandResult) async {
+        guard let selectedProject, result.isSafelyRerunnable else { return }
+        await runProjectMutation(selectedProject) {
+            try await self.ddevService.runProjectCommand(arguments: result.arguments, in: selectedProject.appRoot)
+        }
+    }
+
     public func runGlobalDiagnostics() async {
         await runDiagnostics {
             [
