@@ -2,6 +2,26 @@ import XCTest
 @testable import DDEVUIApp
 
 final class DDEVAddonParsingTests: XCTestCase {
+    func testParseListOutputDecodesStarsFromRegistry() throws {
+        let json = #"""
+        {"raw":[{"title":"ddev/ddev-redis","description":"Redis","type":"official","stars":42,"github_url":"https://github.com/ddev/ddev-redis"}]}
+        """#
+        let addons = try DDEVAddon.parseListOutput(json)
+        XCTAssertEqual(addons.first?.repository, "ddev/ddev-redis")
+        XCTAssertEqual(addons.first?.stars, 42)
+        XCTAssertTrue(addons.first?.isOfficial == true)
+    }
+
+    func testSortedForBrowsePutsOfficialFirstThenStars() {
+        let addons = [
+            DDEVAddon(repository: "z/community-a", description: "", type: .contrib, stars: 5),
+            DDEVAddon(repository: "ddev/ddev-redis", description: "", type: .official, stars: 80),
+            DDEVAddon(repository: "a/community-b", description: "", type: .contrib, stars: 50)
+        ]
+        let sorted = ProjectDashboardViewModel.sortedForBrowse(addons)
+        XCTAssertEqual(sorted.map(\.repository), ["ddev/ddev-redis", "a/community-b", "z/community-a"])
+    }
+
     func testParsesJSONRawAddOnPayload() throws {
         let output = """
         {

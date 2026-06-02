@@ -26,12 +26,14 @@ struct DiagnosticsView: View {
                 }
 
                 resultsSection
+                versionsSection
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 20)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .navigationTitle("Diagnostics")
+        .task { await viewModel.loadVersionInfo() }
         .confirmationDialog("Reset Mutagen data?", isPresented: $confirmMutagenReset) {
             Button("Reset Mutagen", role: .destructive) {
                 Task { await viewModel.runMutagenDiagnosticForSelectedProject(.reset) }
@@ -142,6 +144,80 @@ struct DiagnosticsView: View {
                 }
             }
         }
+    }
+
+    private var versionsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Versions")
+                    .sectionHeaderStyle()
+                Spacer()
+                if let info = viewModel.ddevVersionInfo, !info.items.isEmpty {
+                    Button {
+                        copy(versionsCopyText(info))
+                    } label: {
+                        Label("Copy All Versions", systemImage: "doc.on.doc")
+                    }
+                    .labelStyle(.iconOnly)
+                    .help("Copy all version information")
+                }
+            }
+
+            Text("DDEV, component images, and the host Docker/Mutagen toolchain — from `ddev version -j`.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            if let message = viewModel.versionInfoErrorMessage {
+                Label(message, systemImage: "exclamationmark.triangle.fill")
+                    .font(.callout)
+                    .foregroundStyle(.orange)
+            }
+
+            if let info = viewModel.ddevVersionInfo {
+                if info.items.isEmpty {
+                    Text("No version information returned.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                } else {
+                    VStack(spacing: 0) {
+                        ForEach(Array(info.items.enumerated()), id: \.element.id) { index, item in
+                            if index > 0 { Divider() }
+                            versionRow(key: item.key, value: item.value)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                    .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 8))
+                }
+            } else {
+                ProgressView().controlSize(.small)
+            }
+        }
+    }
+
+    private func versionRow(key: String, value: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(key)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .frame(width: 160, alignment: .leading)
+            Text(value)
+                .font(.system(.caption, design: .monospaced))
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button {
+                copy(value)
+            } label: {
+                Image(systemName: "doc.on.doc")
+            }
+            .buttonStyle(.borderless)
+            .help("Copy \(key)")
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+    }
+
+    private func versionsCopyText(_ info: DDEVVersionInfo) -> String {
+        info.items.map { "\($0.key): \($0.value)" }.joined(separator: "\n")
     }
 
     private func mutagenButton(_ command: DDEVMutagenCommand, title: String, systemImage: String) -> some View {
