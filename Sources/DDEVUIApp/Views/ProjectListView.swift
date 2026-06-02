@@ -126,7 +126,7 @@ struct ProjectListView: View {
                     description: Text(emptyDescription)
                 )
             } else {
-                List(selection: projectSelection) {
+                List(selection: $viewModel.selectedProjectIDs) {
                     Section {
                         ForEach(viewModel.filteredProjects) { project in
                             ProjectRow(project: project, viewModel: viewModel)
@@ -148,15 +148,6 @@ struct ProjectListView: View {
                 }
                 .listStyle(.inset)
             }
-        }
-    }
-
-    private var projectSelection: Binding<DDEVProject.ID?> {
-        Binding {
-            viewModel.selectedProjectID
-        } set: { newSelection in
-            guard viewModel.selectedProjectID != newSelection else { return }
-            viewModel.selectedProjectID = newSelection
         }
     }
 
