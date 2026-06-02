@@ -558,6 +558,20 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertFalse(service.commands.contains { $0.hasPrefix("check-db-match") })
     }
 
+    func testRunToolForSelectedProjectRunsDDEVToolWithTokenizedArgs() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.runToolForSelectedProject(.composer, argumentString: #"require "foo/bar:^1.0""#)
+
+        XCTAssertEqual(service.commands, [
+            "project-command:/Users/dave/Development/agilepixel/aqua-pura:composer,require,foo/bar:^1.0",
+            "describe:aqua-pura"
+        ])
+        XCTAssertEqual(viewModel.selectedProjectState.lastResult?.succeeded, true)
+    }
+
     func testRunExecForSelectedProjectRunsExecAndRecordsOutput() async {
         let service = FakeDDEVService(projects: [.sampleWordPress])
         let viewModel = ProjectDashboardViewModel(ddevService: service)
