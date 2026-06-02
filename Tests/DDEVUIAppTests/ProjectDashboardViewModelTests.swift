@@ -161,6 +161,41 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.selectedProjectID, "aqua-pura")
     }
 
+    func testSelectedProjectIDFacadeMapsToTheSelectionSet() {
+        let viewModel = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: []))
+
+        viewModel.selectedProjectID = "aqua-pura"
+        XCTAssertEqual(viewModel.selectedProjectIDs, ["aqua-pura"])
+        XCTAssertEqual(viewModel.selectedProjectID, "aqua-pura")
+        XCTAssertFalse(viewModel.isMultiSelecting)
+
+        // A 2+ selection has no single "focused" id (the inspector falls back to the summary).
+        viewModel.selectedProjectIDs = ["aqua-pura", "agilebugs"]
+        XCTAssertNil(viewModel.selectedProjectID)
+        XCTAssertTrue(viewModel.isMultiSelecting)
+
+        viewModel.selectedProjectID = nil
+        XCTAssertTrue(viewModel.selectedProjectIDs.isEmpty)
+        XCTAssertFalse(viewModel.isMultiSelecting)
+    }
+
+    func testSettlingOnASingleSelectionRecordsRecency() {
+        let viewModel = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: []))
+
+        // Establish two recents so there is a meaningful front-of-list to disturb.
+        viewModel.selectedProjectIDs = ["agilebugs"]
+        viewModel.selectedProjectIDs = ["aqua-pura"]
+        XCTAssertEqual(viewModel.recentProjectIDs, ["aqua-pura", "agilebugs"])
+
+        // Re-selecting the same single project must NOT move it to front again (didSet guard).
+        viewModel.selectedProjectIDs = ["aqua-pura"]
+        XCTAssertEqual(viewModel.recentProjectIDs, ["aqua-pura", "agilebugs"])
+
+        // A 2+ selection records nothing new.
+        viewModel.selectedProjectIDs = ["aqua-pura", "agilebugs"]
+        XCTAssertEqual(viewModel.recentProjectIDs, ["aqua-pura", "agilebugs"])
+    }
+
     func testSearchFiltersProjectsByNamePathAndType() {
         let viewModel = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: []))
         viewModel.projects = [.sampleWordPress, .sampleLaravel]

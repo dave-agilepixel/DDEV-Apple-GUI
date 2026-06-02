@@ -127,12 +127,31 @@ public final class ProjectDashboardViewModel {
     public var groups: [ProjectGroup] = []
     /// Selected group, when a group (not a Library item) is the active sidebar selection.
     public var selectedGroupID: ProjectGroup.ID?
-    public var selectedProjectID: DDEVProject.ID? {
+    /// The list selection (the source of truth, bound directly to `List(selection:)`). Supports
+    /// shift-click range and cmd-click toggle natively on macOS. Single-selection callers use the
+    /// `selectedProjectID` facade below.
+    public var selectedProjectIDs: Set<DDEVProject.ID> = [] {
         didSet {
-            // Track recency for the "Recently Used" sort (B5). Session-scoped — resets on relaunch.
-            if let id = selectedProjectID, oldValue != id { recordRecentProject(id) }
+            // Track recency for "Recently Used" (B5) only when the selection settles on one project;
+            // a multi-selection has no single focused project. `recordRecentProject` is idempotent
+            // (moves the id to the front), so a repeat is harmless. Session-scoped — resets on relaunch.
+            if selectedProjectIDs.count == 1, let id = selectedProjectIDs.first, oldValue != selectedProjectIDs {
+                recordRecentProject(id)
+            }
         }
     }
+
+    /// Single-selection facade over `selectedProjectIDs`, kept for the inspector, the quick switcher
+    /// (B6), `selectedProject`, and the per-project read/mutation guards. One selected → that id;
+    /// zero or 2+ selected → nil.
+    public var selectedProjectID: DDEVProject.ID? {
+        get { selectedProjectIDs.count == 1 ? selectedProjectIDs.first : nil }
+        set { selectedProjectIDs = newValue.map { [$0] } ?? [] }
+    }
+
+    /// True when 2+ projects are selected — the bottom bar and detail pane switch into selection mode.
+    public var isMultiSelecting: Bool { selectedProjectIDs.count >= 2 }
+
     public var selectedSidebarItem: ProjectSidebarItem = .projects
     public var searchText = ""
 
@@ -1637,6 +1656,9 @@ public final class ProjectDashboardViewModel {
         }
         if didPruneGroups { persistGroups() }
 
+        // TODO(multi-select): this single-selection reconciliation collapses a 2+ selection to the
+        // fallback on every refresh. Replaced with set-pruning in a follow-up task — do not rely on
+        // this branch for multi-selection behaviour.
         if let selectedProjectID,
            let selectedProject = projects.first(where: { $0.id == selectedProjectID }) {
             selectedProjectFallback = selectedProject
