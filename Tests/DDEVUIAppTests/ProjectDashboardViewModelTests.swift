@@ -82,6 +82,26 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertFalse(viewModel.isRunningGlobalCommand)
     }
 
+    func testProjectsMatchingFiltersByNameCaseInsensitively() {
+        let viewModel = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: []))
+        viewModel.projects = [.sampleWordPress, .sampleLaravel]
+
+        XCTAssertEqual(viewModel.projectsMatching("AQUA").map(\.name), ["aqua-pura"])
+        XCTAssertEqual(viewModel.projectsMatching("").map(\.name), ["agilebugs", "aqua-pura"])
+    }
+
+    func testRevealAndSelectProjectJumpsToProjectsSection() {
+        let viewModel = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: []))
+        viewModel.projects = [.sampleWordPress]
+        viewModel.selectedSidebarItem = .running
+
+        viewModel.revealAndSelectProject("aqua-pura")
+
+        XCTAssertEqual(viewModel.selectedSidebarItem, .projects)
+        XCTAssertNil(viewModel.selectedGroupID)
+        XCTAssertEqual(viewModel.selectedProjectID, "aqua-pura")
+    }
+
     func testSearchFiltersProjectsByNamePathAndType() {
         let viewModel = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: []))
         viewModel.projects = [.sampleWordPress, .sampleLaravel]

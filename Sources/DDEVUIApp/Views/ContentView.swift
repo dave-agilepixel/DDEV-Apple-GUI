@@ -8,6 +8,7 @@ struct ContentView: View {
     @State private var groupToEdit: ProjectGroup?
     /// The group row a project is currently being dragged over, for drop-target highlighting.
     @State private var dropTargetGroupID: ProjectGroup.ID?
+    @State private var showQuickSwitcher = false
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
@@ -126,7 +127,19 @@ struct ContentView: View {
                 }
                 .help("Reload DDEV project list")
                 .disabled(viewModel.isRunningGlobalCommand)
+
+                Button {
+                    showQuickSwitcher = true
+                } label: {
+                    Label("Quick Switcher", systemImage: "command")
+                }
+                .help("Jump to a project (⌘K)")
+                .keyboardShortcut("k", modifiers: .command)
+                .disabled(viewModel.projects.isEmpty)
             }
+        }
+        .sheet(isPresented: $showQuickSwitcher) {
+            QuickSwitcherView(viewModel: viewModel)
         }
         .sheet(item: $folderToConfigure) { folder in
             AddProjectSheet(folder: folder.url, viewModel: viewModel)
