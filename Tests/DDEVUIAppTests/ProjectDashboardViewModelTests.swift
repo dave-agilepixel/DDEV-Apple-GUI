@@ -1018,6 +1018,37 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertTrue(service.commands.contains("list"), "list still refreshes so the configured project appears")
         XCTAssertNotNil(viewModel.globalErrorMessage, "start failure is surfaced, not swallowed")
     }
+
+    func testApplyingDetailsAdoptsLiveStatus() {
+        let stopped = DDEVProject.sampleWordPress.withStatus(.stopped)
+        let running = DDEVProjectDetails(phpVersion: "8.3", status: .running, statusDescription: "running")
+        XCTAssertEqual(stopped.applying(details: running).status, .running)
+    }
+
+    func testApplyingUnknownStatusKeepsExistingStatus() {
+        let running = DDEVProject.sampleWordPress // .running
+        let detailWithoutStatus = DDEVProjectDetails(phpVersion: "8.3") // status defaults to .unknown
+        XCTAssertEqual(running.applying(details: detailWithoutStatus).status, .running,
+                       "an unknown describe status must not clobber a known one")
+    }
+
+    func testStartReflectsRunningStatusAndRefreshesSelectedDetail() async {
+        let runningDetails = DDEVProjectDetails(phpVersion: "8.3", status: .running, statusDescription: "running")
+        let stopped = DDEVProject.sampleWordPress.withStatus(.stopped)
+        let service = FakeDDEVService(projects: [stopped], describeDetails: ["aqua-pura": runningDetails])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.projects = [stopped]               // seed directly to avoid refresh-time enrichment
+        viewModel.selectedProject = stopped
+
+        await viewModel.start(stopped)
+
+        XCTAssertEqual(viewModel.projects.first?.status, .running,
+                       "the re-describe after start flips the cached status to running")
+        XCTAssertEqual(viewModel.selectedProjectDetails?.status, .running,
+                       "the inspector overview detail is refreshed for the selected project")
+        XCTAssertFalse(service.commands.contains("list"),
+                       "minimal fix: only the affected project is re-described, no global list")
+    }
 }
 
 private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {

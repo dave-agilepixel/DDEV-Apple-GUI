@@ -909,6 +909,12 @@ public final class ProjectDashboardViewModel {
         if selectedProjectFallback?.id == project.id {
             selectedProjectFallback = projects[index]
         }
+        // Refresh the inspector's live overview (services/DB) for the selected project from the
+        // SAME describe — no second subprocess. Guarded so a stale describe can't overwrite a
+        // newer selection's detail.
+        if selectedProjectID == project.id {
+            selectedProjectDetails = refreshed
+        }
         try? await projectCache.saveProjects(projects)
     }
 

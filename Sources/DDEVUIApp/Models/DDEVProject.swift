@@ -280,8 +280,10 @@ extension DDEVProject {
             name: name,
             appRoot: appRoot,
             shortRoot: shortRoot,
-            status: status,
-            statusDescription: statusDescription,
+            // Trust describe for the live status (it returns top-level `status`/`status_desc`),
+            // but never let a missing/unknown describe status clobber a known one.
+            status: details.status == .unknown ? status : details.status,
+            statusDescription: details.status == .unknown ? statusDescription : details.statusDescription,
             projectType: projectType,
             docroot: docroot,
             primaryURL: primaryURL,
