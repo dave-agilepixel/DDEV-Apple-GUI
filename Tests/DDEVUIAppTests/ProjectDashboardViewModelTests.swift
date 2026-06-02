@@ -3,6 +3,65 @@ import XCTest
 
 @MainActor
 final class ProjectDashboardViewModelTests: XCTestCase {
+    func testStatusPollingRefreshesWhileActiveAndStopsOnStop() async throws {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service, statusPollInterval: .milliseconds(20))
+
+        viewModel.startStatusPolling()
+        XCTAssertTrue(viewModel.isStatusPollingActive)
+        try await Task.sleep(for: .milliseconds(120))
+        let listsWhilePolling = service.commands.filter { $0 == "list" }.count
+        XCTAssertGreaterThan(listsWhilePolling, 0, "Polls the project list while active")
+
+        viewModel.stopStatusPolling()
+        XCTAssertFalse(viewModel.isStatusPollingActive)
+        // Let any in-flight poll settle, snapshot, then confirm no further polls land.
+        try await Task.sleep(for: .milliseconds(60))
+        let settled = service.commands.filter { $0 == "list" }.count
+        try await Task.sleep(for: .milliseconds(80))
+        XCTAssertEqual(service.commands.filter { $0 == "list" }.count, settled, "No polling after stop")
+    }
+
+    func testStartStatusPollingIsIdempotent() async throws {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service, statusPollInterval: .seconds(60))
+
+        viewModel.startStatusPolling()
+        viewModel.startStatusPolling() // second call must not start a second loop
+        XCTAssertTrue(viewModel.isStatusPollingActive)
+
+        viewModel.stopStatusPolling()
+        XCTAssertFalse(viewModel.isStatusPollingActive)
+    }
+
+    func testParseShareURLExtractsForwardingURL() {
+        XCTAssertEqual(
+            ProjectDashboardViewModel.parseShareURL("Forwarding https://demo-1234.ngrok-free.app -> http://localhost:80"),
+            "https://demo-1234.ngrok-free.app"
+        )
+        XCTAssertNil(ProjectDashboardViewModel.parseShareURL("Starting tunnel, please wait…"))
+    }
+
+    func testStartSharingParsesURLThenStopResets() async throws {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        viewModel.startSharing()
+        for _ in 0..<200 where !{ if case .running = viewModel.shareState { return true } else { return false } }() {
+            await Task.yield()
+        }
+        if case .running(let url) = viewModel.shareState {
+            XCTAssertEqual(url, "https://demo-1234.ngrok-free.app")
+        } else {
+            XCTFail("Expected a running tunnel with a parsed URL, got \(viewModel.shareState)")
+        }
+        XCTAssertTrue(service.commands.contains("share:/Users/dave/Development/agilepixel/aqua-pura"))
+
+        viewModel.stopSharing()
+        XCTAssertFalse(viewModel.isSharing)
+    }
+
     func testRefreshLoadsProjectsAndSelectsFirstProject() async {
         let service = FakeDDEVService(projects: [.sampleWordPress])
         let viewModel = ProjectDashboardViewModel(ddevService: service)
@@ -12,6 +71,94 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.projects, [.sampleWordPress])
         XCTAssertEqual(viewModel.selectedProject, .sampleWordPress)
         XCTAssertNil(viewModel.globalErrorMessage)
+    }
+
+    func testLoadVersionInfoPopulatesState() async {
+        let viewModel = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: []))
+        XCTAssertNil(viewModel.ddevVersionInfo)
+
+        await viewModel.loadVersionInfo()
+
+        XCTAssertEqual(viewModel.ddevVersionInfo?.ddevVersion, "v1.25.2")
+        XCTAssertEqual(viewModel.ddevVersionInfo?.docker, "29.5.2")
+        XCTAssertNil(viewModel.versionInfoErrorMessage)
+    }
+
+    func testLoadGlobalConfigPopulatesState() async {
+        let viewModel = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: []))
+        XCTAssertNil(viewModel.globalConfig)
+
+        await viewModel.loadGlobalConfig()
+
+        XCTAssertEqual(viewModel.globalConfig?.performanceMode, "mutagen")
+        XCTAssertEqual(viewModel.globalConfig?.projectTLD, "ddev.site")
+        XCTAssertTrue(viewModel.globalConfig?.instrumentationOptIn == true)
+        XCTAssertNil(viewModel.globalConfigErrorMessage)
+    }
+
+    func testApplyGlobalConfigSendsFlagsThenReloads() async {
+        let service = FakeDDEVService(projects: [])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+
+        await viewModel.applyGlobalConfig([.instrumentationOptIn(false), .projectTLD("ddev.test")])
+
+        XCTAssertEqual(service.commands, [
+            "apply-global-config:--instrumentation-opt-in=false,--project-tld=ddev.test",
+            "global-config"
+        ])
+        XCTAssertFalse(viewModel.isRunningGlobalCommand)
+    }
+
+    func testApplyGlobalConfigIgnoresEmptyChangeSet() async {
+        let service = FakeDDEVService(projects: [])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+
+        await viewModel.applyGlobalConfig([])
+
+        XCTAssertTrue(service.commands.isEmpty)
+    }
+
+    func testPowerOffAllProjectsRunsPoweroffThenRefreshes() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+
+        await viewModel.powerOffAllProjects()
+
+        // poweroff, then a full refresh (list + re-describe of the auto-selected first project).
+        XCTAssertEqual(service.commands, ["poweroff", "list", "describe:aqua-pura"])
+        XCTAssertFalse(viewModel.isRunningGlobalCommand)
+        XCTAssertNil(viewModel.globalErrorMessage)
+    }
+
+    func testDeleteAndDownloadImagesRunGlobalCommands() async {
+        let service = FakeDDEVService(projects: [])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+
+        await viewModel.deleteDDEVImages()
+        await viewModel.downloadDDEVImages()
+
+        XCTAssertEqual(service.commands, ["delete-images", "download-images"])
+        XCTAssertFalse(viewModel.isRunningGlobalCommand)
+    }
+
+    func testProjectsMatchingFiltersByNameCaseInsensitively() {
+        let viewModel = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: []))
+        viewModel.projects = [.sampleWordPress, .sampleLaravel]
+
+        XCTAssertEqual(viewModel.projectsMatching("AQUA").map(\.name), ["aqua-pura"])
+        XCTAssertEqual(viewModel.projectsMatching("").map(\.name), ["agilebugs", "aqua-pura"])
+    }
+
+    func testRevealAndSelectProjectJumpsToProjectsSection() {
+        let viewModel = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: []))
+        viewModel.projects = [.sampleWordPress]
+        viewModel.selectedSidebarItem = .running
+
+        viewModel.revealAndSelectProject("aqua-pura")
+
+        XCTAssertEqual(viewModel.selectedSidebarItem, .projects)
+        XCTAssertNil(viewModel.selectedGroupID)
+        XCTAssertEqual(viewModel.selectedProjectID, "aqua-pura")
     }
 
     func testSearchFiltersProjectsByNamePathAndType() {
@@ -30,7 +177,8 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         viewModel.projects = [.sampleWordPress, .sampleLaravel]
 
         viewModel.selectedSidebarItem = .projects
-        XCTAssertEqual(viewModel.filteredProjects, [.sampleWordPress, .sampleLaravel])
+        // Default sort is by name (B5): agilebugs (Laravel) sorts ahead of aqua-pura (WordPress).
+        XCTAssertEqual(viewModel.filteredProjects, [.sampleLaravel, .sampleWordPress])
 
         viewModel.selectedSidebarItem = .running
         XCTAssertEqual(viewModel.filteredProjects, [.sampleWordPress])
@@ -138,12 +286,42 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.selectedProjectState.lastResult?.succeeded, true)
     }
 
+    func testStartProjectsInCurrentViewStartsOnlyStoppedOnes() async {
+        let running = DDEVProject.sampleWordPress                    // aqua-pura, running
+        let stopped = DDEVProject.sampleLaravel.withStatus(.stopped) // agilebugs, stopped
+        let service = FakeDDEVService(projects: [running, stopped])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        await viewModel.refresh()
+
+        await viewModel.startProjectsInCurrentView()
+
+        let commands = service.commands
+        XCTAssertTrue(commands.contains("start:agilebugs"), "Stopped project is started")
+        XCTAssertFalse(commands.contains("start:aqua-pura"), "Already-running project is left alone")
+    }
+
+    func testStopProjectsInCurrentViewStopsOnlyRunningOnes() async {
+        let running = DDEVProject.sampleWordPress                    // aqua-pura, running
+        let stopped = DDEVProject.sampleLaravel.withStatus(.stopped) // agilebugs, stopped
+        let service = FakeDDEVService(projects: [running, stopped])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        await viewModel.refresh()
+
+        await viewModel.stopProjectsInCurrentView()
+
+        let commands = service.commands
+        XCTAssertTrue(commands.contains("stop:aqua-pura"), "Running project is stopped")
+        XCTAssertFalse(commands.contains("stop:agilebugs"), "Already-stopped project is left alone")
+    }
+
     func testRowActionTargetsGivenProjectNotSelection() async {
         let service = FakeDDEVService(projects: [.sampleWordPress, .sampleLaravel])
         let viewModel = ProjectDashboardViewModel(ddevService: service)
 
         await viewModel.refresh()
-        XCTAssertEqual(viewModel.selectedProject, .sampleWordPress)
+        // Select WordPress explicitly (don't depend on the default sort's auto-selection), so the
+        // stop below acts on a *non-selected* project — the behavior under test.
+        viewModel.selectedProject = .sampleWordPress
 
         await viewModel.stop(.sampleLaravel)
 
@@ -403,6 +581,46 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.selectedProjectXdebugEnabled, false)
     }
 
+    // MARK: - XHGui / XHProf live toggle (A17)
+
+    func testLoadXHGuiStatusReflectsLiveContainerState() async {
+        // Live state comes from `ddev xhgui status` (XHGui is DDEV's XHProf UI), not describe's
+        // config-time xhgui_status — here the container reports enabled.
+        let service = FakeDDEVService(projects: [.sampleWordPress], xhguiLiveEnabled: true)
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.loadXHGuiStatusForSelectedProject()
+
+        XCTAssertEqual(viewModel.selectedProjectXHGuiEnabled, true)
+        XCTAssertTrue(service.commands.contains("xhgui:/Users/dave/Development/agilepixel/aqua-pura:status"))
+    }
+
+    func testSetXHGuiOnReconcilesAgainstLiveStatus() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress], xhguiLiveEnabled: false)
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.setXHGuiForSelectedProject(true)
+
+        XCTAssertEqual(service.commands, [
+            "xhgui:/Users/dave/Development/agilepixel/aqua-pura:on",
+            "xhgui:/Users/dave/Development/agilepixel/aqua-pura:status"
+        ])
+        XCTAssertEqual(viewModel.selectedProjectXHGuiEnabled, true)
+    }
+
+    func testSetXHGuiOffRunsXHGuiOff() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress], xhguiLiveEnabled: true)
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.setXHGuiForSelectedProject(false)
+
+        XCTAssertEqual(service.commands.first, "xhgui:/Users/dave/Development/agilepixel/aqua-pura:off")
+        XCTAssertEqual(viewModel.selectedProjectXHGuiEnabled, false)
+    }
+
     // MARK: - DB drift banner (A5)
 
     func testDBMatchWarningSetWhenCheckExitsNonZero() async {
@@ -448,6 +666,139 @@ final class ProjectDashboardViewModelTests: XCTestCase {
 
         XCTAssertNil(viewModel.dbMatchWarning)
         XCTAssertFalse(service.commands.contains { $0.hasPrefix("check-db-match") })
+    }
+
+    func testLoadCustomCommandsPopulatesFromDiscovery() async {
+        let discovery = StubCustomCommandDiscovery(commands: [
+            DDEVCustomCommand(name: "deploy", description: "Deploy it", scope: .host)
+        ])
+        let viewModel = ProjectDashboardViewModel(
+            ddevService: FakeDDEVService(projects: [.sampleWordPress]),
+            customCommandDiscovery: discovery
+        )
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.loadCustomCommandsForSelectedProject()
+
+        XCTAssertEqual(viewModel.customCommands.map(\.name), ["deploy"])
+    }
+
+    func testRunCustomCommandRunsDDEVWithCommandName() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.runCustomCommandForSelectedProject(
+            DDEVCustomCommand(name: "deploy", description: nil, scope: .host)
+        )
+
+        XCTAssertEqual(service.commands, [
+            "project-command:/Users/dave/Development/agilepixel/aqua-pura:deploy",
+            "describe:aqua-pura"
+        ])
+    }
+
+    func testRunToolForSelectedProjectRunsDDEVToolWithTokenizedArgs() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.runToolForSelectedProject(.composer, argumentString: #"require "foo/bar:^1.0""#)
+
+        XCTAssertEqual(service.commands, [
+            "project-command:/Users/dave/Development/agilepixel/aqua-pura:composer,require,foo/bar:^1.0",
+            "describe:aqua-pura"
+        ])
+        XCTAssertEqual(viewModel.selectedProjectState.lastResult?.succeeded, true)
+    }
+
+    func testRunExecForSelectedProjectRunsExecAndRecordsOutput() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.runExecForSelectedProject(command: "php -v", service: .web)
+
+        XCTAssertEqual(service.commands, [
+            "exec:/Users/dave/Development/agilepixel/aqua-pura:web:php -v",
+            "describe:aqua-pura"
+        ])
+        XCTAssertEqual(viewModel.selectedProjectState.lastResult?.succeeded, true)
+    }
+
+    func testImportFilesUsesSelectedProjectFolderAndRefreshes() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.importFiles(
+            DDEVImportFilesOptions(
+                source: "/Users/dave/Downloads/files.tar.gz",
+                target: "sites/default/files"
+            )
+        )
+
+        XCTAssertEqual(service.commands, [
+            "import-files:/Users/dave/Development/agilepixel/aqua-pura:/Users/dave/Downloads/files.tar.gz:sites/default/files:",
+            "describe:aqua-pura"
+        ])
+        XCTAssertEqual(viewModel.selectedProjectState.lastResult?.succeeded, true)
+    }
+
+    func testRerunCommandReExecutesSafeArguments() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+        let now = Date()
+        let result = CommandResult(
+            executable: "ddev", arguments: ["composer", "install"], workingDirectory: nil,
+            exitCode: 0, stdout: "", stderr: "", startedAt: now, finishedAt: now, wasCancelled: false
+        )
+
+        await viewModel.rerunCommandForSelectedProject(result)
+
+        XCTAssertEqual(service.commands, [
+            "project-command:/Users/dave/Development/agilepixel/aqua-pura:composer,install",
+            "describe:aqua-pura"
+        ])
+    }
+
+    func testRerunCommandIgnoresDestructiveArguments() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+        let now = Date()
+        let destructive = CommandResult(
+            executable: "ddev", arguments: ["delete", "aqua-pura"], workingDirectory: nil,
+            exitCode: 0, stdout: "", stderr: "", startedAt: now, finishedAt: now, wasCancelled: false
+        )
+
+        await viewModel.rerunCommandForSelectedProject(destructive)
+
+        XCTAssertTrue(service.commands.isEmpty, "Destructive commands are not re-runnable from history")
+    }
+
+    func testMigrateDatabaseRunsMigrationThenRechecksDrift() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.migrateDatabaseForSelectedProject(to: .mysql, version: "8.0")
+
+        XCTAssertTrue(service.commands.contains("migrate-database:/Users/dave/Development/agilepixel/aqua-pura:mysql:8.0"))
+        XCTAssertTrue(service.commands.contains("check-db-match:/Users/dave/Development/agilepixel/aqua-pura"),
+                      "Drift is re-checked after a migration")
+    }
+
+    func testMigrateDatabaseRejectsPostgresTarget() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.migrateDatabaseForSelectedProject(to: .postgres, version: "16")
+
+        XCTAssertFalse(service.commands.contains { $0.hasPrefix("migrate-database") },
+                       "migrate-database is MySQL/MariaDB only")
     }
 
     func testImportDatabaseUsesSelectedProjectFolderAndRefreshes() async {
@@ -759,6 +1110,18 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         ])
         XCTAssertEqual(viewModel.installedAddOns.map(\.repository), ["ddev/ddev-redis"])
         XCTAssertNil(viewModel.addonErrorMessage)
+    }
+
+    func testLoadRegistryAddOnsSortsOfficialFirstAndRecordsCall() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+
+        await viewModel.loadRegistryAddOns()
+
+        XCTAssertEqual(viewModel.addonSearchResults.map(\.repository), ["ddev/ddev-redis", "someone/ddev-thing"])
+        XCTAssertEqual(viewModel.addonSearchResults.first?.stars, 80)
+        XCTAssertFalse(viewModel.isLoadingRegistry)
+        XCTAssertTrue(service.commands.contains("addon-list-all"))
     }
 
     func testSearchAddOnsUsesSelectedProjectFolderAndParsesResults() async {
@@ -1238,6 +1601,11 @@ final class ProjectDashboardViewModelTests: XCTestCase {
     }
 }
 
+private struct StubCustomCommandDiscovery: CustomCommandDiscovering {
+    let commands: [DDEVCustomCommand]
+    func discoverCustomCommands(appRoot: String) async -> [DDEVCustomCommand] { commands }
+}
+
 private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
     private let lock = NSLock()
     private let loadedProjects: [DDEVProject]
@@ -1246,6 +1614,7 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
     private let describeDetails: [String: DDEVProjectDetails]
     private let dbMatchResult: Result<CommandResult, Error>?
     private var xdebugLiveEnabled: Bool
+    private var xhguiLiveEnabled: Bool
     private let listError: Error?
     private let importError: Error?
     private let snapshotListOutput: String
@@ -1277,6 +1646,7 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
         describeDetails: [String: DDEVProjectDetails] = [:],
         dbMatchResult: Result<CommandResult, Error>? = nil,
         xdebugLiveEnabled: Bool = false,
+        xhguiLiveEnabled: Bool = false,
         listError: Error? = nil,
         importError: Error? = nil,
         snapshotListOutput: String = "",
@@ -1297,6 +1667,7 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
         self.describeDetails = describeDetails
         self.dbMatchResult = dbMatchResult
         self.xdebugLiveEnabled = xdebugLiveEnabled
+        self.xhguiLiveEnabled = xhguiLiveEnabled
         self.listError = listError
         self.importError = importError
         self.snapshotListOutput = snapshotListOutput
@@ -1338,6 +1709,14 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
         if onOutputLine != nil { lock.withLock { startStreamedFlag = true } }
         for line in startOutputLines { onOutputLine?(line) }
         return commandResult(arguments: ["start", projectName])
+    }
+
+    func share(in appRoot: String, onOutputLine: (@Sendable (String) -> Void)?) async throws -> CommandResult {
+        record("share:\(appRoot)")
+        onOutputLine?("Forwarding https://demo-1234.ngrok-free.app -> http://localhost:80")
+        // Model a real tunnel: stay open until the owning task is cancelled (stopSharing).
+        try await Task.sleep(for: .seconds(3600))
+        return commandResult(arguments: ["share"], workingDirectory: appRoot)
     }
 
     func stop(projectName: String) async throws -> CommandResult {
@@ -1415,6 +1794,24 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
         return commandResult(arguments: ["import-db"], workingDirectory: appRoot)
     }
 
+    func migrateDatabase(to type: DDEVDatabaseType, version: String, in appRoot: String) async throws -> CommandResult {
+        record("migrate-database:\(appRoot):\(type.rawValue):\(version)")
+        return commandResult(arguments: ["utility", "migrate-database", "\(type.rawValue):\(version)"], workingDirectory: appRoot)
+    }
+
+    func importFiles(_ options: DDEVImportFilesOptions, in appRoot: String) async throws -> CommandResult {
+        record("import-files:\(appRoot):\(options.source):\(options.target ?? ""):\(options.extractPath ?? "")")
+        if let importError {
+            throw importError
+        }
+        return commandResult(arguments: ["import-files"], workingDirectory: appRoot)
+    }
+
+    func exec(command: String, service: DDEVExecService, in appRoot: String) async throws -> CommandResult {
+        record("exec:\(appRoot):\(service.rawValue):\(command)")
+        return commandResult(arguments: ["exec", "--service=\(service.rawValue)", "bash", "-c", command], workingDirectory: appRoot)
+    }
+
     func exportDatabase(_ options: DDEVDatabaseExportOptions, in appRoot: String) async throws -> CommandResult {
         record("export:\(appRoot):\(options.outputPath):\(options.database):\(options.compression.rawValue)")
         return commandResult(arguments: ["export-db"], workingDirectory: appRoot)
@@ -1473,6 +1870,17 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
         return commandResult(arguments: ["add-on", "search", query], workingDirectory: appRoot, stdout: addonSearchOutput)
     }
 
+    func listAllAddOns() async throws -> [DDEVAddon] {
+        record("addon-list-all")
+        if let addonError {
+            throw addonError
+        }
+        return [
+            DDEVAddon(repository: "ddev/ddev-redis", description: "Redis", type: .official, stars: 80),
+            DDEVAddon(repository: "someone/ddev-thing", description: "Thing", type: .contrib, stars: 12)
+        ]
+    }
+
     func getAddOn(_ repository: String, projectName: String, in appRoot: String) async throws -> CommandResult {
         record("addon-get:\(appRoot):\(projectName):\(repository)")
         if let addonError {
@@ -1505,6 +1913,46 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
             throw diagnosticError
         }
         return commandResult(arguments: ["version"], stdout: "ddev version v1.24.8\n")
+    }
+
+    func versionInfo() async throws -> DDEVVersionInfo {
+        record("version-info")
+        if let diagnosticError {
+            throw diagnosticError
+        }
+        return DDEVVersionInfo(items: [
+            DDEVVersionInfo.Item(key: "DDEV version", value: "v1.25.2"),
+            DDEVVersionInfo.Item(key: "docker", value: "29.5.2")
+        ])
+    }
+
+    func poweroff() async throws -> CommandResult {
+        record("poweroff")
+        return commandResult(arguments: ["poweroff"])
+    }
+
+    func deleteImages() async throws -> CommandResult {
+        record("delete-images")
+        return commandResult(arguments: ["delete", "images", "-y"])
+    }
+
+    func downloadImages() async throws -> CommandResult {
+        record("download-images")
+        return commandResult(arguments: ["utility", "download-images"])
+    }
+
+    func globalConfig() async throws -> DDEVGlobalConfig {
+        record("global-config")
+        return DDEVGlobalConfig(values: [
+            "instrumentation-opt-in": "true",
+            "performance-mode": "mutagen",
+            "project-tld": "ddev.site"
+        ])
+    }
+
+    func applyGlobalConfig(_ changes: [DDEVGlobalConfigChange]) async throws -> CommandResult {
+        record("apply-global-config:\(changes.flatMap(\.ddevFlags).joined(separator: ","))")
+        return commandResult(arguments: ["config", "global"])
     }
 
     func utilityDiagnose(in appRoot: String?) async throws -> CommandResult {
@@ -1549,7 +1997,19 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
 
     func xhgui(_ command: DDEVXHGuiCommand, in appRoot: String) async throws -> CommandResult {
         record("xhgui:\(appRoot):\(command.rawValue)")
-        return commandResult(arguments: ["xhgui", command.rawValue], workingDirectory: appRoot)
+        let enabled: Bool = lock.withLock {
+            switch command {
+            case .on: xhguiLiveEnabled = true
+            case .off: xhguiLiveEnabled = false
+            case .launch, .status: break
+            }
+            return xhguiLiveEnabled
+        }
+        return commandResult(
+            arguments: ["xhgui", command.rawValue],
+            workingDirectory: appRoot,
+            stdout: enabled ? "XHGui is enabled\n" : "XHGui is disabled\n"
+        )
     }
 
     func xdebug(_ command: DDEVXdebugCommand, in appRoot: String) async throws -> CommandResult {
@@ -1620,6 +2080,12 @@ private final class InMemoryAppPreferencesStore: AppPreferencesStoring, @uncheck
     func saveDefaultDatabaseTool(_ databaseTool: DDEVDatabaseTool?) {
         lock.withLock {
             storedPreferences.defaultDatabaseTool = databaseTool
+        }
+    }
+
+    func saveProjectSort(_ sort: ProjectSort) {
+        lock.withLock {
+            storedPreferences.projectSort = sort
         }
     }
 }

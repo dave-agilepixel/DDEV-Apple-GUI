@@ -16,6 +16,7 @@ struct ProjectConfigEditorView: View {
     @State private var xhprofMode = DDEVXHProfMode.global
     @State private var uploadDirsText = ""
     @State private var additionalHostnamesText = ""
+    @State private var confirmMigrate = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -31,6 +32,20 @@ struct ProjectConfigEditorView: View {
         }
         .frame(width: 620)
         .frame(minHeight: 620)
+        .confirmationDialog(
+            "Migrate database to \(databaseType.displayName) \(databaseVersion)?",
+            isPresented: $confirmMigrate
+        ) {
+            Button("Migrate Database") {
+                let type = databaseType
+                let version = databaseVersion
+                Task { await viewModel.migrateDatabaseForSelectedProject(to: type, version: version) }
+                dismiss()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Runs `ddev utility migrate-database` to convert the existing database to \(databaseType.displayName) \(databaseVersion). This is the safe path that preserves your data — a plain config change would not.")
+        }
         .task(id: project.id) {
             // Single source of truth: load, then sync only if we're still on the same project.
             // The previous dual-sync (.task + .onChange on the shared @Published projectConfig)
@@ -186,7 +201,33 @@ struct ProjectConfigEditorView: View {
             } apply: {
                 await apply(.database(type: databaseType, version: databaseVersion))
             }
+
+            // A12 — a bare config change leaves the existing data behind (the A5 drift state).
+            // For MySQL/MariaDB, offer the safe migration that converts the data too.
+            if shouldOfferMigration {
+                VStack(alignment: .leading, spacing: 6) {
+                    Label("Changing the database type/version needs a migration to convert the existing data — a plain config change would leave the volume mismatched.",
+                          systemImage: "arrow.triangle.2.circlepath")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button("Migrate Database…") { confirmMigrate = true }
+                        .controlSize(.small)
+                        .disabled(viewModel.isSelectedProjectBusy)
+                }
+            }
         }
+    }
+
+    /// Offer the safe migration only when there's a pending DB change and both the current and target
+    /// types support `migrate-database` (PostgreSQL doesn't).
+    private var shouldOfferMigration: Bool {
+        guard let loaded = loadedConfig else { return false }
+        let changed = databaseType != loaded.databaseType || databaseVersion != loaded.databaseVersion
+        return changed
+            && loaded.databaseType.supportsMigration
+            && databaseType.supportsMigration
+            && !databaseVersion.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
     private var webSection: some View {

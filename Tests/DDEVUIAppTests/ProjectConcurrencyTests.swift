@@ -262,6 +262,7 @@ private actor GatedDDEVService: DDEVServicing {
     func setPHPVersion(_ version: String, in appRoot: String) async throws -> CommandResult { try await runGated("php") }
     func launchDatabaseTool(_ tool: DDEVDatabaseTool, in appRoot: String) async throws -> CommandResult { try await runGated("db") }
     func importDatabase(_ options: DDEVDatabaseImportOptions, in appRoot: String) async throws -> CommandResult { try await runGated("import") }
+    func importFiles(_ options: DDEVImportFilesOptions, in appRoot: String) async throws -> CommandResult { try await runGated("import-files") }
     func exportDatabase(_ options: DDEVDatabaseExportOptions, in appRoot: String) async throws -> CommandResult { try await runGated("export") }
     func createSnapshot(name: String?, in appRoot: String) async throws -> CommandResult { try await runGated("snapshot") }
     func listSnapshots(in appRoot: String) async throws -> CommandResult { recorded.append("snapshot-list"); return runImmediate() }
@@ -272,21 +273,31 @@ private actor GatedDDEVService: DDEVServicing {
     func logs(projectName: String, service: String, tail: Int, includeTimestamps: Bool, in appRoot: String) async throws -> CommandResult { recorded.append("logs"); return runImmediate() }
     func listInstalledAddOns(projectName: String, in appRoot: String) async throws -> CommandResult { recorded.append("addon-list"); return runImmediate() }
     func searchAddOns(query: String, in appRoot: String) async throws -> CommandResult { recorded.append("addon-search"); return runImmediate() }
+    func listAllAddOns() async throws -> [DDEVAddon] { recorded.append("addon-list-all"); return [] }
     func getAddOn(_ repository: String, projectName: String, in appRoot: String) async throws -> CommandResult { try await runGated("addon-get") }
     func removeAddOn(named name: String, projectName: String, in appRoot: String) async throws -> CommandResult { try await runGated("addon-remove") }
     func applyConfigChange(_ change: DDEVConfigChange, in appRoot: String) async throws -> CommandResult { try await runGated("config-change") }
     func runProjectCommand(arguments: [String], in appRoot: String) async throws -> CommandResult { try await runGated("project-command") }
+    func exec(command: String, service: DDEVExecService, in appRoot: String) async throws -> CommandResult { try await runGated("exec") }
     func version() async throws -> CommandResult { recorded.append("version"); return runImmediate() }
+    func versionInfo() async throws -> DDEVVersionInfo { recorded.append("version-info"); return DDEVVersionInfo(items: []) }
+    func poweroff() async throws -> CommandResult { recorded.append("poweroff"); return runImmediate() }
+    func deleteImages() async throws -> CommandResult { recorded.append("delete-images"); return runImmediate() }
+    func downloadImages() async throws -> CommandResult { recorded.append("download-images"); return runImmediate() }
+    func globalConfig() async throws -> DDEVGlobalConfig { recorded.append("global-config"); return DDEVGlobalConfig(values: [:]) }
+    func applyGlobalConfig(_ changes: [DDEVGlobalConfigChange]) async throws -> CommandResult { recorded.append("apply-global-config"); return runImmediate() }
     func utilityDiagnose(in appRoot: String?) async throws -> CommandResult { recorded.append("diagnose"); return runImmediate() }
     func utilityConfigYAML(omitKeys: [String], in appRoot: String) async throws -> CommandResult { recorded.append("configyaml"); return runImmediate() }
     func utilityCheckCustomConfig(in appRoot: String) async throws -> CommandResult { recorded.append("check-custom-config"); return runImmediate() }
     func utilityCheckDBMatch(in appRoot: String) async throws -> CommandResult { recorded.append("check-db-match"); return runImmediate() }
+    func migrateDatabase(to type: DDEVDatabaseType, version: String, in appRoot: String) async throws -> CommandResult { try await runGated("migrate-database") }
     func mutagen(_ command: DDEVMutagenCommand, in appRoot: String) async throws -> CommandResult { recorded.append("mutagen"); return runImmediate() }
     func xhgui(_ command: DDEVXHGuiCommand, in appRoot: String) async throws -> CommandResult { try await runGated("xhgui") }
     func xdebug(_ command: DDEVXdebugCommand, in appRoot: String) async throws -> CommandResult { try await runGated("xdebug") }
     func updateWordPressCore(in appRoot: String) async throws -> CommandResult { try await runGated("wp-core") }
     func updateWordPressPlugins(in appRoot: String) async throws -> CommandResult { try await runGated("wp-plugins") }
     func updateWordPressThemes(in appRoot: String) async throws -> CommandResult { try await runGated("wp-themes") }
+    func share(in appRoot: String, onOutputLine: (@Sendable (String) -> Void)?) async throws -> CommandResult { recorded.append("share"); return runImmediate() }
 }
 
 extension DDEVProject {

@@ -444,6 +444,7 @@
   <details class="feat" data-v="NICE">
     <summary>
       <span class="badge NICE">NICE TO HAVE</span>
+      <span class="status done">Implemented</span>
       <span class="sgrow">
         <span class="stitle">A8 · ddev share (public tunnel)</span>
         <div class="smeta"><span class="id">maps to</span> <span class="cmd">ddev share</span></div>
@@ -462,12 +463,14 @@
       <h4>Native-GUI fit</h4>
       <p>OK. Needs persistent-process management and a clear running/stopped state, but the payoff (grab URL, demo, stop) is genuinely nicer in a GUI than babysitting a terminal.</p>
       <div class="verdict NICE"><b>Verdict:</b> Backlog it as a payoff of A6. On its own it's occasional-use; bundled with the streaming work it's nearly free.</div>
+      <div class="verdict NICE"><b>Built 2026-06-02:</b> A <b>Share</b> section in the Manage tab — Start/Stop a <code>ddev share</code> tunnel, with the public URL parsed live from the stream and shown with open/copy. <b>The streaming runner the roadmap said A8 depends on (A6) already exists</b> (<code>run(_:onOutputLine:)</code> with cancellation, from PR #12), so A8 is just persistent-process lifecycle in the view model: a <code>shareTask</code> owns the long-running process, <code>stopSharing()</code> cancels it (SIGTERM→SIGKILL), and a <code>ShareState</code> machine (idle/starting/running/stopped/failed) drives the UI.</div>
     </div>
   </details>
 
   <details class="feat" data-v="NICE">
     <summary>
       <span class="badge NICE">NICE TO HAVE</span>
+      <span class="status done">Implemented</span>
       <span class="sgrow">
         <span class="stitle">A9 · Arbitrary command runner (ddev exec)</span>
         <div class="smeta"><span class="id">maps to</span> <span class="cmd">ddev exec</span></div>
@@ -486,12 +489,14 @@
       <h4>Native-GUI fit</h4>
       <p>Decent for one-shot exec. Interactive commands belong in the A11 terminal hand-off, not here.</p>
       <div class="verdict NICE"><b>Verdict:</b> Backlog. Useful power-user escape hatch, but most real uses are covered by the framework presets you already ship + A10.</div>
+      <div class="verdict NICE"><b>Built 2026-06-02:</b> A "Run Command" console in the Manage tab — service picker (Web/DB) + input, output in the Logs tab. Runs via <code>ddev exec -s &lt;svc&gt; bash -c "&lt;cmd&gt;"</code>: the command is a single opaque arg, so the user's own flags/pipes are never parsed as <code>ddev</code> flags (the flag-injection concern is side-stepped, not fought), and shell features work. <code>Process</code> spawns <code>ddev</code> without a shell, so no host-side shell injection either.</div>
     </div>
   </details>
 
   <details class="feat" data-v="NICE">
     <summary>
       <span class="badge NICE">NICE TO HAVE</span>
+      <span class="status done">Implemented</span>
       <span class="sgrow">
         <span class="stitle">A10 · Tooling passthrough console (composer / npm / drush / wp …)</span>
         <div class="smeta"><span class="id">maps to</span> <span class="cmd">ddev composer</span> <span class="cmd">ddev npm</span> <span class="cmd">ddev drush</span> <span class="cmd">ddev wp</span></div>
@@ -510,12 +515,14 @@
       <h4>Native-GUI fit</h4>
       <p>Good for one-shots with an output pane; you already have the pattern.</p>
       <div class="verdict NICE"><b>Verdict:</b> Backlog. A natural extension of what you've built, not a new concept — do it when the presets feel too limiting.</div>
+      <div class="verdict NICE"><b>Built 2026-06-02:</b> A <b>Tools</b> section in the Manage tab with a row per tool (Composer/npm always; Drush for Drupal; WP-CLI for WordPress — derived from project type) and a free-text arg field running <code>ddev &lt;tool&gt; &lt;args&gt;</code>. Args are split with a quote-aware tokenizer (so <code>"a b"</code> survives), reusing the existing project-command channel; output lands in the Logs tab. Stacked on A9.</div>
     </div>
   </details>
 
   <details class="feat" data-v="NICE">
     <summary>
       <span class="badge NICE">NICE TO HAVE</span>
+      <span class="status done">Implemented</span>
       <span class="sgrow">
         <span class="stitle">A12 · Safe DB type/version migration</span>
         <div class="smeta"><span class="id">maps to</span> <span class="cmd">ddev utility migrate-database</span></div>
@@ -534,12 +541,14 @@
       <h4>Native-GUI fit</h4>
       <p>Good — it makes a footgun in your existing config editor safe.</p>
       <div class="verdict NICE"><b>Verdict:</b> Backlog, but pair it conceptually with A5. Together they close a real "I changed the DB version and everything broke" hole.</div>
+      <div class="verdict NICE"><b>Built 2026-06-02:</b> The config editor's Database row now detects a pending type/version change and — when both current and target are MySQL/MariaDB — offers a <b>Migrate Database…</b> button (confirmed) that runs <code>ddev utility migrate-database &lt;type&gt;:&lt;version&gt;</code> to convert the data, then re-checks for A5 drift. PostgreSQL is gated out (<code>supportsMigration</code>), since migrate-database doesn't support it.</div>
     </div>
   </details>
 
   <details class="feat" data-v="NICE">
     <summary>
       <span class="badge NICE">NICE TO HAVE</span>
+      <span class="status done">Implemented</span>
       <span class="sgrow">
         <span class="stitle">A13 · Custom-command discovery</span>
         <div class="smeta"><span class="id">maps to</span> <span class="cmd">.ddev/commands/</span> <span class="cmd">ddev help</span></div>
@@ -558,12 +567,14 @@
       <h4>Native-GUI fit</h4>
       <p>Good, and a nice dynamic-UI exercise — but only valuable to users who actually write custom commands.</p>
       <div class="verdict NICE"><b>Verdict:</b> Backlog. Cool, but its audience is narrow. Do it if you personally use custom commands.</div>
+      <div class="verdict NICE"><b>Built 2026-06-02:</b> Runtime discovery by scanning <code>.ddev/commands/{host,web,db}</code> (project) and <code>~/.ddev/commands/…</code> (global) — filename is the command name, <code>## Description:</code> annotation becomes the tooltip; <code>README*</code>, <code>*.example</code> and dotfiles are skipped, and a project command overrides a global one of the same name. Discovered commands render as buttons in a <b>Custom Commands</b> section (hidden when none), running <code>ddev &lt;name&gt;</code>. Discovery is behind an injectable filesystem seam so it's fully unit-tested.</div>
     </div>
   </details>
 
   <details class="feat" data-v="NICE">
     <summary>
       <span class="badge NICE">NICE TO HAVE</span>
+      <span class="status done">Implemented</span>
       <span class="sgrow">
         <span class="stitle">A14 · Global configuration screen</span>
         <div class="smeta"><span class="id">maps to</span> <span class="cmd">ddev config global</span> <span class="cmd">~/.ddev/global_config.yaml</span></div>
@@ -582,12 +593,14 @@
       <h4>Native-GUI fit</h4>
       <p>Good. Set-once settings are pleasant in a form.</p>
       <div class="verdict NICE"><b>Verdict:</b> Backlog. Solid, self-contained, low-risk — good "tonight's coding" candidate. Lower urgency than per-project daily actions.</div>
+      <div class="verdict NICE"><b>Built 2026-06-02:</b> A <b>Global DDEV Configuration</b> section in Settings, reading current values from <code>ddev config global</code> (parsed <code>key=value</code>) and writing via <code>ddev config global --flag=value</code>. Controls: instrumentation opt-in, performance mode, XHProf mode, router HTTP/HTTPS ports, Mailpit HTTP/HTTPS ports, project TLD — with an "Open global_config.yaml" button for the long tail (omit-containers, web-environment, etc.). Stacked on A15.</div>
     </div>
   </details>
 
   <details class="feat" data-v="NICE">
     <summary>
       <span class="badge NICE">NICE TO HAVE</span>
+      <span class="status done">Implemented</span>
       <span class="sgrow">
         <span class="stitle">A15 · Global housekeeping (poweroff / clean / images)</span>
         <div class="smeta"><span class="id">maps to</span> <span class="cmd">ddev poweroff</span> <span class="cmd">ddev clean</span> <span class="cmd">ddev delete images</span> <span class="cmd">utility download-images</span></div>
@@ -606,12 +619,14 @@
       <h4>Native-GUI fit</h4>
       <p>Good. "Power off everything" is a satisfying one-click.</p>
       <div class="verdict NICE"><b>Verdict:</b> Backlog. Cheap to add; bundle the poweroff button in early since it's genuinely handy.</div>
+      <div class="verdict NICE"><b>Built 2026-06-02:</b> Added a <b>Maintenance</b> section to Settings — <b>Power Off All Projects</b> (<code>ddev poweroff</code>, confirmed), <b>Delete DDEV Images</b> (<code>ddev delete images -y</code>, confirmed), and <b>Download Images</b> (<code>ddev utility download-images</code>). <b>Deliberately omitted <code>ddev clean</code></b>: it <i>permanently deletes snapshots</i> (real data loss), and Delete Images already covers disk reclaim — not worth the footgun.</div>
     </div>
   </details>
 
   <details class="feat" data-v="NICE">
     <summary>
       <span class="badge NICE">NICE TO HAVE</span>
+      <span class="status done">Implemented</span>
       <span class="sgrow">
         <span class="stitle">A16 · Richer add-on registry browse (official/community + stars)</span>
         <div class="smeta"><span class="id">maps to</span> <span class="cmd">ddev add-on list --all</span> <span class="cmd">addons.ddev.com</span></div>
@@ -630,12 +645,14 @@
       <h4>Native-GUI fit</h4>
       <p>Good — browsing/trust-signals are nicer visually than CLI text.</p>
       <div class="verdict NICE"><b>Verdict:</b> Backlog. Polish on an already-decent feature, not a gap.</div>
+      <div class="verdict NICE"><b>Built 2026-06-02:</b> Added <code>stars</code> to the add-on model (decoded from the registry's <code>--json-output</code>), a <code>listAllAddOns()</code> service call with a <b>45s timeout</b> (the network call can hang — note <code>--all</code> is now deprecated/default), and a <b>Browse All</b> button in the add-on sheet that loads the full registry <b>sorted official-first then by stars</b>. Rows now show an <b>Official/Community</b> badge and a ★ star count.</div>
     </div>
   </details>
 
   <details class="feat" data-v="NICE">
     <summary>
       <span class="badge NICE">NICE TO HAVE</span>
+      <span class="status done">Implemented</span>
       <span class="sgrow">
         <span class="stitle">A17 · XHProf / Blackfire toggles</span>
         <div class="smeta"><span class="id">maps to</span> <span class="cmd">ddev xhprof on|off</span> <span class="cmd">ddev blackfire on|off</span></div>
@@ -654,12 +671,14 @@
       <h4>Native-GUI fit</h4>
       <p>Fine, but niche — profiling is occasional and audience is small.</p>
       <div class="verdict NICE"><b>Verdict:</b> Backlog / low. Basically free once A2 exists, but don't prioritize it — most users never profile.</div>
+      <div class="verdict NICE"><b>Built (adapted) 2026-06-02:</b> DDEV v1.25.2 has no <code>ddev xhprof</code> or <code>ddev blackfire</code> command — XHProf <i>is</i> the <code>ddev xhgui</code> command the app already wraps, and Blackfire has no command at all. Shipped the real, valuable half: a live <b>XHProf (XHGui) on/off toggle</b> next to the Xdebug switch, bound to <code>ddev xhgui status</code> and reusing the A2 pattern. <b>Blackfire dropped</b> (no command to call).</div>
     </div>
   </details>
 
   <details class="feat" data-v="NICE">
     <summary>
       <span class="badge NICE">NICE TO HAVE</span>
+      <span class="status done">Implemented</span>
       <span class="sgrow">
         <span class="stitle">A18 · Versions / About panel</span>
         <div class="smeta"><span class="id">maps to</span> <span class="cmd">ddev version -j</span></div>
@@ -684,6 +703,7 @@
   <details class="feat" data-v="NICE">
     <summary>
       <span class="badge NICE">NICE TO HAVE</span>
+      <span class="status done">Implemented</span>
       <span class="sgrow">
         <span class="stitle">A19 · Import uploaded files (import-files)</span>
         <div class="smeta"><span class="id">maps to</span> <span class="cmd">ddev import-files</span></div>
@@ -741,6 +761,7 @@
   <details class="feat" data-v="NICE">
     <summary>
       <span class="badge NICE">NICE TO HAVE</span>
+      <span class="status done">Implemented</span>
       <span class="sgrow">
         <span class="stitle">B2 · Smarter live status (less manual refresh)</span>
         <div class="smeta"><span class="id">verify current behavior</span> <span class="cmd">ddev list -j</span></div>
@@ -759,12 +780,14 @@
       <h4>Native-GUI fit</h4>
       <p>Core to feeling like a live dashboard rather than a CLI snapshot.</p>
       <div class="verdict NICE"><b>Verdict:</b> Backlog, but do it <i>before</i> B1 — a stale menu-bar list is worse than no menu-bar list. Confirm exactly what the current poll does first.</div>
+      <div class="verdict NICE"><b>Built 2026-06-02 (confirmed first, as advised):</b> the project list had <i>no</i> timer poll — only launch + manual Refresh + post-mutation re-describe (the audit's H1 poll was the prerequisite monitor, already self-disarming). Added a foreground status poll: a cancellable loop calling the existing silent, in-flight-guarded <code>refreshProjectsFromDDEVInBackground()</code> every 10s, started in ContentView's <code>.task</code> and <b>paused/resumed on scenePhase</b> — so it has the clean off-switch the audit wanted and never runs backgrounded. Optimistic start/restart transitions already exist via the progress mutation. (Prereq for B1.)</div>
     </div>
   </details>
 
   <details class="feat" data-v="NICE">
     <summary>
       <span class="badge NICE">NICE TO HAVE</span>
+      <span class="status done">Implemented</span>
       <span class="sgrow">
         <span class="stitle">B3 · Multi-select batch start/stop</span>
         <div class="smeta"><span class="id">SwiftUI selection</span> <span class="cmd">ddev start --all</span> <span class="cmd">ddev stop --all</span></div>
@@ -783,12 +806,14 @@
       <h4>Native-GUI fit</h4>
       <p>Good. Multi-select is a natural GUI affordance the CLI handles only via <code>--all</code>.</p>
       <div class="verdict NICE"><b>Verdict:</b> Backlog. Nice teaching exercise for SwiftUI selection + your scheduler; modest daily value unless you juggle many projects at once.</div>
+      <div class="verdict NICE"><b>Built 2026-06-02 (batch-over-view, not checkboxes):</b> A <b>Start All / Stop All</b> bar under the project list that batch-acts on the <b>current filtered view</b> — so the sidebar section / <i>group</i> / search <i>is</i> the selection (pick a group → Start All starts exactly that group). Fan-out reuses the per-project mutations, so the <span class="loc">CommandScheduler</span>'s max-3 cap applies for free; only stopped projects are started and only running ones stopped. Chose this over checkbox multi-select because it composes with the shipped groups feature and doesn't fight the single-selection inspector.</div>
     </div>
   </details>
 
   <details class="feat" data-v="NICE">
     <summary>
       <span class="badge NICE">NICE TO HAVE</span>
+      <span class="status done">Implemented</span>
       <span class="sgrow">
         <span class="stitle">B4 · Surface command / output history</span>
         <div class="smeta"><span class="id">already in model</span> <span class="cmd">commandHistory (capped 50)</span></div>
@@ -807,12 +832,14 @@
       <h4>Native-GUI fit</h4>
       <p>Good — a scrollable, searchable history is a clear GUI win over scrollback.</p>
       <div class="verdict NICE"><b>Verdict:</b> Backlog. Unusually cheap because the data already exists; promote it if the diagnostics/output area starts feeling thin.</div>
+      <div class="verdict NICE"><b>Built 2026-06-02:</b> The capped history was <i>already</i> surfaced in the Logs tab (invocation + exit + output). This closes the named gaps: a per-entry actions menu with <b>Copy Command</b>, <b>Copy Output</b>, and <b>Re-run</b>. Re-run is gated by <code>CommandResult.isSafelyRerunnable</code>, which <b>excludes destructive/guarded ops</b> (delete, import-db, snapshot restore, unlist, poweroff, clean) so a one-click history re-run can't bypass their confirmations.</div>
     </div>
   </details>
 
   <details class="feat" data-v="NICE">
     <summary>
       <span class="badge NICE">NICE TO HAVE</span>
+      <span class="status done">Implemented</span>
       <span class="sgrow">
         <span class="stitle">B5 · Favorites / pinning / sorting</span>
         <div class="smeta"><span class="id">UserDefaults</span></div>
@@ -831,12 +858,14 @@
       <h4>Native-GUI fit</h4>
       <p>Good, standard list UX.</p>
       <div class="verdict NICE"><b>Verdict:</b> Backlog. Value scales with how many projects you keep around.</div>
+      <div class="verdict NICE"><b>Built 2026-06-02 (sorting only; pinning deferred):</b> A sort menu in the project list — <b>Name</b>, <b>Status</b> (running first), <b>Recently Used</b> — with the choice persisted via <code>UserDefaultsAppPreferencesStore</code>. <b>Pinning/favorites was deliberately deferred</b>: it now overlaps the shipped <i>project groups</i> feature (a user-made "Favorites" group covers it), so building a parallel pin mechanism isn't worth the duplication. Recency is session-scoped (resets on relaunch).</div>
     </div>
   </details>
 
   <details class="feat" data-v="NICE">
     <summary>
       <span class="badge NICE">NICE TO HAVE</span>
+      <span class="status done">Implemented</span>
       <span class="sgrow">
         <span class="stitle">B6 · Keyboard shortcuts / command palette</span>
         <div class="smeta"><span class="id">SwiftUI commands</span></div>
@@ -855,12 +884,14 @@
       <h4>Native-GUI fit</h4>
       <p>Good — power-user nicety, very Mac-native.</p>
       <div class="verdict NICE"><b>Verdict:</b> Backlog. Pleasant and good SwiftUI practice; not load-bearing.</div>
+      <div class="verdict NICE"><b>Built 2026-06-02:</b> A <b>⌘K quick switcher</b> (toolbar command icon + sheet) — type to filter projects across all sections, Return/click to jump (reveals + selects). Plus lifecycle shortcuts on the inspector: <b>⌘O</b> Open Site, <b>⌘R</b> primary action (Restart when running / Start when stopped), <b>⌘.</b> Stop. Kept within <span class="loc">ContentView</span> rather than lifting the view model to an app-level <code>commands { }</code> scene.</div>
     </div>
   </details>
 
   <details class="feat" data-v="NICE">
     <summary>
       <span class="badge NICE">NICE TO HAVE</span>
+      <span class="status done">Implemented</span>
       <span class="sgrow">
         <span class="stitle">B7 · Actionable Docker-down onboarding</span>
         <div class="smeta"><span class="id">enhance</span> <span class="cmd">PrerequisiteSheet</span> <span class="cmd">utility dockercheck</span></div>
@@ -879,6 +910,7 @@
       <h4>Native-GUI fit</h4>
       <p>Excellent — graceful failure guidance is a core GUI advantage over a CLI error dump.</p>
       <div class="verdict NICE"><b>Verdict:</b> Backlog, leaning quick win. Cheap and it directly reduces "why won't it work" friction.</div>
+      <div class="verdict NICE"><b>Built 2026-06-02:</b> Most of this already existed — the <code>PrerequisiteSheet</code> already had launch buttons (Docker Desktop / OrbStack), install-doc links + brew-copy, a "starting…" state, and a re-check. This PR closes the one remaining gap: a <b>"Troubleshoot Docker"</b> action that runs <code>ddev utility dockercheck</code> (ANSI-stripped) and shows its diagnostic report in a copyable box, so a Docker that's installed-but-stuck is diagnosable in-app instead of an endless spinner.</div>
     </div>
   </details>
 

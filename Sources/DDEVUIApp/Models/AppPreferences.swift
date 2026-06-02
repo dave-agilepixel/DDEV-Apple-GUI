@@ -3,10 +3,16 @@ import Foundation
 public struct AppPreferences: Codable, Equatable, Sendable {
     public var defaultEditor: EditorChoice?
     public var defaultDatabaseTool: DDEVDatabaseTool?
+    public var projectSort: ProjectSort
 
-    public init(defaultEditor: EditorChoice? = nil, defaultDatabaseTool: DDEVDatabaseTool? = nil) {
+    public init(
+        defaultEditor: EditorChoice? = nil,
+        defaultDatabaseTool: DDEVDatabaseTool? = nil,
+        projectSort: ProjectSort = .name
+    ) {
         self.defaultEditor = defaultEditor
         self.defaultDatabaseTool = defaultDatabaseTool
+        self.projectSort = projectSort
     }
 }
 
@@ -48,12 +54,14 @@ public protocol AppPreferencesStoring: Sendable {
     func loadPreferences() -> AppPreferences
     func saveDefaultEditor(_ editor: EditorChoice?)
     func saveDefaultDatabaseTool(_ databaseTool: DDEVDatabaseTool?)
+    func saveProjectSort(_ sort: ProjectSort)
 }
 
 public final class UserDefaultsAppPreferencesStore: AppPreferencesStoring, @unchecked Sendable {
     private enum Key {
         static let defaultEditor = "defaultEditor"
         static let defaultDatabaseTool = "defaultDatabaseTool"
+        static let projectSort = "projectSort"
     }
 
     private let userDefaults: UserDefaults
@@ -65,7 +73,8 @@ public final class UserDefaultsAppPreferencesStore: AppPreferencesStoring, @unch
     public func loadPreferences() -> AppPreferences {
         AppPreferences(
             defaultEditor: userDefaults.string(forKey: Key.defaultEditor).flatMap(EditorChoice.init(rawValue:)),
-            defaultDatabaseTool: userDefaults.string(forKey: Key.defaultDatabaseTool).flatMap(DDEVDatabaseTool.init(rawValue:))
+            defaultDatabaseTool: userDefaults.string(forKey: Key.defaultDatabaseTool).flatMap(DDEVDatabaseTool.init(rawValue:)),
+            projectSort: userDefaults.string(forKey: Key.projectSort).flatMap(ProjectSort.init(rawValue:)) ?? .name
         )
     }
 
@@ -75,6 +84,10 @@ public final class UserDefaultsAppPreferencesStore: AppPreferencesStoring, @unch
 
     public func saveDefaultDatabaseTool(_ databaseTool: DDEVDatabaseTool?) {
         save(databaseTool?.rawValue, forKey: Key.defaultDatabaseTool)
+    }
+
+    public func saveProjectSort(_ sort: ProjectSort) {
+        save(sort.rawValue, forKey: Key.projectSort)
     }
 
     private func save(_ value: String?, forKey key: String) {
