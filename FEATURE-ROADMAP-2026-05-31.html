@@ -636,6 +636,7 @@
   <details class="feat" data-v="NICE">
     <summary>
       <span class="badge NICE">NICE TO HAVE</span>
+      <span class="status done">Implemented</span>
       <span class="sgrow">
         <span class="stitle">A17 · XHProf / Blackfire toggles</span>
         <div class="smeta"><span class="id">maps to</span> <span class="cmd">ddev xhprof on|off</span> <span class="cmd">ddev blackfire on|off</span></div>
@@ -654,12 +655,14 @@
       <h4>Native-GUI fit</h4>
       <p>Fine, but niche — profiling is occasional and audience is small.</p>
       <div class="verdict NICE"><b>Verdict:</b> Backlog / low. Basically free once A2 exists, but don't prioritize it — most users never profile.</div>
+      <div class="verdict NICE"><b>Built (adapted) 2026-06-02:</b> DDEV v1.25.2 has no <code>ddev xhprof</code> or <code>ddev blackfire</code> command — XHProf <i>is</i> the <code>ddev xhgui</code> command the app already wraps, and Blackfire has no command at all. Shipped the real, valuable half: a live <b>XHProf (XHGui) on/off toggle</b> next to the Xdebug switch, bound to <code>ddev xhgui status</code> and reusing the A2 pattern. <b>Blackfire dropped</b> (no command to call).</div>
     </div>
   </details>
 
   <details class="feat" data-v="NICE">
     <summary>
       <span class="badge NICE">NICE TO HAVE</span>
+      <span class="status done">Implemented</span>
       <span class="sgrow">
         <span class="stitle">A18 · Versions / About panel</span>
         <div class="smeta"><span class="id">maps to</span> <span class="cmd">ddev version -j</span></div>
