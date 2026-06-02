@@ -14,6 +14,17 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertNil(viewModel.globalErrorMessage)
     }
 
+    func testLoadVersionInfoPopulatesState() async {
+        let viewModel = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: []))
+        XCTAssertNil(viewModel.ddevVersionInfo)
+
+        await viewModel.loadVersionInfo()
+
+        XCTAssertEqual(viewModel.ddevVersionInfo?.ddevVersion, "v1.25.2")
+        XCTAssertEqual(viewModel.ddevVersionInfo?.docker, "29.5.2")
+        XCTAssertNil(viewModel.versionInfoErrorMessage)
+    }
+
     func testLoadGlobalConfigPopulatesState() async {
         let viewModel = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: []))
         XCTAssertNil(viewModel.globalConfig)
@@ -460,6 +471,46 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.selectedProjectXdebugEnabled, false)
     }
 
+    // MARK: - XHGui / XHProf live toggle (A17)
+
+    func testLoadXHGuiStatusReflectsLiveContainerState() async {
+        // Live state comes from `ddev xhgui status` (XHGui is DDEV's XHProf UI), not describe's
+        // config-time xhgui_status — here the container reports enabled.
+        let service = FakeDDEVService(projects: [.sampleWordPress], xhguiLiveEnabled: true)
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.loadXHGuiStatusForSelectedProject()
+
+        XCTAssertEqual(viewModel.selectedProjectXHGuiEnabled, true)
+        XCTAssertTrue(service.commands.contains("xhgui:/Users/dave/Development/agilepixel/aqua-pura:status"))
+    }
+
+    func testSetXHGuiOnReconcilesAgainstLiveStatus() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress], xhguiLiveEnabled: false)
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.setXHGuiForSelectedProject(true)
+
+        XCTAssertEqual(service.commands, [
+            "xhgui:/Users/dave/Development/agilepixel/aqua-pura:on",
+            "xhgui:/Users/dave/Development/agilepixel/aqua-pura:status"
+        ])
+        XCTAssertEqual(viewModel.selectedProjectXHGuiEnabled, true)
+    }
+
+    func testSetXHGuiOffRunsXHGuiOff() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress], xhguiLiveEnabled: true)
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.setXHGuiForSelectedProject(false)
+
+        XCTAssertEqual(service.commands.first, "xhgui:/Users/dave/Development/agilepixel/aqua-pura:off")
+        XCTAssertEqual(viewModel.selectedProjectXHGuiEnabled, false)
+    }
+
     // MARK: - DB drift banner (A5)
 
     func testDBMatchWarningSetWhenCheckExitsNonZero() async {
@@ -505,6 +556,25 @@ final class ProjectDashboardViewModelTests: XCTestCase {
 
         XCTAssertNil(viewModel.dbMatchWarning)
         XCTAssertFalse(service.commands.contains { $0.hasPrefix("check-db-match") })
+    }
+
+    func testImportFilesUsesSelectedProjectFolderAndRefreshes() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.importFiles(
+            DDEVImportFilesOptions(
+                source: "/Users/dave/Downloads/files.tar.gz",
+                target: "sites/default/files"
+            )
+        )
+
+        XCTAssertEqual(service.commands, [
+            "import-files:/Users/dave/Development/agilepixel/aqua-pura:/Users/dave/Downloads/files.tar.gz:sites/default/files:",
+            "describe:aqua-pura"
+        ])
+        XCTAssertEqual(viewModel.selectedProjectState.lastResult?.succeeded, true)
     }
 
     func testImportDatabaseUsesSelectedProjectFolderAndRefreshes() async {
@@ -1303,6 +1373,7 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
     private let describeDetails: [String: DDEVProjectDetails]
     private let dbMatchResult: Result<CommandResult, Error>?
     private var xdebugLiveEnabled: Bool
+    private var xhguiLiveEnabled: Bool
     private let listError: Error?
     private let importError: Error?
     private let snapshotListOutput: String
@@ -1334,6 +1405,7 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
         describeDetails: [String: DDEVProjectDetails] = [:],
         dbMatchResult: Result<CommandResult, Error>? = nil,
         xdebugLiveEnabled: Bool = false,
+        xhguiLiveEnabled: Bool = false,
         listError: Error? = nil,
         importError: Error? = nil,
         snapshotListOutput: String = "",
@@ -1354,6 +1426,7 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
         self.describeDetails = describeDetails
         self.dbMatchResult = dbMatchResult
         self.xdebugLiveEnabled = xdebugLiveEnabled
+        self.xhguiLiveEnabled = xhguiLiveEnabled
         self.listError = listError
         self.importError = importError
         self.snapshotListOutput = snapshotListOutput
@@ -1472,6 +1545,14 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
         return commandResult(arguments: ["import-db"], workingDirectory: appRoot)
     }
 
+    func importFiles(_ options: DDEVImportFilesOptions, in appRoot: String) async throws -> CommandResult {
+        record("import-files:\(appRoot):\(options.source):\(options.target ?? ""):\(options.extractPath ?? "")")
+        if let importError {
+            throw importError
+        }
+        return commandResult(arguments: ["import-files"], workingDirectory: appRoot)
+    }
+
     func exportDatabase(_ options: DDEVDatabaseExportOptions, in appRoot: String) async throws -> CommandResult {
         record("export:\(appRoot):\(options.outputPath):\(options.database):\(options.compression.rawValue)")
         return commandResult(arguments: ["export-db"], workingDirectory: appRoot)
@@ -1564,6 +1645,17 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
         return commandResult(arguments: ["version"], stdout: "ddev version v1.24.8\n")
     }
 
+    func versionInfo() async throws -> DDEVVersionInfo {
+        record("version-info")
+        if let diagnosticError {
+            throw diagnosticError
+        }
+        return DDEVVersionInfo(items: [
+            DDEVVersionInfo.Item(key: "DDEV version", value: "v1.25.2"),
+            DDEVVersionInfo.Item(key: "docker", value: "29.5.2")
+        ])
+    }
+
     func poweroff() async throws -> CommandResult {
         record("poweroff")
         return commandResult(arguments: ["poweroff"])
@@ -1635,7 +1727,19 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
 
     func xhgui(_ command: DDEVXHGuiCommand, in appRoot: String) async throws -> CommandResult {
         record("xhgui:\(appRoot):\(command.rawValue)")
-        return commandResult(arguments: ["xhgui", command.rawValue], workingDirectory: appRoot)
+        let enabled: Bool = lock.withLock {
+            switch command {
+            case .on: xhguiLiveEnabled = true
+            case .off: xhguiLiveEnabled = false
+            case .launch, .status: break
+            }
+            return xhguiLiveEnabled
+        }
+        return commandResult(
+            arguments: ["xhgui", command.rawValue],
+            workingDirectory: appRoot,
+            stdout: enabled ? "XHGui is enabled\n" : "XHGui is disabled\n"
+        )
     }
 
     func xdebug(_ command: DDEVXdebugCommand, in appRoot: String) async throws -> CommandResult {

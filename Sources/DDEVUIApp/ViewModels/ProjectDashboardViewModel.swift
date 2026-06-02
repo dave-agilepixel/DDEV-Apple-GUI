@@ -14,6 +14,7 @@ public protocol DDEVServicing: Sendable {
     func setPHPVersion(_ version: String, in appRoot: String) async throws -> CommandResult
     func launchDatabaseTool(_ tool: DDEVDatabaseTool, in appRoot: String) async throws -> CommandResult
     func importDatabase(_ options: DDEVDatabaseImportOptions, in appRoot: String) async throws -> CommandResult
+    func importFiles(_ options: DDEVImportFilesOptions, in appRoot: String) async throws -> CommandResult
     func exportDatabase(_ options: DDEVDatabaseExportOptions, in appRoot: String) async throws -> CommandResult
     func createSnapshot(name: String?, in appRoot: String) async throws -> CommandResult
     func listSnapshots(in appRoot: String) async throws -> CommandResult
@@ -29,6 +30,7 @@ public protocol DDEVServicing: Sendable {
     func applyConfigChange(_ change: DDEVConfigChange, in appRoot: String) async throws -> CommandResult
     func runProjectCommand(arguments: [String], in appRoot: String) async throws -> CommandResult
     func version() async throws -> CommandResult
+    func versionInfo() async throws -> DDEVVersionInfo
     func poweroff() async throws -> CommandResult
     func deleteImages() async throws -> CommandResult
     func downloadImages() async throws -> CommandResult
@@ -135,6 +137,12 @@ public final class ProjectDashboardViewModel {
     /// `nil` when unknown (project not running, or status not yet loaded).
     public var selectedProjectXdebugEnabled: Bool?
 
+    /// Live XHGui/XHProf on/off state for the selected running project, from `ddev xhgui status`.
+    /// XHGui *is* DDEV's XHProf UI (there is no separate `ddev xhprof` command); like Xdebug, the
+    /// live runtime state is authoritative over describe's config-time `xhgui_status`.
+    /// `nil` when unknown (project not running, or status not yet loaded).
+    public var selectedProjectXHGuiEnabled: Bool?
+
     /// Busy/error for genuinely project-less operations: global list refresh, global
     /// diagnostics, and new-project creation (which has no project id yet).
     public var isRunningGlobalCommand = false
@@ -153,6 +161,11 @@ public final class ProjectDashboardViewModel {
     public var addonRawOutput: String?
     public var diagnosticReport = DDEVDiagnosticReport()
     public var diagnosticsErrorMessage: String?
+
+    /// Decoded `ddev version -j` (A18): DDEV + component image versions and the host toolchain.
+    /// Loaded on demand for the Diagnostics screen's About/Versions panel; not persisted.
+    public var ddevVersionInfo: DDEVVersionInfo?
+    public var versionInfoErrorMessage: String?
 
     /// Current global DDEV configuration (A14), loaded on demand for the Settings global-config
     /// section. `nil` until first loaded.
@@ -480,6 +493,14 @@ public final class ProjectDashboardViewModel {
         }
     }
 
+    /// Imports an uploaded-files archive/directory into the selected project's upload dir (A19).
+    public func importFiles(_ options: DDEVImportFilesOptions) async {
+        guard let selectedProject else { return }
+        await runProjectMutation(selectedProject) {
+            try await self.ddevService.importFiles(options, in: selectedProject.appRoot)
+        }
+    }
+
     public func exportDatabase(_ options: DDEVDatabaseExportOptions) async {
         guard let selectedProject else { return }
         await runProjectMutation(selectedProject, refresh: .none) {
@@ -707,6 +728,17 @@ public final class ProjectDashboardViewModel {
         }
     }
 
+    /// Loads `ddev version -j` for the About/Versions panel (A18). Read-only and global — no
+    /// project context needed. Failures surface as a message rather than throwing into the UI.
+    public func loadVersionInfo() async {
+        versionInfoErrorMessage = nil
+        do {
+            ddevVersionInfo = try await ddevService.versionInfo()
+        } catch {
+            versionInfoErrorMessage = "Couldn't read DDEV version info: \(error.localizedDescription)"
+        }
+    }
+
     public func runGlobalDiagnostics() async {
         await runDiagnostics {
             [
@@ -875,6 +907,44 @@ public final class ProjectDashboardViewModel {
     /// Parses `ddev xdebug status` output ("xdebug enabled" / "xdebug disabled") into a Bool.
     /// `disabled` is checked first because it must not match the `enabled` branch.
     private static func parseXdebugEnabled(_ output: String) -> Bool? {
+        let lower = output.lowercased()
+        if lower.contains("disabled") { return false }
+        if lower.contains("enabled") { return true }
+        return nil
+    }
+
+    /// Reads the *live* XHGui/XHProf state for the selected running project via `ddev xhgui status`.
+    /// XHGui is DDEV's XHProf UI; mirrors the Xdebug live-status pattern (A17).
+    public func loadXHGuiStatusForSelectedProject() async {
+        guard let selectedProject, selectedProject.status == .running else {
+            selectedProjectXHGuiEnabled = nil
+            return
+        }
+        let targetID = selectedProject.id
+        selectedProjectXHGuiEnabled = nil
+        guard let result = try? await ddevService.xhgui(.status, in: selectedProject.appRoot) else { return }
+        guard selectedProjectID == targetID else { return } // selection moved on
+        selectedProjectXHGuiEnabled = Self.parseXHGuiEnabled(result.stdout)
+    }
+
+    /// Live XHGui/XHProf on/off toggle (A17). Flips XHProf profiling on the running project,
+    /// optimistically reflecting the requested state, then reconciling against `ddev xhgui status`.
+    public func setXHGuiForSelectedProject(_ enabled: Bool) async {
+        guard let selectedProject else { return }
+        selectedProjectXHGuiEnabled = enabled // optimistic; reconciled below
+        await runProjectMutation(selectedProject, refresh: .none) {
+            let result = try await self.ddevService.xhgui(enabled ? .on : .off, in: selectedProject.appRoot)
+            if let status = try? await self.ddevService.xhgui(.status, in: selectedProject.appRoot),
+               self.selectedProjectID == selectedProject.id {
+                self.selectedProjectXHGuiEnabled = Self.parseXHGuiEnabled(status.stdout) ?? enabled
+            }
+            return result
+        }
+    }
+
+    /// Parses `ddev xhgui status` output ("XHGui is enabled/disabled") into a Bool.
+    /// `disabled` is checked first because it must not match the `enabled` branch.
+    private static func parseXHGuiEnabled(_ output: String) -> Bool? {
         let lower = output.lowercased()
         if lower.contains("disabled") { return false }
         if lower.contains("enabled") { return true }

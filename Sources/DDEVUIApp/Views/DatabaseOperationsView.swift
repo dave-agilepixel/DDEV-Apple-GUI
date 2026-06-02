@@ -7,40 +7,84 @@ struct DatabaseOperationsView: View {
 
     @State private var importDraft: DatabaseImportDraft?
     @State private var exportDraft: DatabaseExportDraft?
+    @State private var importFilesDraft: ImportFilesDraft?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("Database")
-                    .sectionHeaderStyle()
-                Spacer()
-            }
-
-            HStack(spacing: 8) {
-                Button {
-                    chooseImportFile()
-                } label: {
-                    Label("Import", systemImage: "square.and.arrow.down")
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("Database")
+                        .sectionHeaderStyle()
+                    Spacer()
                 }
 
-                Button {
-                    exportDraft = DatabaseExportDraft()
-                } label: {
-                    Label("Export", systemImage: "square.and.arrow.up")
+                HStack(spacing: 8) {
+                    Button {
+                        chooseImportFile()
+                    } label: {
+                        Label("Import", systemImage: "square.and.arrow.down")
+                    }
+
+                    Button {
+                        exportDraft = DatabaseExportDraft()
+                    } label: {
+                        Label("Export", systemImage: "square.and.arrow.up")
+                    }
+
+                    Spacer(minLength: 0)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
+                .labelStyle(.titleAndIcon)
+                .disabled(viewModel.isSelectedProjectBusy)
+            }
+
+            // A19 — file-side companion to the DB import: pull an uploaded-files archive/dir
+            // into the project's upload directory via `ddev import-files`.
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("Files")
+                        .sectionHeaderStyle()
+                    Spacer()
                 }
 
-                Spacer(minLength: 0)
+                HStack(spacing: 8) {
+                    Button {
+                        chooseImportFilesSource()
+                    } label: {
+                        Label("Import Files", systemImage: "folder.badge.plus")
+                    }
+                    Spacer(minLength: 0)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
+                .labelStyle(.titleAndIcon)
+                .disabled(viewModel.isSelectedProjectBusy)
             }
-            .buttonStyle(.bordered)
-            .controlSize(.regular)
-            .labelStyle(.titleAndIcon)
-            .disabled(viewModel.isSelectedProjectBusy)
         }
         .sheet(item: $importDraft) { draft in
             DatabaseImportSheet(project: project, draft: draft, viewModel: viewModel)
         }
         .sheet(item: $exportDraft) { draft in
             DatabaseExportSheet(project: project, draft: draft, viewModel: viewModel)
+        }
+        .sheet(item: $importFilesDraft) { draft in
+            ImportFilesSheet(project: project, draft: draft, viewModel: viewModel)
+        }
+    }
+
+    private func chooseImportFilesSource() {
+        let panel = NSOpenPanel()
+        // import-files accepts a directory OR an archive, so allow both.
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = false
+        panel.title = "Choose Files Source"
+        panel.message = "Choose an uploaded-files directory or archive (.tar/.tar.gz/.tar.xz/.tar.bz2/.tgz/.zip) to import into \(project.name)."
+
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            importFilesDraft = ImportFilesDraft(source: url.path)
         }
     }
 
@@ -67,6 +111,87 @@ private struct DatabaseImportDraft: Identifiable {
 
 private struct DatabaseExportDraft: Identifiable {
     let id = UUID()
+}
+
+private struct ImportFilesDraft: Identifiable {
+    let id = UUID()
+    let source: String
+}
+
+private struct ImportFilesSheet: View {
+    let project: DDEVProject
+    let draft: ImportFilesDraft
+    var viewModel: ProjectDashboardViewModel
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var target = ""
+    @State private var extractPath = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(spacing: 12) {
+                Image(systemName: "folder.badge.plus")
+                    .font(.largeTitle)
+                    .foregroundStyle(.tint)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Import Files")
+                        .font(.title3.weight(.semibold))
+                    Text(project.name)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Source")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+                    .kerning(0.5)
+                Text(draft.source)
+                    .font(.system(.callout, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .truncationMode(.middle)
+                    .textSelection(.enabled)
+            }
+
+            Form {
+                Section {
+                    TextField("Target upload dir", text: $target, prompt: Text("Default upload dir"))
+                    TextField("Archive extract path", text: $extractPath, prompt: Text("Optional path inside archive"))
+                }
+            }
+            .formStyle(.grouped)
+            .frame(maxHeight: 140)
+
+            Label("This replaces the contents of the project's upload directory.", systemImage: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+                .font(.callout)
+
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button {
+                    let options = DDEVImportFilesOptions(
+                        source: draft.source,
+                        target: target,
+                        extractPath: extractPath
+                    )
+                    Task {
+                        await viewModel.importFiles(options)
+                        dismiss()
+                    }
+                } label: {
+                    Label("Import Files", systemImage: "square.and.arrow.down")
+                }
+                .buttonStyle(.borderedProminent)
+            }
+        }
+        .padding(24)
+        .frame(width: 560)
+    }
 }
 
 private struct DatabaseImportSheet: View {

@@ -640,6 +640,7 @@
   <details class="feat" data-v="NICE">
     <summary>
       <span class="badge NICE">NICE TO HAVE</span>
+      <span class="status done">Implemented</span>
       <span class="sgrow">
         <span class="stitle">A17 · XHProf / Blackfire toggles</span>
         <div class="smeta"><span class="id">maps to</span> <span class="cmd">ddev xhprof on|off</span> <span class="cmd">ddev blackfire on|off</span></div>
@@ -658,12 +659,14 @@
       <h4>Native-GUI fit</h4>
       <p>Fine, but niche — profiling is occasional and audience is small.</p>
       <div class="verdict NICE"><b>Verdict:</b> Backlog / low. Basically free once A2 exists, but don't prioritize it — most users never profile.</div>
+      <div class="verdict NICE"><b>Built (adapted) 2026-06-02:</b> DDEV v1.25.2 has no <code>ddev xhprof</code> or <code>ddev blackfire</code> command — XHProf <i>is</i> the <code>ddev xhgui</code> command the app already wraps, and Blackfire has no command at all. Shipped the real, valuable half: a live <b>XHProf (XHGui) on/off toggle</b> next to the Xdebug switch, bound to <code>ddev xhgui status</code> and reusing the A2 pattern. <b>Blackfire dropped</b> (no command to call).</div>
     </div>
   </details>
 
   <details class="feat" data-v="NICE">
     <summary>
       <span class="badge NICE">NICE TO HAVE</span>
+      <span class="status done">Implemented</span>
       <span class="sgrow">
         <span class="stitle">A18 · Versions / About panel</span>
         <div class="smeta"><span class="id">maps to</span> <span class="cmd">ddev version -j</span></div>
@@ -688,6 +691,7 @@
   <details class="feat" data-v="NICE">
     <summary>
       <span class="badge NICE">NICE TO HAVE</span>
+      <span class="status done">Implemented</span>
       <span class="sgrow">
         <span class="stitle">A19 · Import uploaded files (import-files)</span>
         <div class="smeta"><span class="id">maps to</span> <span class="cmd">ddev import-files</span></div>
@@ -863,6 +867,7 @@
   <details class="feat" data-v="NICE">
     <summary>
       <span class="badge NICE">NICE TO HAVE</span>
+      <span class="status done">Implemented</span>
       <span class="sgrow">
         <span class="stitle">B7 · Actionable Docker-down onboarding</span>
         <div class="smeta"><span class="id">enhance</span> <span class="cmd">PrerequisiteSheet</span> <span class="cmd">utility dockercheck</span></div>
@@ -881,6 +886,7 @@
       <h4>Native-GUI fit</h4>
       <p>Excellent — graceful failure guidance is a core GUI advantage over a CLI error dump.</p>
       <div class="verdict NICE"><b>Verdict:</b> Backlog, leaning quick win. Cheap and it directly reduces "why won't it work" friction.</div>
+      <div class="verdict NICE"><b>Built 2026-06-02:</b> Most of this already existed — the <code>PrerequisiteSheet</code> already had launch buttons (Docker Desktop / OrbStack), install-doc links + brew-copy, a "starting…" state, and a re-check. This PR closes the one remaining gap: a <b>"Troubleshoot Docker"</b> action that runs <code>ddev utility dockercheck</code> (ANSI-stripped) and shows its diagnostic report in a copyable box, so a Docker that's installed-but-stuck is diagnosable in-app instead of an endless spinner.</div>
     </div>
   </details>
 
