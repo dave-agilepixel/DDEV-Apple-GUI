@@ -14,6 +14,7 @@ public protocol DDEVServicing: Sendable {
     func setPHPVersion(_ version: String, in appRoot: String) async throws -> CommandResult
     func launchDatabaseTool(_ tool: DDEVDatabaseTool, in appRoot: String) async throws -> CommandResult
     func importDatabase(_ options: DDEVDatabaseImportOptions, in appRoot: String) async throws -> CommandResult
+    func importFiles(_ options: DDEVImportFilesOptions, in appRoot: String) async throws -> CommandResult
     func exportDatabase(_ options: DDEVDatabaseExportOptions, in appRoot: String) async throws -> CommandResult
     func createSnapshot(name: String?, in appRoot: String) async throws -> CommandResult
     func listSnapshots(in appRoot: String) async throws -> CommandResult
@@ -24,15 +25,24 @@ public protocol DDEVServicing: Sendable {
     func logs(projectName: String, service: String, tail: Int, includeTimestamps: Bool, in appRoot: String) async throws -> CommandResult
     func listInstalledAddOns(projectName: String, in appRoot: String) async throws -> CommandResult
     func searchAddOns(query: String, in appRoot: String) async throws -> CommandResult
+    func listAllAddOns() async throws -> [DDEVAddon]
     func getAddOn(_ repository: String, projectName: String, in appRoot: String) async throws -> CommandResult
     func removeAddOn(named name: String, projectName: String, in appRoot: String) async throws -> CommandResult
     func applyConfigChange(_ change: DDEVConfigChange, in appRoot: String) async throws -> CommandResult
     func runProjectCommand(arguments: [String], in appRoot: String) async throws -> CommandResult
+    func exec(command: String, service: DDEVExecService, in appRoot: String) async throws -> CommandResult
     func version() async throws -> CommandResult
+    func versionInfo() async throws -> DDEVVersionInfo
+    func poweroff() async throws -> CommandResult
+    func deleteImages() async throws -> CommandResult
+    func downloadImages() async throws -> CommandResult
+    func globalConfig() async throws -> DDEVGlobalConfig
+    func applyGlobalConfig(_ changes: [DDEVGlobalConfigChange]) async throws -> CommandResult
     func utilityDiagnose(in appRoot: String?) async throws -> CommandResult
     func utilityConfigYAML(omitKeys: [String], in appRoot: String) async throws -> CommandResult
     func utilityCheckCustomConfig(in appRoot: String) async throws -> CommandResult
     func utilityCheckDBMatch(in appRoot: String) async throws -> CommandResult
+    func migrateDatabase(to type: DDEVDatabaseType, version: String, in appRoot: String) async throws -> CommandResult
     func mutagen(_ command: DDEVMutagenCommand, in appRoot: String) async throws -> CommandResult
     func xhgui(_ command: DDEVXHGuiCommand, in appRoot: String) async throws -> CommandResult
     func xdebug(_ command: DDEVXdebugCommand, in appRoot: String) async throws -> CommandResult
@@ -107,9 +117,17 @@ public final class ProjectDashboardViewModel {
     public var groups: [ProjectGroup] = []
     /// Selected group, when a group (not a Library item) is the active sidebar selection.
     public var selectedGroupID: ProjectGroup.ID?
-    public var selectedProjectID: DDEVProject.ID?
+    public var selectedProjectID: DDEVProject.ID? {
+        didSet {
+            // Track recency for the "Recently Used" sort (B5). Session-scoped — resets on relaunch.
+            if let id = selectedProjectID, oldValue != id { recordRecentProject(id) }
+        }
+    }
     public var selectedSidebarItem: ProjectSidebarItem = .projects
     public var searchText = ""
+
+    /// Most-recently-selected project ids, most-recent-first (B5). Session-scoped (not persisted).
+    public private(set) var recentProjectIDs: [String] = []
 
     /// Per-project command state, keyed by project id (the project name). The single source
     /// of truth for busy/queued lifecycle, last result, error, history, and output expansion.
@@ -124,11 +142,21 @@ public final class ProjectDashboardViewModel {
     /// configured type/version, so the inspector can surface an ambient drift warning (A5).
     public var dbMatchWarning: String?
 
+    /// User-defined custom commands discovered for the selected project (A13), from
+    /// `.ddev/commands/{host,web,db}` (project + global). Refreshed per selection.
+    public var customCommands: [DDEVCustomCommand] = []
+
     /// Live Xdebug on/off state for the selected running project, sourced from `ddev xdebug status`.
     /// NOTE: `describe -j`'s `xdebug_enabled` reflects the *configured* value (config.yaml), not the
     /// runtime state toggled by `ddev xdebug on/off`, so the live toggle must not bind to it.
     /// `nil` when unknown (project not running, or status not yet loaded).
     public var selectedProjectXdebugEnabled: Bool?
+
+    /// Live XHGui/XHProf on/off state for the selected running project, from `ddev xhgui status`.
+    /// XHGui *is* DDEV's XHProf UI (there is no separate `ddev xhprof` command); like Xdebug, the
+    /// live runtime state is authoritative over describe's config-time `xhgui_status`.
+    /// `nil` when unknown (project not running, or status not yet loaded).
+    public var selectedProjectXHGuiEnabled: Bool?
 
     /// Busy/error for genuinely project-less operations: global list refresh, global
     /// diagnostics, and new-project creation (which has no project id yet).
@@ -149,6 +177,16 @@ public final class ProjectDashboardViewModel {
     public var diagnosticReport = DDEVDiagnosticReport()
     public var diagnosticsErrorMessage: String?
 
+    /// Decoded `ddev version -j` (A18): DDEV + component image versions and the host toolchain.
+    /// Loaded on demand for the Diagnostics screen's About/Versions panel; not persisted.
+    public var ddevVersionInfo: DDEVVersionInfo?
+    public var versionInfoErrorMessage: String?
+
+    /// Current global DDEV configuration (A14), loaded on demand for the Settings global-config
+    /// section. `nil` until first loaded.
+    public var globalConfig: DDEVGlobalConfig?
+    public var globalConfigErrorMessage: String?
+
     /// Preferences + installed-app concern, extracted to its own model (audit M9). The public
     /// API below forwards to it so views/tests are unchanged; both are `@Observable`, so views
     /// reading the forwarders still track the underlying changes.
@@ -159,6 +197,7 @@ public final class ProjectDashboardViewModel {
     private let ddevService: DDEVServicing
     private let projectCache: ProjectCacheStoring
     private let groupStore: ProjectGroupStoring
+    private let customCommandDiscovery: CustomCommandDiscovering
     private let scheduler: CommandScheduler
     private let notifier: NotificationScheduling
     private var selectedProjectFallback: DDEVProject?
@@ -179,6 +218,7 @@ public final class ProjectDashboardViewModel {
         scheduler: CommandScheduler = CommandScheduler(maxConcurrent: 3),
         notifier: NotificationScheduling = NoopNotificationScheduler(),
         groupStore: ProjectGroupStoring = UserDefaultsProjectGroupStore(),
+        customCommandDiscovery: CustomCommandDiscovering = FileSystemCustomCommandDiscovery(),
         statusPollInterval: Duration = .seconds(10)
     ) {
         self.ddevService = ddevService
@@ -187,6 +227,7 @@ public final class ProjectDashboardViewModel {
         self.notifier = notifier
         self.preferencesModel = PreferencesModel(preferencesStore: preferencesStore, appAvailability: appAvailability)
         self.groupStore = groupStore
+        self.customCommandDiscovery = customCommandDiscovery
         self.statusPollInterval = statusPollInterval
         self.groups = groupStore.loadGroups()
     }
@@ -200,6 +241,18 @@ public final class ProjectDashboardViewModel {
     public var preferences: AppPreferences { preferencesModel.preferences }
     public var installedEditors: [EditorChoice] { preferencesModel.installedEditors }
     public var installedDatabaseTools: [DDEVDatabaseTool] { preferencesModel.installedDatabaseTools }
+
+    /// Current project-list sort (B5), persisted via preferences.
+    public var projectSort: ProjectSort { preferencesModel.preferences.projectSort }
+    public func setProjectSort(_ sort: ProjectSort) { preferencesModel.setProjectSort(sort) }
+
+    private func recordRecentProject(_ id: String) {
+        recentProjectIDs.removeAll { $0 == id }
+        recentProjectIDs.insert(id, at: 0)
+        if recentProjectIDs.count > 30 {
+            recentProjectIDs.removeLast(recentProjectIDs.count - 30)
+        }
+    }
 
     public var selectedProject: DDEVProject? {
         get {
@@ -245,6 +298,26 @@ public final class ProjectDashboardViewModel {
         filteredProjects(in: projects)
     }
 
+    /// Projects whose name or path matches `query` (case-insensitive), across *all* sections — backs
+    /// the ⌘K quick switcher (B6). An empty query returns everything, name-sorted.
+    public func projectsMatching(_ query: String) -> [DDEVProject] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let pool = projects.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        guard !trimmed.isEmpty else { return pool }
+        return pool.filter {
+            $0.name.localizedCaseInsensitiveContains(trimmed)
+                || $0.shortRoot.localizedCaseInsensitiveContains(trimmed)
+        }
+    }
+
+    /// Jumps to the Projects section and selects `id` — used by the quick switcher so the picked
+    /// project is both selected and visible regardless of the current section/group filter (B6).
+    public func revealAndSelectProject(_ id: DDEVProject.ID) {
+        selectedGroupID = nil
+        selectedSidebarItem = .projects
+        selectedProjectID = id
+    }
+
     public var availableEditors: [EditorChoice] { preferencesModel.availableEditors }
     public var availableDatabaseTools: [DDEVDatabaseTool] { preferencesModel.availableDatabaseTools }
     public var effectiveDefaultEditor: EditorChoice { preferencesModel.effectiveDefaultEditor }
@@ -272,14 +345,20 @@ public final class ProjectDashboardViewModel {
             }
         }
 
-        guard !query.isEmpty else { return sectionProjects }
-
-        return sectionProjects.filter { project in
-            project.name.localizedCaseInsensitiveContains(query)
-                || project.shortRoot.localizedCaseInsensitiveContains(query)
-                || project.projectType.rawValue.localizedCaseInsensitiveContains(query)
-                || (project.phpVersion?.localizedCaseInsensitiveContains(query) ?? false)
+        let matched: [DDEVProject]
+        if query.isEmpty {
+            matched = sectionProjects
+        } else {
+            matched = sectionProjects.filter { project in
+                project.name.localizedCaseInsensitiveContains(query)
+                    || project.shortRoot.localizedCaseInsensitiveContains(query)
+                    || project.projectType.rawValue.localizedCaseInsensitiveContains(query)
+                    || (project.phpVersion?.localizedCaseInsensitiveContains(query) ?? false)
+            }
         }
+
+        // B5 — order by the chosen sort (recency is session-scoped via recentProjectIDs).
+        return projectSort.sort(matched, recentIDs: recentProjectIDs)
     }
 
     public func setDefaultEditor(_ editor: EditorChoice?) {
@@ -413,6 +492,38 @@ public final class ProjectDashboardViewModel {
         }
     }
 
+    // MARK: - Batch lifecycle over the current view (B3)
+    //
+    // The current filtered view (sidebar section / group / search) *is* the selection — so picking a
+    // group and hitting "Start All" batch-starts exactly that group. Fan-out goes through the same
+    // per-project mutations, so the CommandScheduler's max-concurrency cap applies for free.
+
+    /// Projects in the current view that aren't running (candidates for a batch start).
+    public var startableProjectsInCurrentView: [DDEVProject] {
+        filteredProjects.filter { $0.status != .running }
+    }
+
+    /// Projects in the current view that are running (candidates for a batch stop).
+    public var stoppableProjectsInCurrentView: [DDEVProject] {
+        filteredProjects.filter { $0.status == .running }
+    }
+
+    public func startProjectsInCurrentView() async {
+        await runBatch(startableProjectsInCurrentView) { await self.start($0) }
+    }
+
+    public func stopProjectsInCurrentView() async {
+        await runBatch(stoppableProjectsInCurrentView) { await self.stop($0) }
+    }
+
+    private func runBatch(_ projects: [DDEVProject], _ action: @escaping @Sendable (DDEVProject) async -> Void) async {
+        await withTaskGroup(of: Void.self) { group in
+            for project in projects where !isBusy(project) {
+                group.addTask { await action(project) }
+            }
+        }
+    }
+
     public func startSelectedProject() async {
         guard let selectedProject else { return }
         await start(selectedProject)
@@ -501,6 +612,14 @@ public final class ProjectDashboardViewModel {
         guard let selectedProject else { return }
         await runProjectMutation(selectedProject) {
             try await self.ddevService.importDatabase(options, in: selectedProject.appRoot)
+        }
+    }
+
+    /// Imports an uploaded-files archive/directory into the selected project's upload dir (A19).
+    public func importFiles(_ options: DDEVImportFilesOptions) async {
+        guard let selectedProject else { return }
+        await runProjectMutation(selectedProject) {
+            try await self.ddevService.importFiles(options, in: selectedProject.appRoot)
         }
     }
 
@@ -642,6 +761,33 @@ public final class ProjectDashboardViewModel {
         }
     }
 
+    /// Loading flag for the full registry browse (A16) — distinct from the per-project read spinner.
+    public var isLoadingRegistry = false
+
+    /// Loads the full add-on registry for the browse experience (A16), sorted official-first then by
+    /// stars. Network-bound, so it runs with the service's timeout and surfaces failures as a message.
+    public func loadRegistryAddOns() async {
+        isLoadingRegistry = true
+        addonErrorMessage = nil
+        defer { isLoadingRegistry = false }
+        do {
+            addonSearchResults = Self.sortedForBrowse(try await ddevService.listAllAddOns())
+        } catch {
+            addonErrorMessage = "Couldn't load the add-on registry: \(error.presentableMessage)"
+        }
+    }
+
+    /// Browse order (A16): official add-ons first, then by GitHub stars (desc), then name.
+    nonisolated static func sortedForBrowse(_ addons: [DDEVAddon]) -> [DDEVAddon] {
+        addons.sorted { a, b in
+            if a.isOfficial != b.isOfficial { return a.isOfficial }
+            let sa = a.stars ?? -1
+            let sb = b.stars ?? -1
+            if sa != sb { return sa > sb }
+            return a.repository.localizedCaseInsensitiveCompare(b.repository) == .orderedAscending
+        }
+    }
+
     public func searchAddOnsForSelectedProject(query: String) async {
         guard let selectedProject else { return }
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -731,6 +877,67 @@ public final class ProjectDashboardViewModel {
         }
     }
 
+    /// Re-runs a past command from the history (B4). Only safe (non-destructive) invocations are
+    /// re-runnable — destructive ones are filtered out so a one-click re-run can't bypass the
+    /// confirmations their normal UI enforces.
+    public func rerunCommandForSelectedProject(_ result: CommandResult) async {
+        guard let selectedProject, result.isSafelyRerunnable else { return }
+        await runProjectMutation(selectedProject) {
+            try await self.ddevService.runProjectCommand(arguments: result.arguments, in: selectedProject.appRoot)
+        }
+    }
+
+    /// Discovers the selected project's custom commands (A13). Best-effort and quiet — a project
+    /// with no custom commands simply yields an empty list.
+    public func loadCustomCommandsForSelectedProject() async {
+        guard let selectedProject else {
+            customCommands = []
+            return
+        }
+        let targetID = selectedProject.id
+        let discovered = await customCommandDiscovery.discoverCustomCommands(appRoot: selectedProject.appRoot)
+        guard selectedProjectID == targetID else { return } // selection moved on
+        customCommands = discovered
+    }
+
+    /// Runs a discovered custom command (`ddev <name>`) through the normal project-command channel.
+    public func runCustomCommandForSelectedProject(_ command: DDEVCustomCommand) async {
+        guard let selectedProject else { return }
+        await runProjectMutation(selectedProject) {
+            try await self.ddevService.runProjectCommand(arguments: [command.name], in: selectedProject.appRoot)
+        }
+    }
+
+    /// Runs an arbitrary one-shot command in the selected project's chosen service container (A9).
+    /// Output flows through the normal command-output/history channel.
+    public func runExecForSelectedProject(command: String, service: DDEVExecService) async {
+        guard let selectedProject else { return }
+        await runProjectMutation(selectedProject) {
+            try await self.ddevService.exec(command: command, service: service, in: selectedProject.appRoot)
+        }
+    }
+
+    /// Runs a DDEV tool wrapper with free-text arguments (A10): `ddev <tool> <args…>`. Arguments are
+    /// tokenized quote-aware, then run through the normal project-command channel.
+    public func runToolForSelectedProject(_ tool: DDEVTool, argumentString: String) async {
+        guard let selectedProject else { return }
+        let arguments = [tool.rawValue] + DDEVTool.tokenizeArguments(argumentString)
+        await runProjectMutation(selectedProject) {
+            try await self.ddevService.runProjectCommand(arguments: arguments, in: selectedProject.appRoot)
+        }
+    }
+
+    /// Loads `ddev version -j` for the About/Versions panel (A18). Read-only and global — no
+    /// project context needed. Failures surface as a message rather than throwing into the UI.
+    public func loadVersionInfo() async {
+        versionInfoErrorMessage = nil
+        do {
+            ddevVersionInfo = try await ddevService.versionInfo()
+        } catch {
+            versionInfoErrorMessage = "Couldn't read DDEV version info: \(error.localizedDescription)"
+        }
+    }
+
     public func runGlobalDiagnostics() async {
         await runDiagnostics {
             [
@@ -741,6 +948,69 @@ public final class ProjectDashboardViewModel {
                     try await self.ddevService.utilityDiagnose(in: nil)
                 }
             ]
+        }
+    }
+
+    // MARK: - Global housekeeping (A15)
+
+    /// Stops all running projects/containers (`ddev poweroff`), then refreshes the list so the
+    /// stopped statuses are reflected.
+    public func powerOffAllProjects() async {
+        isRunningGlobalCommand = true
+        globalErrorMessage = nil
+        defer { isRunningGlobalCommand = false }
+        do {
+            _ = try await ddevService.poweroff()
+            try await refreshProjectsFromDDEV()
+        } catch {
+            globalErrorMessage = error.presentableMessage
+        }
+    }
+
+    /// Removes DDEV Docker images to reclaim disk (`ddev delete images -y`).
+    public func deleteDDEVImages() async {
+        await runGlobalHousekeeping { try await self.ddevService.deleteImages() }
+    }
+
+    /// Pre-pulls DDEV's images (`ddev utility download-images`).
+    public func downloadDDEVImages() async {
+        await runGlobalHousekeeping { try await self.ddevService.downloadImages() }
+    }
+
+    // MARK: - Global configuration (A14)
+
+    /// Loads the current global DDEV config for the Settings global-config section.
+    public func loadGlobalConfig() async {
+        globalConfigErrorMessage = nil
+        do {
+            globalConfig = try await ddevService.globalConfig()
+        } catch {
+            globalConfigErrorMessage = "Couldn't read global config: \(error.presentableMessage)"
+        }
+    }
+
+    /// Applies global config changes (`ddev config global --flags`) then reloads to reflect them.
+    public func applyGlobalConfig(_ changes: [DDEVGlobalConfigChange]) async {
+        guard !changes.isEmpty else { return }
+        isRunningGlobalCommand = true
+        globalConfigErrorMessage = nil
+        defer { isRunningGlobalCommand = false }
+        do {
+            _ = try await ddevService.applyGlobalConfig(changes)
+            globalConfig = try await ddevService.globalConfig()
+        } catch {
+            globalConfigErrorMessage = "Couldn't update global config: \(error.presentableMessage)"
+        }
+    }
+
+    private func runGlobalHousekeeping(_ operation: @escaping () async throws -> CommandResult) async {
+        isRunningGlobalCommand = true
+        globalErrorMessage = nil
+        defer { isRunningGlobalCommand = false }
+        do {
+            _ = try await operation()
+        } catch {
+            globalErrorMessage = error.presentableMessage
         }
     }
 
@@ -842,6 +1112,44 @@ public final class ProjectDashboardViewModel {
         return nil
     }
 
+    /// Reads the *live* XHGui/XHProf state for the selected running project via `ddev xhgui status`.
+    /// XHGui is DDEV's XHProf UI; mirrors the Xdebug live-status pattern (A17).
+    public func loadXHGuiStatusForSelectedProject() async {
+        guard let selectedProject, selectedProject.status == .running else {
+            selectedProjectXHGuiEnabled = nil
+            return
+        }
+        let targetID = selectedProject.id
+        selectedProjectXHGuiEnabled = nil
+        guard let result = try? await ddevService.xhgui(.status, in: selectedProject.appRoot) else { return }
+        guard selectedProjectID == targetID else { return } // selection moved on
+        selectedProjectXHGuiEnabled = Self.parseXHGuiEnabled(result.stdout)
+    }
+
+    /// Live XHGui/XHProf on/off toggle (A17). Flips XHProf profiling on the running project,
+    /// optimistically reflecting the requested state, then reconciling against `ddev xhgui status`.
+    public func setXHGuiForSelectedProject(_ enabled: Bool) async {
+        guard let selectedProject else { return }
+        selectedProjectXHGuiEnabled = enabled // optimistic; reconciled below
+        await runProjectMutation(selectedProject, refresh: .none) {
+            let result = try await self.ddevService.xhgui(enabled ? .on : .off, in: selectedProject.appRoot)
+            if let status = try? await self.ddevService.xhgui(.status, in: selectedProject.appRoot),
+               self.selectedProjectID == selectedProject.id {
+                self.selectedProjectXHGuiEnabled = Self.parseXHGuiEnabled(status.stdout) ?? enabled
+            }
+            return result
+        }
+    }
+
+    /// Parses `ddev xhgui status` output ("XHGui is enabled/disabled") into a Bool.
+    /// `disabled` is checked first because it must not match the `enabled` branch.
+    private static func parseXHGuiEnabled(_ output: String) -> Bool? {
+        let lower = output.lowercased()
+        if lower.contains("disabled") { return false }
+        if lower.contains("enabled") { return true }
+        return nil
+    }
+
     /// Runs `ddev utility check-db-match` for the selected project and, on a mismatch, populates
     /// `dbMatchWarning` so the inspector can show an ambient drift banner (A5). Only runs for a
     /// running project — a stopped DB can't be inspected, and we'd rather stay silent than cry wolf.
@@ -862,6 +1170,17 @@ public final class ProjectDashboardViewModel {
             // Couldn't run the check (e.g. DB container not up yet). Don't show a scary banner for
             // a non-drift failure.
         }
+    }
+
+    /// Safely migrates the selected project's database to a new type/version (A12) via
+    /// `ddev utility migrate-database`, then re-checks for drift (the migration should clear the
+    /// A5 mismatch). PostgreSQL targets are rejected — migrate-database is MySQL/MariaDB only.
+    public func migrateDatabaseForSelectedProject(to type: DDEVDatabaseType, version: String) async {
+        guard let selectedProject, type.supportsMigration else { return }
+        await runProjectMutation(selectedProject) {
+            try await self.ddevService.migrateDatabase(to: type, version: version, in: selectedProject.appRoot)
+        }
+        await checkDBMatchForSelectedProject()
     }
 
     /// Distils a concise, user-facing line from a failed check-db-match result.

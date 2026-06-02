@@ -13,6 +13,8 @@ public struct DDEVAddon: Equatable, Identifiable, Sendable {
     public let type: AddonType
     public let dependencies: [String]
     public let githubURL: URL?
+    /// GitHub star count from the registry (A16), `nil` when unknown (e.g. table-parsed output).
+    public let stars: Int?
 
     public init(
         repository: String,
@@ -20,7 +22,8 @@ public struct DDEVAddon: Equatable, Identifiable, Sendable {
         version: String? = nil,
         type: AddonType = .unknown,
         dependencies: [String] = [],
-        githubURL: URL? = nil
+        githubURL: URL? = nil,
+        stars: Int? = nil
     ) {
         self.repository = repository
         self.description = description
@@ -28,6 +31,7 @@ public struct DDEVAddon: Equatable, Identifiable, Sendable {
         self.type = type
         self.dependencies = dependencies
         self.githubURL = githubURL
+        self.stars = stars
     }
 
     public var id: String {
@@ -128,7 +132,8 @@ public struct DDEVAddon: Equatable, Identifiable, Sendable {
             version: rawAddon.tagName,
             type: AddonType(rawValue: rawAddon.type ?? "") ?? .unknown,
             dependencies: rawAddon.dependencies ?? [],
-            githubURL: rawAddon.githubURL.flatMap(URL.init(string:))
+            githubURL: rawAddon.githubURL.flatMap(URL.init(string:)),
+            stars: rawAddon.stars
         )
     }
 }
@@ -146,6 +151,7 @@ private struct DDEVRawAddon: Decodable {
     let tagName: String?
     let dependencies: [String]?
     let type: String?
+    let stars: Int?
 
     enum CodingKeys: String, CodingKey {
         case title
@@ -156,6 +162,7 @@ private struct DDEVRawAddon: Decodable {
         case tagName = "tag_name"
         case dependencies
         case type
+        case stars
     }
 }
 

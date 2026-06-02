@@ -1,5 +1,21 @@
 import Foundation
 
+/// Options for `ddev import-files` (A19): pull an uploaded-files archive or directory into the
+/// project's upload dir. `source` may be a directory or a `.tar(.gz|.xz|.bz2)`/`.tgz`/`.zip`
+/// archive; `target` overrides the default upload dir; `extractPath` selects a subdirectory
+/// inside an archive. DDEV replaces the destination directory contents on import.
+public struct DDEVImportFilesOptions: Equatable, Sendable {
+    public let source: String
+    public let target: String?
+    public let extractPath: String?
+
+    public init(source: String, target: String? = nil, extractPath: String? = nil) {
+        self.source = source
+        self.target = target?.nilIfBlank
+        self.extractPath = extractPath?.nilIfBlank
+    }
+}
+
 public struct DDEVDatabaseImportOptions: Equatable, Sendable {
     public let filePath: String
     public let database: String
