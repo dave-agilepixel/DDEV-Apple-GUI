@@ -138,6 +138,34 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.selectedProjectState.lastResult?.succeeded, true)
     }
 
+    func testStartProjectsInCurrentViewStartsOnlyStoppedOnes() async {
+        let running = DDEVProject.sampleWordPress                    // aqua-pura, running
+        let stopped = DDEVProject.sampleLaravel.withStatus(.stopped) // agilebugs, stopped
+        let service = FakeDDEVService(projects: [running, stopped])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        await viewModel.refresh()
+
+        await viewModel.startProjectsInCurrentView()
+
+        let commands = service.commands
+        XCTAssertTrue(commands.contains("start:agilebugs"), "Stopped project is started")
+        XCTAssertFalse(commands.contains("start:aqua-pura"), "Already-running project is left alone")
+    }
+
+    func testStopProjectsInCurrentViewStopsOnlyRunningOnes() async {
+        let running = DDEVProject.sampleWordPress                    // aqua-pura, running
+        let stopped = DDEVProject.sampleLaravel.withStatus(.stopped) // agilebugs, stopped
+        let service = FakeDDEVService(projects: [running, stopped])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        await viewModel.refresh()
+
+        await viewModel.stopProjectsInCurrentView()
+
+        let commands = service.commands
+        XCTAssertTrue(commands.contains("stop:aqua-pura"), "Running project is stopped")
+        XCTAssertFalse(commands.contains("stop:agilebugs"), "Already-stopped project is left alone")
+    }
+
     func testRowActionTargetsGivenProjectNotSelection() async {
         let service = FakeDDEVService(projects: [.sampleWordPress, .sampleLaravel])
         let viewModel = ProjectDashboardViewModel(ddevService: service)
