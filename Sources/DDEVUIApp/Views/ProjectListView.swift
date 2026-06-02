@@ -11,8 +11,40 @@ struct ProjectListView: View {
                 Divider()
             }
             contentBody
+            if viewModel.filteredProjects.count > 1 {
+                Divider()
+                batchBar
+            }
         }
         .navigationTitle(viewModel.currentSectionTitle)
+    }
+
+    // B3 — batch start/stop the current view (sidebar section / group / search is the selection).
+    // Routed through the per-project mutations, so the CommandScheduler caps real concurrency.
+    private var batchBar: some View {
+        HStack(spacing: 8) {
+            Button {
+                Task { await viewModel.startProjectsInCurrentView() }
+            } label: {
+                Label("Start All (\(viewModel.startableProjectsInCurrentView.count))", systemImage: "play.fill")
+            }
+            .disabled(viewModel.startableProjectsInCurrentView.isEmpty)
+
+            Button {
+                Task { await viewModel.stopProjectsInCurrentView() }
+            } label: {
+                Label("Stop All (\(viewModel.stoppableProjectsInCurrentView.count))", systemImage: "stop.fill")
+            }
+            .disabled(viewModel.stoppableProjectsInCurrentView.isEmpty)
+
+            Spacer()
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .labelStyle(.titleAndIcon)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .help("Start or stop every project in the current view")
     }
 
     private var searchBar: some View {

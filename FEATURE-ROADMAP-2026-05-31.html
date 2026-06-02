@@ -779,6 +779,7 @@
   <details class="feat" data-v="NICE">
     <summary>
       <span class="badge NICE">NICE TO HAVE</span>
+      <span class="status done">Implemented</span>
       <span class="sgrow">
         <span class="stitle">B3 · Multi-select batch start/stop</span>
         <div class="smeta"><span class="id">SwiftUI selection</span> <span class="cmd">ddev start --all</span> <span class="cmd">ddev stop --all</span></div>
@@ -797,6 +798,7 @@
       <h4>Native-GUI fit</h4>
       <p>Good. Multi-select is a natural GUI affordance the CLI handles only via <code>--all</code>.</p>
       <div class="verdict NICE"><b>Verdict:</b> Backlog. Nice teaching exercise for SwiftUI selection + your scheduler; modest daily value unless you juggle many projects at once.</div>
+      <div class="verdict NICE"><b>Built 2026-06-02 (batch-over-view, not checkboxes):</b> A <b>Start All / Stop All</b> bar under the project list that batch-acts on the <b>current filtered view</b> — so the sidebar section / <i>group</i> / search <i>is</i> the selection (pick a group → Start All starts exactly that group). Fan-out reuses the per-project mutations, so the <span class="loc">CommandScheduler</span>'s max-3 cap applies for free; only stopped projects are started and only running ones stopped. Chose this over checkbox multi-select because it composes with the shipped groups feature and doesn't fight the single-selection inspector.</div>
     </div>
   </details>
 

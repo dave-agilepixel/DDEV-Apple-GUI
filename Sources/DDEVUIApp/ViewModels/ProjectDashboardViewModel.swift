@@ -437,6 +437,38 @@ public final class ProjectDashboardViewModel {
         }
     }
 
+    // MARK: - Batch lifecycle over the current view (B3)
+    //
+    // The current filtered view (sidebar section / group / search) *is* the selection — so picking a
+    // group and hitting "Start All" batch-starts exactly that group. Fan-out goes through the same
+    // per-project mutations, so the CommandScheduler's max-concurrency cap applies for free.
+
+    /// Projects in the current view that aren't running (candidates for a batch start).
+    public var startableProjectsInCurrentView: [DDEVProject] {
+        filteredProjects.filter { $0.status != .running }
+    }
+
+    /// Projects in the current view that are running (candidates for a batch stop).
+    public var stoppableProjectsInCurrentView: [DDEVProject] {
+        filteredProjects.filter { $0.status == .running }
+    }
+
+    public func startProjectsInCurrentView() async {
+        await runBatch(startableProjectsInCurrentView) { await self.start($0) }
+    }
+
+    public func stopProjectsInCurrentView() async {
+        await runBatch(stoppableProjectsInCurrentView) { await self.stop($0) }
+    }
+
+    private func runBatch(_ projects: [DDEVProject], _ action: @escaping @Sendable (DDEVProject) async -> Void) async {
+        await withTaskGroup(of: Void.self) { group in
+            for project in projects where !isBusy(project) {
+                group.addTask { await action(project) }
+            }
+        }
+    }
+
     public func startSelectedProject() async {
         guard let selectedProject else { return }
         await start(selectedProject)
