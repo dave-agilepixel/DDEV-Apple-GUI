@@ -1665,16 +1665,19 @@ public final class ProjectDashboardViewModel {
         }
         if didPruneGroups { persistGroups() }
 
-        // TODO(multi-select): this single-selection reconciliation collapses a 2+ selection to the
-        // fallback on every refresh. Replaced with set-pruning in a follow-up task — do not rely on
-        // this branch for multi-selection behaviour.
-        if let selectedProjectID,
-           let selectedProject = projects.first(where: { $0.id == selectedProjectID }) {
-            selectedProjectFallback = selectedProject
-        } else {
+        // Prune the multi-selection to projects that still exist (mirrors the group-member pruning
+        // above) so vanished projects don't linger as ghost selections.
+        let liveSelection = selectedProjectIDs.intersection(liveIDs)
+        if liveSelection != selectedProjectIDs { selectedProjectIDs = liveSelection }
+
+        if selectedProjectIDs.isEmpty {
+            // Nothing valid selected — fall back to the first visible project (original behaviour).
             let fallbackProject = filteredProjects(in: projects).first ?? projects.first
             selectedProjectID = fallbackProject?.id
             selectedProjectFallback = fallbackProject
+        } else if let id = selectedProjectID, let selectedProject = projects.first(where: { $0.id == id }) {
+            // Exactly one still selected — keep the inspector's fallback project fresh.
+            selectedProjectFallback = selectedProject
         }
     }
 
