@@ -881,6 +881,64 @@ private struct ServiceHealthRow: View {
 
 // MARK: - Manage tab
 
+/// A9 — run an arbitrary one-shot command inside a service container (`ddev exec`). Output flows
+/// into the normal command-output channel (Logs tab). The command is run via `bash -c`, so pipes
+/// and shell features work.
+private struct ExecConsoleView: View {
+    let project: DDEVProject
+    var viewModel: ProjectDashboardViewModel
+
+    @State private var command = ""
+    @State private var service: DDEVExecService = .web
+
+    var body: some View {
+        InspectorSection("Run Command") {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Run a one-shot shell command inside a container (ddev exec). Output appears under the Logs tab.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                HStack(spacing: 8) {
+                    Picker("Service", selection: $service) {
+                        ForEach(DDEVExecService.allCases) { service in
+                            Text(service.displayName).tag(service)
+                        }
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+
+                    TextField("e.g. composer install", text: $command)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(.body, design: .monospaced))
+                        .onSubmit(run)
+
+                    Button("Run", action: run)
+                        .buttonStyle(.borderedProminent)
+                        .disabled(!canRun)
+                }
+
+                if project.status != .running {
+                    Text("Start the project to run commands in its containers.")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+        }
+    }
+
+    private var canRun: Bool {
+        project.status == .running
+            && !viewModel.isSelectedProjectBusy
+            && !command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func run() {
+        guard canRun else { return }
+        let toRun = command
+        Task { await viewModel.runExecForSelectedProject(command: toRun, service: service) }
+    }
+}
+
 private struct ManageTabContent: View {
     let project: DDEVProject
     var viewModel: ProjectDashboardViewModel
@@ -889,6 +947,7 @@ private struct ManageTabContent: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 FrameworkCommandLauncherView(project: project, viewModel: viewModel)
+                ExecConsoleView(project: project, viewModel: viewModel)
                 DatabaseOperationsView(project: project, viewModel: viewModel)
                 SnapshotManagerView(project: project, viewModel: viewModel)
                 AddonManagerView(project: project, viewModel: viewModel)

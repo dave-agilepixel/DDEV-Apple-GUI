@@ -29,6 +29,7 @@ public protocol DDEVServicing: Sendable {
     func removeAddOn(named name: String, projectName: String, in appRoot: String) async throws -> CommandResult
     func applyConfigChange(_ change: DDEVConfigChange, in appRoot: String) async throws -> CommandResult
     func runProjectCommand(arguments: [String], in appRoot: String) async throws -> CommandResult
+    func exec(command: String, service: DDEVExecService, in appRoot: String) async throws -> CommandResult
     func version() async throws -> CommandResult
     func versionInfo() async throws -> DDEVVersionInfo
     func poweroff() async throws -> CommandResult
@@ -725,6 +726,15 @@ public final class ProjectDashboardViewModel {
         guard let selectedProject else { return }
         await runProjectMutation(selectedProject) {
             try await self.ddevService.runProjectCommand(arguments: command.arguments, in: selectedProject.appRoot)
+        }
+    }
+
+    /// Runs an arbitrary one-shot command in the selected project's chosen service container (A9).
+    /// Output flows through the normal command-output/history channel.
+    public func runExecForSelectedProject(command: String, service: DDEVExecService) async {
+        guard let selectedProject else { return }
+        await runProjectMutation(selectedProject) {
+            try await self.ddevService.exec(command: command, service: service, in: selectedProject.appRoot)
         }
     }
 

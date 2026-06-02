@@ -254,6 +254,22 @@ public final class DDEVCommandService: Sendable {
         return try await runDDEV(arguments, workingDirectory: appRoot)
     }
 
+    /// Runs an arbitrary one-shot command inside a service container (A9). The command is handed to
+    /// `bash -c` as a single opaque argument, so the user's flags/pipes are never parsed as `ddev`
+    /// flags (no flag-injection) and shell features (pipes, redirects, `&&`) work. `Process` invokes
+    /// `ddev` without a shell, so there's no host-side shell injection either.
+    @discardableResult
+    public func exec(command: String, service: DDEVExecService = .web, in appRoot: String) async throws -> CommandResult {
+        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw DDEVCommandValidationError.emptyProjectCommand
+        }
+        return try await runDDEV(
+            ["exec", "--service=\(service.rawValue)", "bash", "-c", trimmed],
+            workingDirectory: appRoot
+        )
+    }
+
     @discardableResult
     public func version() async throws -> CommandResult {
         try await runDDEV(["version"])
@@ -434,6 +450,22 @@ public enum DDEVXdebugCommand: String, CaseIterable, Sendable {
     case on
     case off
     case status
+}
+
+/// Target container for an arbitrary `ddev exec` (A9). Closed set so the `--service` value can't be
+/// an injection vector.
+public enum DDEVExecService: String, CaseIterable, Identifiable, Sendable {
+    case web
+    case db
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .web: "Web"
+        case .db: "Database"
+        }
+    }
 }
 
 public enum DDEVCommandValidationError: Error, Equatable, Sendable {

@@ -277,6 +277,7 @@ private actor GatedDDEVService: DDEVServicing {
     func removeAddOn(named name: String, projectName: String, in appRoot: String) async throws -> CommandResult { try await runGated("addon-remove") }
     func applyConfigChange(_ change: DDEVConfigChange, in appRoot: String) async throws -> CommandResult { try await runGated("config-change") }
     func runProjectCommand(arguments: [String], in appRoot: String) async throws -> CommandResult { try await runGated("project-command") }
+    func exec(command: String, service: DDEVExecService, in appRoot: String) async throws -> CommandResult { try await runGated("exec") }
     func version() async throws -> CommandResult { recorded.append("version"); return runImmediate() }
     func versionInfo() async throws -> DDEVVersionInfo { recorded.append("version-info"); return DDEVVersionInfo(items: []) }
     func poweroff() async throws -> CommandResult { recorded.append("poweroff"); return runImmediate() }
