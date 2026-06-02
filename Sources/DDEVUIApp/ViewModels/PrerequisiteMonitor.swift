@@ -8,6 +8,11 @@ public final class PrerequisiteMonitor {
     public private(set) var isLaunching = false
     public private(set) var launchErrorMessage: String?
 
+    /// Output of the last `ddev utility dockercheck` run (B7), shown when the user troubleshoots a
+    /// Docker that's installed but won't come ready. `nil` until run for the first time.
+    public private(set) var dockerCheckReport: DockerCheckReport?
+    public private(set) var isRunningDockerCheck = false
+
     public let pollInterval: Duration
     private let service: PrerequisiteChecking
     @ObservationIgnored private var pollTask: Task<Void, Never>?
@@ -60,6 +65,15 @@ public final class PrerequisiteMonitor {
         }
         await refresh()
         isLaunching = false
+    }
+
+    /// Runs `ddev utility dockercheck` and stores the report so the sheet can show why Docker
+    /// isn't healthy (B7). Best-effort: the service never throws here — failures come back as a
+    /// report flagged `succeeded: false` with the diagnostic text.
+    public func runDockerCheck() async {
+        isRunningDockerCheck = true
+        dockerCheckReport = await service.dockerCheck()
+        isRunningDockerCheck = false
     }
 
     public var shouldBlockUI: Bool {

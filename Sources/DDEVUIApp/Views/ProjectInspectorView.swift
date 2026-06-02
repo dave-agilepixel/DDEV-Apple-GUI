@@ -50,8 +50,9 @@ struct ProjectInspectorView: View {
                     // They're independent subprocesses, so run them concurrently to keep selection snappy.
                     async let details: Void = viewModel.loadDetailsForSelectedProject()
                     async let xdebug: Void = viewModel.loadXdebugStatusForSelectedProject()
+                    async let xhgui: Void = viewModel.loadXHGuiStatusForSelectedProject()
                     async let driftCheck: Void = viewModel.checkDBMatchForSelectedProject()
-                    _ = await (details, xdebug, driftCheck)
+                    _ = await (details, xdebug, xhgui, driftCheck)
                 }
                 .toolbar {
                     ToolbarItem(placement: .primaryAction) {
@@ -650,6 +651,22 @@ private struct OverviewTabContent: View {
                         Toggle("Xdebug", isOn: Binding(
                             get: { xdebugEnabled },
                             set: { newValue in Task { await viewModel.setXdebugForSelectedProject(newValue) } }
+                        ))
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                        .disabled(viewModel.isSelectedProjectBusy)
+                    })
+                }
+
+                // A17 — live XHGui/XHProf profiling toggle, same shape as Xdebug. XHGui is DDEV's
+                // XHProf UI; live state comes from `ddev xhgui status`. (No `ddev blackfire` command
+                // exists in this DDEV, so Blackfire is intentionally not surfaced.)
+                if let xhguiEnabled = viewModel.selectedProjectXHGuiEnabled {
+                    metaRow("XHProf (XHGui)", trailing: {
+                        Toggle("XHProf", isOn: Binding(
+                            get: { xhguiEnabled },
+                            set: { newValue in Task { await viewModel.setXHGuiForSelectedProject(newValue) } }
                         ))
                         .labelsHidden()
                         .toggleStyle(.switch)

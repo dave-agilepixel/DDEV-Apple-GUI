@@ -262,6 +262,7 @@ private actor GatedDDEVService: DDEVServicing {
     func setPHPVersion(_ version: String, in appRoot: String) async throws -> CommandResult { try await runGated("php") }
     func launchDatabaseTool(_ tool: DDEVDatabaseTool, in appRoot: String) async throws -> CommandResult { try await runGated("db") }
     func importDatabase(_ options: DDEVDatabaseImportOptions, in appRoot: String) async throws -> CommandResult { try await runGated("import") }
+    func importFiles(_ options: DDEVImportFilesOptions, in appRoot: String) async throws -> CommandResult { try await runGated("import-files") }
     func exportDatabase(_ options: DDEVDatabaseExportOptions, in appRoot: String) async throws -> CommandResult { try await runGated("export") }
     func createSnapshot(name: String?, in appRoot: String) async throws -> CommandResult { try await runGated("snapshot") }
     func listSnapshots(in appRoot: String) async throws -> CommandResult { recorded.append("snapshot-list"); return runImmediate() }
@@ -278,6 +279,12 @@ private actor GatedDDEVService: DDEVServicing {
     func runProjectCommand(arguments: [String], in appRoot: String) async throws -> CommandResult { try await runGated("project-command") }
     func exec(command: String, service: DDEVExecService, in appRoot: String) async throws -> CommandResult { try await runGated("exec") }
     func version() async throws -> CommandResult { recorded.append("version"); return runImmediate() }
+    func versionInfo() async throws -> DDEVVersionInfo { recorded.append("version-info"); return DDEVVersionInfo(items: []) }
+    func poweroff() async throws -> CommandResult { recorded.append("poweroff"); return runImmediate() }
+    func deleteImages() async throws -> CommandResult { recorded.append("delete-images"); return runImmediate() }
+    func downloadImages() async throws -> CommandResult { recorded.append("download-images"); return runImmediate() }
+    func globalConfig() async throws -> DDEVGlobalConfig { recorded.append("global-config"); return DDEVGlobalConfig(values: [:]) }
+    func applyGlobalConfig(_ changes: [DDEVGlobalConfigChange]) async throws -> CommandResult { recorded.append("apply-global-config"); return runImmediate() }
     func utilityDiagnose(in appRoot: String?) async throws -> CommandResult { recorded.append("diagnose"); return runImmediate() }
     func utilityConfigYAML(omitKeys: [String], in appRoot: String) async throws -> CommandResult { recorded.append("configyaml"); return runImmediate() }
     func utilityCheckCustomConfig(in appRoot: String) async throws -> CommandResult { recorded.append("check-custom-config"); return runImmediate() }
