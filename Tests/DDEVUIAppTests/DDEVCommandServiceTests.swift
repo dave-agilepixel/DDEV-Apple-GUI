@@ -25,6 +25,21 @@ final class DDEVCommandServiceTests: XCTestCase {
         ])
     }
 
+    func testGlobalHousekeepingCommands() async throws {
+        let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
+        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
+
+        _ = try await service.poweroff()
+        _ = try await service.deleteImages()
+        _ = try await service.downloadImages()
+
+        XCTAssertEqual(runner.commands, [
+            CommandSpec(executable: "ddev", arguments: ["poweroff"], workingDirectory: nil),
+            CommandSpec(executable: "ddev", arguments: ["delete", "images", "-y"], workingDirectory: nil),
+            CommandSpec(executable: "ddev", arguments: ["utility", "download-images"], workingDirectory: nil)
+        ])
+    }
+
     func testLifecycleCommandsUseProjectName() async throws {
         let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
         let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")

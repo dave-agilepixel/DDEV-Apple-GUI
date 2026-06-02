@@ -29,6 +29,9 @@ public protocol DDEVServicing: Sendable {
     func applyConfigChange(_ change: DDEVConfigChange, in appRoot: String) async throws -> CommandResult
     func runProjectCommand(arguments: [String], in appRoot: String) async throws -> CommandResult
     func version() async throws -> CommandResult
+    func poweroff() async throws -> CommandResult
+    func deleteImages() async throws -> CommandResult
+    func downloadImages() async throws -> CommandResult
     func utilityDiagnose(in appRoot: String?) async throws -> CommandResult
     func utilityConfigYAML(omitKeys: [String], in appRoot: String) async throws -> CommandResult
     func utilityCheckCustomConfig(in appRoot: String) async throws -> CommandResult
@@ -707,6 +710,43 @@ public final class ProjectDashboardViewModel {
                     try await self.ddevService.utilityDiagnose(in: nil)
                 }
             ]
+        }
+    }
+
+    // MARK: - Global housekeeping (A15)
+
+    /// Stops all running projects/containers (`ddev poweroff`), then refreshes the list so the
+    /// stopped statuses are reflected.
+    public func powerOffAllProjects() async {
+        isRunningGlobalCommand = true
+        globalErrorMessage = nil
+        defer { isRunningGlobalCommand = false }
+        do {
+            _ = try await ddevService.poweroff()
+            try await refreshProjectsFromDDEV()
+        } catch {
+            globalErrorMessage = error.presentableMessage
+        }
+    }
+
+    /// Removes DDEV Docker images to reclaim disk (`ddev delete images -y`).
+    public func deleteDDEVImages() async {
+        await runGlobalHousekeeping { try await self.ddevService.deleteImages() }
+    }
+
+    /// Pre-pulls DDEV's images (`ddev utility download-images`).
+    public func downloadDDEVImages() async {
+        await runGlobalHousekeeping { try await self.ddevService.downloadImages() }
+    }
+
+    private func runGlobalHousekeeping(_ operation: @escaping () async throws -> CommandResult) async {
+        isRunningGlobalCommand = true
+        globalErrorMessage = nil
+        defer { isRunningGlobalCommand = false }
+        do {
+            _ = try await operation()
+        } catch {
+            globalErrorMessage = error.presentableMessage
         }
     }
 

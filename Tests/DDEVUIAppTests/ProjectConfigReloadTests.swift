@@ -85,6 +85,9 @@ private final class SuspendedConfigDDEVService: DDEVServicing, @unchecked Sendab
     func applyConfigChange(_ change: DDEVConfigChange, in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
     func runProjectCommand(arguments: [String], in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
     func version() async throws -> CommandResult { throw UnexpectedCallError() }
+    func poweroff() async throws -> CommandResult { throw UnexpectedCallError() }
+    func deleteImages() async throws -> CommandResult { throw UnexpectedCallError() }
+    func downloadImages() async throws -> CommandResult { throw UnexpectedCallError() }
     func utilityDiagnose(in appRoot: String?) async throws -> CommandResult { throw UnexpectedCallError() }
     func utilityCheckCustomConfig(in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
     func utilityCheckDBMatch(in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
