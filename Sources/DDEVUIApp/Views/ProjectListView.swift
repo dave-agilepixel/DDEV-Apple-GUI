@@ -172,8 +172,8 @@ private struct ProjectRow: View {
     @ViewBuilder
     private var actionControls: some View {
         if viewModel.isBusy(project) {
-            ProgressView()
-                .controlSize(.small)
+            ProgressDonut(progress: viewModel.state(for: project.id).startProgress)
+                .frame(width: 18, height: 18)
                 .help(viewModel.isQueued(project) ? "Queued" : "Running")
                 .opacity(viewModel.isQueued(project) ? 0.5 : 1)
         } else {
@@ -219,6 +219,33 @@ private struct ProjectRow: View {
         case .paused: .orange
         case .stopped: .secondary
         case .unknown: .yellow
+        }
+    }
+}
+
+/// A small ring indicator. When `progress` is non-nil it fills the ring (0…1); when nil it spins
+/// an indeterminate arc. Used for start/restart where determinate progress may be unavailable.
+private struct ProgressDonut: View {
+    let progress: Double?
+    @State private var spin = false
+
+    var body: some View {
+        ZStack {
+            Circle().stroke(.quaternary, lineWidth: 2.5)
+            if let progress {
+                Circle()
+                    .trim(from: 0, to: max(0.02, min(1, progress)))
+                    .stroke(.tint, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                    .animation(.easeInOut(duration: 0.25), value: progress)
+            } else {
+                Circle()
+                    .trim(from: 0, to: 0.25)
+                    .stroke(.tint, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                    .rotationEffect(.degrees(spin ? 360 : 0))
+                    .animation(.linear(duration: 0.9).repeatForever(autoreverses: false), value: spin)
+                    .onAppear { spin = true }
+            }
         }
     }
 }
