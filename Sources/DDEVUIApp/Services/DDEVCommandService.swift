@@ -264,6 +264,27 @@ public final class DDEVCommandService: Sendable {
         return try DDEVVersionInfo.decodeVersionPayload(Data(result.stdout.utf8))
     }
 
+    // MARK: - Global housekeeping (A15)
+
+    /// Stops all running projects and containers (`ddev poweroff`).
+    @discardableResult
+    public func poweroff() async throws -> CommandResult {
+        try await runDDEV(["poweroff"])
+    }
+
+    /// Removes DDEV Docker images to reclaim disk (`ddev delete images -y`). Images are re-pulled
+    /// on next start — this is disk reclamation, not data loss.
+    @discardableResult
+    public func deleteImages() async throws -> CommandResult {
+        try await runDDEV(["delete", "images", "-y"])
+    }
+
+    /// Pre-pulls all images DDEV needs (`ddev utility download-images`) so the next start is fast.
+    @discardableResult
+    public func downloadImages() async throws -> CommandResult {
+        try await runDDEV(["utility", "download-images"])
+    }
+
     @discardableResult
     public func utilityDiagnose(in appRoot: String? = nil) async throws -> CommandResult {
         try await runDDEV(["utility", "diagnose"], workingDirectory: appRoot)

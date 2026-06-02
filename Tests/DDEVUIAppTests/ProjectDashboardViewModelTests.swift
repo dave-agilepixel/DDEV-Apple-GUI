@@ -25,6 +25,29 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertNil(viewModel.versionInfoErrorMessage)
     }
 
+    func testPowerOffAllProjectsRunsPoweroffThenRefreshes() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+
+        await viewModel.powerOffAllProjects()
+
+        // poweroff, then a full refresh (list + re-describe of the auto-selected first project).
+        XCTAssertEqual(service.commands, ["poweroff", "list", "describe:aqua-pura"])
+        XCTAssertFalse(viewModel.isRunningGlobalCommand)
+        XCTAssertNil(viewModel.globalErrorMessage)
+    }
+
+    func testDeleteAndDownloadImagesRunGlobalCommands() async {
+        let service = FakeDDEVService(projects: [])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+
+        await viewModel.deleteDDEVImages()
+        await viewModel.downloadDDEVImages()
+
+        XCTAssertEqual(service.commands, ["delete-images", "download-images"])
+        XCTAssertFalse(viewModel.isRunningGlobalCommand)
+    }
+
     func testSearchFiltersProjectsByNamePathAndType() {
         let viewModel = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: []))
         viewModel.projects = [.sampleWordPress, .sampleLaravel]
@@ -1597,6 +1620,21 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
             DDEVVersionInfo.Item(key: "DDEV version", value: "v1.25.2"),
             DDEVVersionInfo.Item(key: "docker", value: "29.5.2")
         ])
+    }
+
+    func poweroff() async throws -> CommandResult {
+        record("poweroff")
+        return commandResult(arguments: ["poweroff"])
+    }
+
+    func deleteImages() async throws -> CommandResult {
+        record("delete-images")
+        return commandResult(arguments: ["delete", "images", "-y"])
+    }
+
+    func downloadImages() async throws -> CommandResult {
+        record("download-images")
+        return commandResult(arguments: ["utility", "download-images"])
     }
 
     func utilityDiagnose(in appRoot: String?) async throws -> CommandResult {

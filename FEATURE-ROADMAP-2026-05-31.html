@@ -588,6 +588,7 @@
   <details class="feat" data-v="NICE">
     <summary>
       <span class="badge NICE">NICE TO HAVE</span>
+      <span class="status done">Implemented</span>
       <span class="sgrow">
         <span class="stitle">A15 · Global housekeeping (poweroff / clean / images)</span>
         <div class="smeta"><span class="id">maps to</span> <span class="cmd">ddev poweroff</span> <span class="cmd">ddev clean</span> <span class="cmd">ddev delete images</span> <span class="cmd">utility download-images</span></div>
@@ -606,6 +607,7 @@
       <h4>Native-GUI fit</h4>
       <p>Good. "Power off everything" is a satisfying one-click.</p>
       <div class="verdict NICE"><b>Verdict:</b> Backlog. Cheap to add; bundle the poweroff button in early since it's genuinely handy.</div>
+      <div class="verdict NICE"><b>Built 2026-06-02:</b> Added a <b>Maintenance</b> section to Settings — <b>Power Off All Projects</b> (<code>ddev poweroff</code>, confirmed), <b>Delete DDEV Images</b> (<code>ddev delete images -y</code>, confirmed), and <b>Download Images</b> (<code>ddev utility download-images</code>). <b>Deliberately omitted <code>ddev clean</code></b>: it <i>permanently deletes snapshots</i> (real data loss), and Delete Images already covers disk reclaim — not worth the footgun.</div>
     </div>
   </details>
 
