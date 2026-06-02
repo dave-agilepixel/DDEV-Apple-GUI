@@ -361,9 +361,40 @@ public final class ProjectDashboardViewModel {
     }
 
     public func configureProject(folder: String, name: String, type: DDEVProjectType, docroot: String) async {
-        await runGlobalMutation {
-            try await self.ddevService.configureProject(in: folder, name: name, type: type, docroot: docroot)
+        isRunningGlobalCommand = true
+        globalErrorMessage = nil
+        defer { isRunningGlobalCommand = false }
+
+        // 1. Configure. A failure here means nothing was registered — surface it and stop.
+        do {
+            _ = try await ddevService.configureProject(in: folder, name: name, type: type, docroot: docroot)
+        } catch CommandRunnerError.nonZeroExit(let result) {
+            let detail = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+            globalErrorMessage = detail.isEmpty
+                ? "Command failed with exit code \(result.exitCode)."
+                : "Configuration failed: \(detail)"
+            return
+        } catch {
+            globalErrorMessage = error.presentableMessage
+            return
         }
+
+        // 2. Auto-start the freshly-configured project. A start failure must NOT roll back the
+        //    registration (the project is legitimately configured), so we record the error but
+        //    still fall through to the refresh below.
+        do {
+            _ = try await ddevService.startProject(in: folder)
+        } catch CommandRunnerError.nonZeroExit(let result) {
+            let detail = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+            globalErrorMessage = detail.isEmpty
+                ? "Project configured, but start failed (exit code \(result.exitCode))."
+                : "Project configured, but start failed: \(detail)"
+        } catch {
+            globalErrorMessage = "Project configured, but start failed: \(error.presentableMessage)"
+        }
+
+        // 3. Refresh regardless of start outcome so the new project always appears in the list.
+        do { try await refreshProjectsFromDDEV() } catch { /* keep any start-failure message */ }
     }
 
     public func launchDatabaseTool(_ tool: DDEVDatabaseTool) async {
