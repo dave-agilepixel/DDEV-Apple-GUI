@@ -205,6 +205,11 @@ public final class ProjectDashboardViewModel {
     /// serialization only — `isRunningGlobalCommand` is what drives the UI spinner.
     private var isRefreshInFlight = false
 
+    /// Foreground status auto-refresh (B2). A cancellable poll loop — its off-switch is
+    /// `stopStatusPolling()` (and deinit), so it can't outlive the window or run while backgrounded.
+    public let statusPollInterval: Duration
+    @ObservationIgnored private var statusPollTask: Task<Void, Never>?
+
     public init(
         ddevService: DDEVServicing = DDEVCommandService(),
         projectCache: ProjectCacheStoring = FileProjectCacheStore(),
@@ -213,7 +218,8 @@ public final class ProjectDashboardViewModel {
         scheduler: CommandScheduler = CommandScheduler(maxConcurrent: 3),
         notifier: NotificationScheduling = NoopNotificationScheduler(),
         groupStore: ProjectGroupStoring = UserDefaultsProjectGroupStore(),
-        customCommandDiscovery: CustomCommandDiscovering = FileSystemCustomCommandDiscovery()
+        customCommandDiscovery: CustomCommandDiscovering = FileSystemCustomCommandDiscovery(),
+        statusPollInterval: Duration = .seconds(10)
     ) {
         self.ddevService = ddevService
         self.projectCache = projectCache
@@ -222,7 +228,12 @@ public final class ProjectDashboardViewModel {
         self.preferencesModel = PreferencesModel(preferencesStore: preferencesStore, appAvailability: appAvailability)
         self.groupStore = groupStore
         self.customCommandDiscovery = customCommandDiscovery
+        self.statusPollInterval = statusPollInterval
         self.groups = groupStore.loadGroups()
+    }
+
+    deinit {
+        statusPollTask?.cancel()
     }
 
     // MARK: - Preferences (forwarded to PreferencesModel)
@@ -375,6 +386,29 @@ public final class ProjectDashboardViewModel {
         } catch {
             globalErrorMessage = error.presentableMessage
         }
+    }
+
+    /// Whether the foreground status poll loop is running (B2).
+    public var isStatusPollingActive: Bool { statusPollTask != nil }
+
+    /// Starts the foreground status auto-refresh (B2): a silent, in-flight-guarded list refresh every
+    /// `statusPollInterval`. Idempotent — a second call while running is a no-op. Pair with
+    /// `stopStatusPolling()` on scene background so it never runs unattended.
+    public func startStatusPolling() {
+        guard statusPollTask == nil else { return }
+        statusPollTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let interval = self?.statusPollInterval else { return }
+                try? await Task.sleep(for: interval)
+                guard !Task.isCancelled, let self else { return }
+                await self.refreshProjectsFromDDEVInBackground()
+            }
+        }
+    }
+
+    public func stopStatusPolling() {
+        statusPollTask?.cancel()
+        statusPollTask = nil
     }
 
     public func loadCachedProjectsThenRefresh() async {
