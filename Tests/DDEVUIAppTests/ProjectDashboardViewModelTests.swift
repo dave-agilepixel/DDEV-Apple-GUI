@@ -1049,6 +1049,23 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertFalse(service.commands.contains("list"),
                        "minimal fix: only the affected project is re-described, no global list")
     }
+
+    func testStartRequestsStreamingAndClearsProgressOnCompletion() async {
+        let service = FakeDDEVService(
+            projects: [DDEVProject.sampleWordPress.withStatus(.stopped)],
+            startOutputLines: ["Starting aqua-pura...", "Container ddev-aqua-pura-web  Started"]
+        )
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        let stopped = DDEVProject.sampleWordPress.withStatus(.stopped)
+        viewModel.projects = [stopped]
+        viewModel.selectedProject = stopped
+
+        await viewModel.start(stopped)
+
+        XCTAssertTrue(service.startStreamed, "start passes a non-nil progress handler")
+        XCTAssertNil(viewModel.state(for: "aqua-pura").startProgress,
+                     "progress is cleared once the command completes")
+    }
 }
 
 private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
@@ -1071,11 +1088,15 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
     private let diagnosticError: Error?
     private let configureError: Error?
     private let startFolderError: Error?
+    private let startOutputLines: [String]
+    private var startStreamedFlag = false
     private var recordedCommands: [String] = []
 
     var commands: [String] {
         lock.withLock { recordedCommands }
     }
+
+    var startStreamed: Bool { lock.withLock { startStreamedFlag } }
 
     init(
         projects: [DDEVProject],
@@ -1095,7 +1116,8 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
         addonError: Error? = nil,
         diagnosticError: Error? = nil,
         configureError: Error? = nil,
-        startFolderError: Error? = nil
+        startFolderError: Error? = nil,
+        startOutputLines: [String] = []
     ) {
         self.loadedProjects = projects
         self.phpVersions = phpVersions
@@ -1115,6 +1137,7 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
         self.diagnosticError = diagnosticError
         self.configureError = configureError
         self.startFolderError = startFolderError
+        self.startOutputLines = startOutputLines
     }
 
     func listProjects() async throws -> [DDEVProject] {
@@ -1135,6 +1158,13 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
 
     func start(projectName: String) async throws -> CommandResult {
         record("start:\(projectName)")
+        return commandResult(arguments: ["start", projectName])
+    }
+
+    func start(projectName: String, onOutputLine: (@Sendable (String) -> Void)?) async throws -> CommandResult {
+        record("start:\(projectName)")
+        if onOutputLine != nil { lock.withLock { startStreamedFlag = true } }
+        for line in startOutputLines { onOutputLine?(line) }
         return commandResult(arguments: ["start", projectName])
     }
 

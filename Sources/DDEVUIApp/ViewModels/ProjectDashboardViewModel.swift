@@ -39,6 +39,17 @@ public protocol DDEVServicing: Sendable {
     func updateWordPressCore(in appRoot: String) async throws -> CommandResult
     func updateWordPressPlugins(in appRoot: String) async throws -> CommandResult
     func updateWordPressThemes(in appRoot: String) async throws -> CommandResult
+    func start(projectName: String, onOutputLine: (@Sendable (String) -> Void)?) async throws -> CommandResult
+    func restart(projectName: String, onOutputLine: (@Sendable (String) -> Void)?) async throws -> CommandResult
+}
+
+public extension DDEVServicing {
+    func start(projectName: String, onOutputLine: (@Sendable (String) -> Void)?) async throws -> CommandResult {
+        try await start(projectName: projectName)
+    }
+    func restart(projectName: String, onOutputLine: (@Sendable (String) -> Void)?) async throws -> CommandResult {
+        try await restart(projectName: projectName)
+    }
 }
 
 extension DDEVCommandService: DDEVServicing {}
@@ -308,8 +319,8 @@ public final class ProjectDashboardViewModel {
     }
 
     public func start(_ project: DDEVProject) async {
-        await runProjectMutation(project) {
-            try await self.ddevService.start(projectName: project.name)
+        await runProgressMutation(project) { onLine in
+            try await self.ddevService.start(projectName: project.name, onOutputLine: onLine)
         }
     }
 
@@ -320,8 +331,8 @@ public final class ProjectDashboardViewModel {
     }
 
     public func restart(_ project: DDEVProject) async {
-        await runProjectMutation(project) {
-            try await self.ddevService.restart(projectName: project.name)
+        await runProgressMutation(project) { onLine in
+            try await self.ddevService.restart(projectName: project.name, onOutputLine: onLine)
         }
     }
 
@@ -844,6 +855,43 @@ public final class ProjectDashboardViewModel {
 
         let outcome = await execute(operation)
         await scheduler.release()              // free the slot before the read-y describe
+        setActivity(.idle, for: id)
+
+        await finish(outcome, for: project, refresh: refresh)
+    }
+
+    /// Like `runProjectMutation`, but streams the command's output lines through a
+    /// `StartProgressParser` to publish a determinate `startProgress` for the row donut. Lines are
+    /// marshalled onto the main actor via an `AsyncStream`, so `commandStates` is only mutated here.
+    /// Progress clears back to `nil` when the command finishes (success or failure).
+    private func runProgressMutation(
+        _ project: DDEVProject,
+        refresh: RefreshScope = .project,
+        _ operation: @escaping (_ onLine: @escaping @Sendable (String) -> Void) async throws -> CommandResult
+    ) async {
+        let id = project.id
+        guard !isBusy(project) else { return }
+
+        setActivity(.queued, for: id)
+        do { try await scheduler.acquire() } catch { setActivity(.idle, for: id); return }
+        setActivity(.running, for: id)
+
+        let (stream, continuation) = AsyncStream<String>.makeStream()
+        let consumer = Task { @MainActor in
+            var parser = StartProgressParser()
+            for await line in stream {
+                if let fraction = parser.consume(line) {
+                    commandStates[id, default: .init()].startProgress = fraction
+                }
+            }
+        }
+
+        let outcome = await execute { try await operation { line in continuation.yield(line) } }
+        continuation.finish()
+        await consumer.value
+
+        commandStates[id, default: .init()].startProgress = nil  // clear the donut
+        await scheduler.release()
         setActivity(.idle, for: id)
 
         await finish(outcome, for: project, refresh: refresh)
