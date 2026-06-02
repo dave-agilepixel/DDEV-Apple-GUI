@@ -414,6 +414,46 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.selectedProjectXdebugEnabled, false)
     }
 
+    // MARK: - XHGui / XHProf live toggle (A17)
+
+    func testLoadXHGuiStatusReflectsLiveContainerState() async {
+        // Live state comes from `ddev xhgui status` (XHGui is DDEV's XHProf UI), not describe's
+        // config-time xhgui_status — here the container reports enabled.
+        let service = FakeDDEVService(projects: [.sampleWordPress], xhguiLiveEnabled: true)
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.loadXHGuiStatusForSelectedProject()
+
+        XCTAssertEqual(viewModel.selectedProjectXHGuiEnabled, true)
+        XCTAssertTrue(service.commands.contains("xhgui:/Users/dave/Development/agilepixel/aqua-pura:status"))
+    }
+
+    func testSetXHGuiOnReconcilesAgainstLiveStatus() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress], xhguiLiveEnabled: false)
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.setXHGuiForSelectedProject(true)
+
+        XCTAssertEqual(service.commands, [
+            "xhgui:/Users/dave/Development/agilepixel/aqua-pura:on",
+            "xhgui:/Users/dave/Development/agilepixel/aqua-pura:status"
+        ])
+        XCTAssertEqual(viewModel.selectedProjectXHGuiEnabled, true)
+    }
+
+    func testSetXHGuiOffRunsXHGuiOff() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress], xhguiLiveEnabled: true)
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.setXHGuiForSelectedProject(false)
+
+        XCTAssertEqual(service.commands.first, "xhgui:/Users/dave/Development/agilepixel/aqua-pura:off")
+        XCTAssertEqual(viewModel.selectedProjectXHGuiEnabled, false)
+    }
+
     // MARK: - DB drift banner (A5)
 
     func testDBMatchWarningSetWhenCheckExitsNonZero() async {
@@ -1257,6 +1297,7 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
     private let describeDetails: [String: DDEVProjectDetails]
     private let dbMatchResult: Result<CommandResult, Error>?
     private var xdebugLiveEnabled: Bool
+    private var xhguiLiveEnabled: Bool
     private let listError: Error?
     private let importError: Error?
     private let snapshotListOutput: String
@@ -1288,6 +1329,7 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
         describeDetails: [String: DDEVProjectDetails] = [:],
         dbMatchResult: Result<CommandResult, Error>? = nil,
         xdebugLiveEnabled: Bool = false,
+        xhguiLiveEnabled: Bool = false,
         listError: Error? = nil,
         importError: Error? = nil,
         snapshotListOutput: String = "",
@@ -1308,6 +1350,7 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
         self.describeDetails = describeDetails
         self.dbMatchResult = dbMatchResult
         self.xdebugLiveEnabled = xdebugLiveEnabled
+        self.xhguiLiveEnabled = xhguiLiveEnabled
         self.listError = listError
         self.importError = importError
         self.snapshotListOutput = snapshotListOutput
@@ -1571,7 +1614,19 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
 
     func xhgui(_ command: DDEVXHGuiCommand, in appRoot: String) async throws -> CommandResult {
         record("xhgui:\(appRoot):\(command.rawValue)")
-        return commandResult(arguments: ["xhgui", command.rawValue], workingDirectory: appRoot)
+        let enabled: Bool = lock.withLock {
+            switch command {
+            case .on: xhguiLiveEnabled = true
+            case .off: xhguiLiveEnabled = false
+            case .launch, .status: break
+            }
+            return xhguiLiveEnabled
+        }
+        return commandResult(
+            arguments: ["xhgui", command.rawValue],
+            workingDirectory: appRoot,
+            stdout: enabled ? "XHGui is enabled\n" : "XHGui is disabled\n"
+        )
     }
 
     func xdebug(_ command: DDEVXdebugCommand, in appRoot: String) async throws -> CommandResult {
