@@ -114,6 +114,27 @@ public final class DDEVCommandService: Sendable {
     }
 
     @discardableResult
+    public func importFiles(_ options: DDEVImportFilesOptions, in appRoot: String) async throws -> CommandResult {
+        // Surface a missing/unreadable source as a clear precondition error rather than an opaque
+        // ddev exit code (mirrors importDatabase, audit L10). `isReadableFile` is true for both a
+        // readable directory and a readable archive, which is exactly what import-files accepts.
+        guard fileExists(options.source) else {
+            throw DDEVCommandPreconditionError.fileNotReadable(path: options.source)
+        }
+
+        var arguments = ["import-files", "--source=\(options.source)"]
+
+        if let target = options.target {
+            arguments.append("--target=\(target)")
+        }
+        if let extractPath = options.extractPath {
+            arguments.append("--extract-path=\(extractPath)")
+        }
+
+        return try await runDDEV(arguments, workingDirectory: appRoot)
+    }
+
+    @discardableResult
     public func exportDatabase(_ options: DDEVDatabaseExportOptions, in appRoot: String) async throws -> CommandResult {
         try await runDDEV(
             [

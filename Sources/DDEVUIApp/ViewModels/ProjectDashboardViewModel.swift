@@ -14,6 +14,7 @@ public protocol DDEVServicing: Sendable {
     func setPHPVersion(_ version: String, in appRoot: String) async throws -> CommandResult
     func launchDatabaseTool(_ tool: DDEVDatabaseTool, in appRoot: String) async throws -> CommandResult
     func importDatabase(_ options: DDEVDatabaseImportOptions, in appRoot: String) async throws -> CommandResult
+    func importFiles(_ options: DDEVImportFilesOptions, in appRoot: String) async throws -> CommandResult
     func exportDatabase(_ options: DDEVDatabaseExportOptions, in appRoot: String) async throws -> CommandResult
     func createSnapshot(name: String?, in appRoot: String) async throws -> CommandResult
     func listSnapshots(in appRoot: String) async throws -> CommandResult
@@ -479,6 +480,14 @@ public final class ProjectDashboardViewModel {
         guard let selectedProject else { return }
         await runProjectMutation(selectedProject) {
             try await self.ddevService.importDatabase(options, in: selectedProject.appRoot)
+        }
+    }
+
+    /// Imports an uploaded-files archive/directory into the selected project's upload dir (A19).
+    public func importFiles(_ options: DDEVImportFilesOptions) async {
+        guard let selectedProject else { return }
+        await runProjectMutation(selectedProject) {
+            try await self.ddevService.importFiles(options, in: selectedProject.appRoot)
         }
     }
 
