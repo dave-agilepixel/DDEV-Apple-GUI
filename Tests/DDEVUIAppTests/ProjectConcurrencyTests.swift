@@ -282,6 +282,8 @@ private actor GatedDDEVService: DDEVServicing {
     func poweroff() async throws -> CommandResult { recorded.append("poweroff"); return runImmediate() }
     func deleteImages() async throws -> CommandResult { recorded.append("delete-images"); return runImmediate() }
     func downloadImages() async throws -> CommandResult { recorded.append("download-images"); return runImmediate() }
+    func globalConfig() async throws -> DDEVGlobalConfig { recorded.append("global-config"); return DDEVGlobalConfig(values: [:]) }
+    func applyGlobalConfig(_ changes: [DDEVGlobalConfigChange]) async throws -> CommandResult { recorded.append("apply-global-config"); return runImmediate() }
     func utilityDiagnose(in appRoot: String?) async throws -> CommandResult { recorded.append("diagnose"); return runImmediate() }
     func utilityConfigYAML(omitKeys: [String], in appRoot: String) async throws -> CommandResult { recorded.append("configyaml"); return runImmediate() }
     func utilityCheckCustomConfig(in appRoot: String) async throws -> CommandResult { recorded.append("check-custom-config"); return runImmediate() }

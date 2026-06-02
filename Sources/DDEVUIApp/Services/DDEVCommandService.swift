@@ -285,6 +285,20 @@ public final class DDEVCommandService: Sendable {
         try await runDDEV(["utility", "download-images"])
     }
 
+    // MARK: - Global configuration (A14)
+
+    /// Reads the current global config via `ddev config global` (printed as `key=value` lines).
+    public func globalConfig() async throws -> DDEVGlobalConfig {
+        let result = try await runDDEV(["config", "global"])
+        return DDEVGlobalConfig.parse(result.stdout)
+    }
+
+    /// Applies global config changes via `ddev config global --flag=value …` (A14).
+    @discardableResult
+    public func applyGlobalConfig(_ changes: [DDEVGlobalConfigChange]) async throws -> CommandResult {
+        try await runDDEV(["config", "global"] + changes.flatMap(\.ddevFlags))
+    }
+
     @discardableResult
     public func utilityDiagnose(in appRoot: String? = nil) async throws -> CommandResult {
         try await runDDEV(["utility", "diagnose"], workingDirectory: appRoot)

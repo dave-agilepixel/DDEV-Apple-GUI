@@ -34,6 +34,8 @@ public protocol DDEVServicing: Sendable {
     func poweroff() async throws -> CommandResult
     func deleteImages() async throws -> CommandResult
     func downloadImages() async throws -> CommandResult
+    func globalConfig() async throws -> DDEVGlobalConfig
+    func applyGlobalConfig(_ changes: [DDEVGlobalConfigChange]) async throws -> CommandResult
     func utilityDiagnose(in appRoot: String?) async throws -> CommandResult
     func utilityConfigYAML(omitKeys: [String], in appRoot: String) async throws -> CommandResult
     func utilityCheckCustomConfig(in appRoot: String) async throws -> CommandResult
@@ -164,6 +166,11 @@ public final class ProjectDashboardViewModel {
     /// Loaded on demand for the Diagnostics screen's About/Versions panel; not persisted.
     public var ddevVersionInfo: DDEVVersionInfo?
     public var versionInfoErrorMessage: String?
+
+    /// Current global DDEV configuration (A14), loaded on demand for the Settings global-config
+    /// section. `nil` until first loaded.
+    public var globalConfig: DDEVGlobalConfig?
+    public var globalConfigErrorMessage: String?
 
     /// Preferences + installed-app concern, extracted to its own model (audit M9). The public
     /// API below forwards to it so views/tests are unchanged; both are `@Observable`, so views
@@ -769,6 +776,32 @@ public final class ProjectDashboardViewModel {
     /// Pre-pulls DDEV's images (`ddev utility download-images`).
     public func downloadDDEVImages() async {
         await runGlobalHousekeeping { try await self.ddevService.downloadImages() }
+    }
+
+    // MARK: - Global configuration (A14)
+
+    /// Loads the current global DDEV config for the Settings global-config section.
+    public func loadGlobalConfig() async {
+        globalConfigErrorMessage = nil
+        do {
+            globalConfig = try await ddevService.globalConfig()
+        } catch {
+            globalConfigErrorMessage = "Couldn't read global config: \(error.presentableMessage)"
+        }
+    }
+
+    /// Applies global config changes (`ddev config global --flags`) then reloads to reflect them.
+    public func applyGlobalConfig(_ changes: [DDEVGlobalConfigChange]) async {
+        guard !changes.isEmpty else { return }
+        isRunningGlobalCommand = true
+        globalConfigErrorMessage = nil
+        defer { isRunningGlobalCommand = false }
+        do {
+            _ = try await ddevService.applyGlobalConfig(changes)
+            globalConfig = try await ddevService.globalConfig()
+        } catch {
+            globalConfigErrorMessage = "Couldn't update global config: \(error.presentableMessage)"
+        }
     }
 
     private func runGlobalHousekeeping(_ operation: @escaping () async throws -> CommandResult) async {

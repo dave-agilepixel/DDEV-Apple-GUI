@@ -25,6 +25,40 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertNil(viewModel.versionInfoErrorMessage)
     }
 
+    func testLoadGlobalConfigPopulatesState() async {
+        let viewModel = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: []))
+        XCTAssertNil(viewModel.globalConfig)
+
+        await viewModel.loadGlobalConfig()
+
+        XCTAssertEqual(viewModel.globalConfig?.performanceMode, "mutagen")
+        XCTAssertEqual(viewModel.globalConfig?.projectTLD, "ddev.site")
+        XCTAssertTrue(viewModel.globalConfig?.instrumentationOptIn == true)
+        XCTAssertNil(viewModel.globalConfigErrorMessage)
+    }
+
+    func testApplyGlobalConfigSendsFlagsThenReloads() async {
+        let service = FakeDDEVService(projects: [])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+
+        await viewModel.applyGlobalConfig([.instrumentationOptIn(false), .projectTLD("ddev.test")])
+
+        XCTAssertEqual(service.commands, [
+            "apply-global-config:--instrumentation-opt-in=false,--project-tld=ddev.test",
+            "global-config"
+        ])
+        XCTAssertFalse(viewModel.isRunningGlobalCommand)
+    }
+
+    func testApplyGlobalConfigIgnoresEmptyChangeSet() async {
+        let service = FakeDDEVService(projects: [])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+
+        await viewModel.applyGlobalConfig([])
+
+        XCTAssertTrue(service.commands.isEmpty)
+    }
+
     func testPowerOffAllProjectsRunsPoweroffThenRefreshes() async {
         let service = FakeDDEVService(projects: [.sampleWordPress])
         let viewModel = ProjectDashboardViewModel(ddevService: service)
@@ -1635,6 +1669,20 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
     func downloadImages() async throws -> CommandResult {
         record("download-images")
         return commandResult(arguments: ["utility", "download-images"])
+    }
+
+    func globalConfig() async throws -> DDEVGlobalConfig {
+        record("global-config")
+        return DDEVGlobalConfig(values: [
+            "instrumentation-opt-in": "true",
+            "performance-mode": "mutagen",
+            "project-tld": "ddev.site"
+        ])
+    }
+
+    func applyGlobalConfig(_ changes: [DDEVGlobalConfigChange]) async throws -> CommandResult {
+        record("apply-global-config:\(changes.flatMap(\.ddevFlags).joined(separator: ","))")
+        return commandResult(arguments: ["config", "global"])
     }
 
     func utilityDiagnose(in appRoot: String?) async throws -> CommandResult {

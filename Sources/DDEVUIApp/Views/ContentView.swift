@@ -338,6 +338,8 @@ private struct SettingsView: View {
                 }
             }
             .disabled(viewModel.isRunningGlobalCommand)
+
+            GlobalConfigSection(viewModel: viewModel)
         }
         .formStyle(.grouped)
         .navigationTitle("Settings")
@@ -359,6 +361,113 @@ private struct SettingsView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Removes DDEV's Docker images to reclaim disk. They're re-downloaded on next start — no project data is lost.")
+        }
+    }
+}
+
+/// A14 — editable global DDEV configuration, surfaced as a Settings section. A curated set of the
+/// most common `ddev config global` flags as controls; the long tail stays in global_config.yaml,
+/// openable in the editor (B8-style). Loads on appear, seeds local edit state, applies on Save.
+private struct GlobalConfigSection: View {
+    var viewModel: ProjectDashboardViewModel
+
+    @State private var instrumentationOptIn = true
+    @State private var performanceMode = "mutagen"
+    @State private var xhprofMode = "xhgui"
+    @State private var routerHTTPPort = ""
+    @State private var routerHTTPSPort = ""
+    @State private var mailpitHTTPPort = ""
+    @State private var mailpitHTTPSPort = ""
+    @State private var projectTLD = ""
+    @State private var seeded = false
+
+    private let workspaceOpener = MacWorkspaceOpener()
+
+    var body: some View {
+        Section("Global DDEV Configuration") {
+            if viewModel.globalConfig == nil {
+                if let message = viewModel.globalConfigErrorMessage {
+                    Label(message, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                        .font(.callout)
+                } else {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text("Loading…").foregroundStyle(.secondary)
+                    }
+                }
+            } else {
+                Toggle("Send anonymous usage data", isOn: $instrumentationOptIn)
+                Picker("Performance mode", selection: $performanceMode) {
+                    Text("Mutagen").tag("mutagen")
+                    Text("None").tag("none")
+                }
+                Picker("XHProf mode", selection: $xhprofMode) {
+                    Text("XHGui").tag("xhgui")
+                    Text("Prepend").tag("prepend")
+                }
+                TextField("Router HTTP port", text: $routerHTTPPort)
+                TextField("Router HTTPS port", text: $routerHTTPSPort)
+                TextField("Mailpit HTTP port", text: $mailpitHTTPPort)
+                TextField("Mailpit HTTPS port", text: $mailpitHTTPSPort)
+                TextField("Project TLD", text: $projectTLD)
+
+                if let message = viewModel.globalConfigErrorMessage {
+                    Label(message, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                        .font(.callout)
+                }
+
+                HStack {
+                    Button("Open global_config.yaml") {
+                        workspaceOpener.openFile(globalConfigPath, editor: viewModel.effectiveDefaultEditor)
+                    }
+                    Spacer()
+                    Button("Save Global Config") { save() }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(viewModel.isRunningGlobalCommand)
+                }
+            }
+        }
+        .task {
+            await viewModel.loadGlobalConfig()
+            seedFromConfig()
+        }
+        .onChange(of: viewModel.globalConfig) { _, _ in seedFromConfig() }
+    }
+
+    private var globalConfigPath: String {
+        (NSHomeDirectory() as NSString).appendingPathComponent(".ddev/global_config.yaml")
+    }
+
+    private func seedFromConfig() {
+        guard let config = viewModel.globalConfig, !seeded else { return }
+        instrumentationOptIn = config.instrumentationOptIn
+        performanceMode = config.performanceMode
+        xhprofMode = config.xhprofMode
+        routerHTTPPort = config.routerHTTPPort
+        routerHTTPSPort = config.routerHTTPSPort
+        mailpitHTTPPort = config.mailpitHTTPPort
+        mailpitHTTPSPort = config.mailpitHTTPSPort
+        projectTLD = config.projectTLD
+        seeded = true
+    }
+
+    private func save() {
+        let changes: [DDEVGlobalConfigChange] = [
+            .instrumentationOptIn(instrumentationOptIn),
+            .performanceMode(performanceMode),
+            .xhprofMode(xhprofMode),
+            .routerHTTPPort(routerHTTPPort),
+            .routerHTTPSPort(routerHTTPSPort),
+            .mailpitHTTPPort(mailpitHTTPPort),
+            .mailpitHTTPSPort(mailpitHTTPSPort),
+            .projectTLD(projectTLD)
+        ]
+        Task {
+            seeded = false // re-seed from the reloaded (normalized) values
+            await viewModel.applyGlobalConfig(changes)
+            seedFromConfig()
         }
     }
 }
