@@ -41,6 +41,7 @@ public protocol DDEVServicing: Sendable {
     func utilityConfigYAML(omitKeys: [String], in appRoot: String) async throws -> CommandResult
     func utilityCheckCustomConfig(in appRoot: String) async throws -> CommandResult
     func utilityCheckDBMatch(in appRoot: String) async throws -> CommandResult
+    func migrateDatabase(to type: DDEVDatabaseType, version: String, in appRoot: String) async throws -> CommandResult
     func mutagen(_ command: DDEVMutagenCommand, in appRoot: String) async throws -> CommandResult
     func xhgui(_ command: DDEVXHGuiCommand, in appRoot: String) async throws -> CommandResult
     func xdebug(_ command: DDEVXdebugCommand, in appRoot: String) async throws -> CommandResult
@@ -1029,6 +1030,17 @@ public final class ProjectDashboardViewModel {
             // Couldn't run the check (e.g. DB container not up yet). Don't show a scary banner for
             // a non-drift failure.
         }
+    }
+
+    /// Safely migrates the selected project's database to a new type/version (A12) via
+    /// `ddev utility migrate-database`, then re-checks for drift (the migration should clear the
+    /// A5 mismatch). PostgreSQL targets are rejected — migrate-database is MySQL/MariaDB only.
+    public func migrateDatabaseForSelectedProject(to type: DDEVDatabaseType, version: String) async {
+        guard let selectedProject, type.supportsMigration else { return }
+        await runProjectMutation(selectedProject) {
+            try await self.ddevService.migrateDatabase(to: type, version: version, in: selectedProject.appRoot)
+        }
+        await checkDBMatchForSelectedProject()
     }
 
     /// Distils a concise, user-facing line from a failed check-db-match result.

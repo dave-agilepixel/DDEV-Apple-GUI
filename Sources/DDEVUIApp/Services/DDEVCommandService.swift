@@ -341,6 +341,14 @@ public final class DDEVCommandService: Sendable {
         try await runDDEV(["utility", "check-db-match"], workingDirectory: appRoot)
     }
 
+    /// Safely migrates the project's database to a different type/version (A12), the supported path
+    /// for MySQL↔MariaDB changes that also converts the on-disk data (vs. a bare config rewrite,
+    /// which would leave the volume mismatched — the A5 drift state).
+    @discardableResult
+    public func migrateDatabase(to type: DDEVDatabaseType, version: String, in appRoot: String) async throws -> CommandResult {
+        try await runDDEV(["utility", "migrate-database", "\(type.rawValue):\(version)"], workingDirectory: appRoot)
+    }
+
     @discardableResult
     public func mutagen(_ command: DDEVMutagenCommand, in appRoot: String) async throws -> CommandResult {
         try await runDDEV(["mutagen", command.rawValue], workingDirectory: appRoot)

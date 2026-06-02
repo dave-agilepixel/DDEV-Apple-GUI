@@ -520,6 +520,7 @@
   <details class="feat" data-v="NICE">
     <summary>
       <span class="badge NICE">NICE TO HAVE</span>
+      <span class="status done">Implemented</span>
       <span class="sgrow">
         <span class="stitle">A12 · Safe DB type/version migration</span>
         <div class="smeta"><span class="id">maps to</span> <span class="cmd">ddev utility migrate-database</span></div>
@@ -538,6 +539,7 @@
       <h4>Native-GUI fit</h4>
       <p>Good — it makes a footgun in your existing config editor safe.</p>
       <div class="verdict NICE"><b>Verdict:</b> Backlog, but pair it conceptually with A5. Together they close a real "I changed the DB version and everything broke" hole.</div>
+      <div class="verdict NICE"><b>Built 2026-06-02:</b> The config editor's Database row now detects a pending type/version change and — when both current and target are MySQL/MariaDB — offers a <b>Migrate Database…</b> button (confirmed) that runs <code>ddev utility migrate-database &lt;type&gt;:&lt;version&gt;</code> to convert the data, then re-checks for A5 drift. PostgreSQL is gated out (<code>supportsMigration</code>), since migrate-database doesn't support it.</div>
     </div>
   </details>
 

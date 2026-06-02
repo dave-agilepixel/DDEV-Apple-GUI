@@ -96,6 +96,7 @@ private final class SuspendedConfigDDEVService: DDEVServicing, @unchecked Sendab
     func utilityDiagnose(in appRoot: String?) async throws -> CommandResult { throw UnexpectedCallError() }
     func utilityCheckCustomConfig(in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
     func utilityCheckDBMatch(in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
+    func migrateDatabase(to type: DDEVDatabaseType, version: String, in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
     func mutagen(_ command: DDEVMutagenCommand, in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
     func xhgui(_ command: DDEVXHGuiCommand, in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
     func xdebug(_ command: DDEVXdebugCommand, in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
