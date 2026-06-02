@@ -42,6 +42,50 @@ final class PrerequisiteServiceTests: XCTestCase {
         XCTAssertNil(WorkspacePrerequisiteService.parseDDEVVersion(from: #"{"other":"value"}"#))
     }
 
+    // MARK: - Docker troubleshoot via `ddev utility dockercheck` (B7)
+
+    func testStripANSIRemovesColorCodes() {
+        let colored = "\u{1B}[32mgreen\u{1B}[0m and \u{1B}[31mred\u{1B}[0m"
+        XCTAssertEqual(WorkspacePrerequisiteService.stripANSI(colored), "green and red")
+    }
+
+    func testDockerCheckRunsUtilityDockercheckAndStripsANSI() async {
+        let runner = ArgsRecordingRunner(stdout: "\u{1B}[32mDocker platform: docker-desktop\u{1B}[0m\nAble to run container.\n")
+        let service = WorkspacePrerequisiteService(commandRunner: runner)
+
+        let report = await service.dockerCheck()
+
+        XCTAssertEqual(runner.lastArguments, ["utility", "dockercheck"])
+        XCTAssertTrue(report.succeeded)
+        XCTAssertEqual(report.output, "Docker platform: docker-desktop\nAble to run container.\n")
+        XCTAssertFalse(report.output.contains("\u{1B}["))
+    }
+
+    func testDockerCheckReportsFailureWithOutputOnNonZeroExit() async {
+        let runner = ArgsRecordingRunner(stdout: "Cannot connect to the Docker daemon\n", exitCode: 1)
+        let service = WorkspacePrerequisiteService(commandRunner: runner)
+
+        let report = await service.dockerCheck()
+
+        XCTAssertFalse(report.succeeded)
+        XCTAssertTrue(report.output.contains("Cannot connect to the Docker daemon"))
+    }
+
+    @MainActor
+    func testRunDockerCheckPopulatesReportOnMonitor() async {
+        let service = StaticPrerequisiteService(
+            state: PrerequisiteState(docker: .notRunning(.dockerDesktop), ddev: .ok(version: "v1.25.2")),
+            dockerCheckReport: DockerCheckReport(output: "diagnostic text", succeeded: false)
+        )
+        let monitor = PrerequisiteMonitor(service: service)
+
+        await monitor.runDockerCheck()
+
+        XCTAssertEqual(monitor.dockerCheckReport?.output, "diagnostic text")
+        XCTAssertEqual(monitor.dockerCheckReport?.succeeded, false)
+        XCTAssertFalse(monitor.isRunningDockerCheck)
+    }
+
     func testWorkspaceServiceReportsDockerOkWhenDaemonResponds() async {
         let runner = StubCommandRunner(behaviors: [
             "docker info": .success("28.0.1"),
@@ -217,6 +261,39 @@ final class PrerequisiteServiceTests: XCTestCase {
         XCTAssertNotNil(monitor.launchErrorMessage, "A launch failure is surfaced, not silently swallowed")
         XCTAssertTrue(monitor.launchErrorMessage?.contains("Docker Desktop") ?? false)
         XCTAssertFalse(monitor.isLaunching)
+    }
+}
+
+/// Records the arguments of the last command and returns a fixed result, throwing
+/// `nonZeroExit` for non-zero exit codes to mimic `ProcessCommandRunner`'s contract.
+private final class ArgsRecordingRunner: CommandRunning, @unchecked Sendable {
+    private let lock = NSLock()
+    private let stdout: String
+    private let exitCode: Int32
+    private var recorded: [String] = []
+
+    init(stdout: String, exitCode: Int32 = 0) {
+        self.stdout = stdout
+        self.exitCode = exitCode
+    }
+
+    var lastArguments: [String] { lock.withLock { recorded } }
+
+    func run(_ spec: CommandSpec) async throws -> CommandResult {
+        lock.withLock { recorded = spec.arguments }
+        let result = CommandResult(
+            executable: spec.executable,
+            arguments: spec.arguments,
+            workingDirectory: spec.workingDirectory,
+            exitCode: exitCode,
+            stdout: stdout,
+            stderr: "",
+            startedAt: Date(),
+            finishedAt: Date(),
+            wasCancelled: false
+        )
+        if result.succeeded { return result }
+        throw CommandRunnerError.nonZeroExit(result)
     }
 }
 
