@@ -78,3 +78,17 @@ public enum DDEVInstallMethod {
     public static let brewCommand = "brew install ddev/ddev/ddev"
     public static let installURL = URL(string: "https://ddev.readthedocs.io/en/stable/users/install/")!
 }
+
+/// The result of `ddev utility dockercheck` (B7): a human-readable diagnostic of the Docker
+/// provider setup, with ANSI colour codes stripped, plus whether the check passed. Surfaced in
+/// the prerequisite sheet so a stuck/misconfigured Docker becomes diagnosable in-app rather than
+/// an endless "starting…" spinner.
+public struct DockerCheckReport: Equatable, Sendable {
+    public let output: String
+    public let succeeded: Bool
+
+    public init(output: String, succeeded: Bool) {
+        self.output = output
+        self.succeeded = succeeded
+    }
+}
