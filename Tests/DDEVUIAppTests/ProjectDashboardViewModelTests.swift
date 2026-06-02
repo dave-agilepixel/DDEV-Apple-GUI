@@ -1083,6 +1083,159 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertNil(viewModel.state(for: "aqua-pura").startProgress,
                      "progress is cleared once the command completes")
     }
+
+    // MARK: - Groups (Task 3)
+
+    func testCreateGroupPersistsAndAppends() {
+        let store = InMemoryProjectGroupStore()
+        let vm = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: []), groupStore: store)
+        let id = vm.createGroup(name: "Client Work", color: .blue)
+        XCTAssertEqual(vm.groups.map(\.name), ["Client Work"])
+        XCTAssertEqual(vm.groups.first?.id, id)
+        XCTAssertEqual(store.loadGroups().map(\.name), ["Client Work"], "create persists")
+    }
+
+    func testRenameAndRecolorGroupPersist() {
+        let store = InMemoryProjectGroupStore()
+        let vm = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: []), groupStore: store)
+        let id = vm.createGroup(name: "A", color: .blue)
+        vm.renameGroup(id!, to: "Renamed")
+        vm.setColor(.red, for: id!)
+        XCTAssertEqual(vm.groups.first?.name, "Renamed")
+        XCTAssertEqual(vm.groups.first?.colorID, .red)
+        XCTAssertEqual(store.loadGroups().first?.name, "Renamed", "mutations persist")
+    }
+
+    func testEmptyOrWhitespaceGroupNameIsRejected() {
+        let vm = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: []), groupStore: InMemoryProjectGroupStore())
+        let id = vm.createGroup(name: "   ", color: .blue)
+        XCTAssertNil(id)
+        XCTAssertTrue(vm.groups.isEmpty)
+    }
+
+    func testDeleteGroupRemovesItOnly() {
+        let store = InMemoryProjectGroupStore()
+        let vm = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: []), groupStore: store)
+        let id = vm.createGroup(name: "A", color: .blue)!
+        vm.deleteGroup(id)
+        XCTAssertTrue(vm.groups.isEmpty)
+        XCTAssertTrue(store.loadGroups().isEmpty, "delete persists")
+    }
+
+    func testGroupsLoadFromStoreOnInit() {
+        let store = InMemoryProjectGroupStore(groups: [ProjectGroup(name: "Seeded", colorID: .green)])
+        let vm = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: []), groupStore: store)
+        XCTAssertEqual(vm.groups.map(\.name), ["Seeded"])
+    }
+
+    // MARK: - Groups (Task 4)
+
+    func testAssignEnforcesSingleMembership() {
+        let store = InMemoryProjectGroupStore()
+        let vm = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: []), groupStore: store)
+        let a = vm.createGroup(name: "A", color: .blue)!
+        let b = vm.createGroup(name: "B", color: .red)!
+        vm.assignProject("proj1", toGroup: a)
+        vm.assignProject("proj1", toGroup: b) // moves, not duplicates
+        XCTAssertEqual(vm.groups.first(where: { $0.id == a })?.memberIDs, [])
+        XCTAssertEqual(vm.groups.first(where: { $0.id == b })?.memberIDs, ["proj1"])
+        XCTAssertEqual(vm.group(for: "proj1")?.id, b)
+        XCTAssertEqual(store.loadGroups().first(where: { $0.id == b })?.memberIDs, ["proj1"], "assignment persists")
+    }
+
+    func testRemoveProjectFromGroup() {
+        let vm = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: []), groupStore: InMemoryProjectGroupStore())
+        let a = vm.createGroup(name: "A", color: .blue)!
+        vm.assignProject("proj1", toGroup: a)
+        vm.removeProjectFromGroup("proj1")
+        XCTAssertNil(vm.group(for: "proj1"))
+        XCTAssertEqual(vm.groups.first?.memberIDs, [])
+    }
+
+    func testMemberCountIgnoresNonexistentProjects() async {
+        let store = InMemoryProjectGroupStore()
+        let vm = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: [.sampleWordPress]), groupStore: store)
+        await vm.refresh() // projects == [aqua-pura]
+        let a = vm.createGroup(name: "A", color: .blue)!
+        vm.assignProject("aqua-pura", toGroup: a)
+        vm.assignProject("ghost", toGroup: a) // not a real project
+        XCTAssertEqual(vm.memberCount(of: a), 1, "only existing projects count")
+    }
+
+    func testRefreshPrunesStaleMemberIDs() async {
+        let store = InMemoryProjectGroupStore()
+        let vm = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: [.sampleWordPress]), groupStore: store)
+        await vm.refresh()
+        let a = vm.createGroup(name: "A", color: .blue)!
+        vm.assignProject("aqua-pura", toGroup: a)
+        vm.assignProject("ghost", toGroup: a)
+        await vm.refresh() // re-applies projects; "ghost" no longer exists
+        XCTAssertEqual(vm.groups.first(where: { $0.id == a })?.memberIDs, ["aqua-pura"], "stale id pruned")
+    }
+
+    func testMoveGroupsReorders() {
+        let store = InMemoryProjectGroupStore()
+        let vm = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: []), groupStore: store)
+        _ = vm.createGroup(name: "A", color: .blue)
+        _ = vm.createGroup(name: "B", color: .red)
+        _ = vm.createGroup(name: "C", color: .green)
+        vm.moveGroups(fromOffsets: IndexSet(integer: 0), toOffset: 3) // move A to end
+        XCTAssertEqual(vm.groups.map(\.name), ["B", "C", "A"])
+        XCTAssertEqual(store.loadGroups().map(\.name), ["B", "C", "A"], "reorder persists")
+    }
+
+    // MARK: - Groups (Task 5)
+
+    func testFilteredProjectsForSelectedGroup() async {
+        let store = InMemoryProjectGroupStore()
+        let vm = ProjectDashboardViewModel(
+            ddevService: FakeDDEVService(projects: [.sampleWordPress, .sampleLaravel]), groupStore: store)
+        await vm.refresh() // aqua-pura, agilebugs
+        let a = vm.createGroup(name: "A", color: .blue)!
+        vm.assignProject("agilebugs", toGroup: a)
+        vm.selection = .group(a)
+        XCTAssertEqual(vm.filteredProjects.map(\.id), ["agilebugs"])
+    }
+
+    func testSearchNarrowsWithinSelectedGroup() async {
+        let vm = ProjectDashboardViewModel(
+            ddevService: FakeDDEVService(projects: [.sampleWordPress, .sampleLaravel]), groupStore: InMemoryProjectGroupStore())
+        await vm.refresh()
+        let a = vm.createGroup(name: "A", color: .blue)!
+        vm.assignProject("aqua-pura", toGroup: a)
+        vm.assignProject("agilebugs", toGroup: a)
+        vm.selection = .group(a)
+        vm.searchText = "aqua"
+        XCTAssertEqual(vm.filteredProjects.map(\.id), ["aqua-pura"])
+    }
+
+    func testSelectingLibraryClearsGroupSelection() {
+        let vm = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: []), groupStore: InMemoryProjectGroupStore())
+        let a = vm.createGroup(name: "A", color: .blue)!
+        vm.selection = .group(a)
+        XCTAssertEqual(vm.selectedGroupID, a)
+        vm.selection = .library(.running)
+        XCTAssertNil(vm.selectedGroupID)
+        XCTAssertEqual(vm.selectedSidebarItem, .running)
+    }
+
+    func testDeletingSelectedGroupResetsSelectionToLibrary() {
+        let vm = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: []), groupStore: InMemoryProjectGroupStore())
+        let a = vm.createGroup(name: "A", color: .blue)!
+        vm.selection = .group(a)
+        vm.deleteGroup(a)
+        if case .library = vm.selection { /* ok */ } else { XCTFail("selection should fall back to library") }
+    }
+
+    func testCurrentSectionTitleReflectsSelectedGroup() {
+        let vm = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: []), groupStore: InMemoryProjectGroupStore())
+        XCTAssertEqual(vm.currentSectionTitle, ProjectSidebarItem.projects.title)
+        let id = vm.createGroup(name: "Client Work", color: .blue)!
+        vm.selection = .group(id)
+        XCTAssertEqual(vm.currentSectionTitle, "Client Work")
+        vm.selection = .library(.running)
+        XCTAssertEqual(vm.currentSectionTitle, ProjectSidebarItem.running.title)
+    }
 }
 
 private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {

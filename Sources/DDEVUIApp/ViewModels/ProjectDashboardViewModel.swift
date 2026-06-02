@@ -94,10 +94,19 @@ public enum ProjectSidebarItem: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+public enum SidebarSelection: Hashable, Sendable {
+    case library(ProjectSidebarItem)
+    case group(ProjectGroup.ID)
+}
+
 @MainActor
 @Observable
 public final class ProjectDashboardViewModel {
     public var projects: [DDEVProject] = []
+    /// User-authored project groups (folders). Sidebar display order == array order.
+    public var groups: [ProjectGroup] = []
+    /// Selected group, when a group (not a Library item) is the active sidebar selection.
+    public var selectedGroupID: ProjectGroup.ID?
     public var selectedProjectID: DDEVProject.ID?
     public var selectedSidebarItem: ProjectSidebarItem = .projects
     public var searchText = ""
@@ -149,6 +158,7 @@ public final class ProjectDashboardViewModel {
 
     private let ddevService: DDEVServicing
     private let projectCache: ProjectCacheStoring
+    private let groupStore: ProjectGroupStoring
     private let scheduler: CommandScheduler
     private let notifier: NotificationScheduling
     private var selectedProjectFallback: DDEVProject?
@@ -162,13 +172,16 @@ public final class ProjectDashboardViewModel {
         preferencesStore: AppPreferencesStoring = UserDefaultsAppPreferencesStore(),
         appAvailability: AppAvailabilityChecking = WorkspaceAppAvailabilityService(),
         scheduler: CommandScheduler = CommandScheduler(maxConcurrent: 3),
-        notifier: NotificationScheduling = NoopNotificationScheduler()
+        notifier: NotificationScheduling = NoopNotificationScheduler(),
+        groupStore: ProjectGroupStoring = UserDefaultsProjectGroupStore()
     ) {
         self.ddevService = ddevService
         self.projectCache = projectCache
         self.scheduler = scheduler
         self.notifier = notifier
         self.preferencesModel = PreferencesModel(preferencesStore: preferencesStore, appAvailability: appAvailability)
+        self.groupStore = groupStore
+        self.groups = groupStore.loadGroups()
     }
 
     // MARK: - Preferences (forwarded to PreferencesModel)
@@ -188,6 +201,35 @@ public final class ProjectDashboardViewModel {
         }
     }
 
+    /// Unified sidebar selection. `.group` wins when a still-existing group is selected, else the
+    /// Library item. Setting `.library` clears the group selection.
+    public var selection: SidebarSelection {
+        get {
+            if let selectedGroupID, groups.contains(where: { $0.id == selectedGroupID }) {
+                return .group(selectedGroupID)
+            }
+            return .library(selectedSidebarItem)
+        }
+        set {
+            switch newValue {
+            case .library(let item):
+                selectedSidebarItem = item
+                selectedGroupID = nil
+            case .group(let id):
+                selectedGroupID = id
+            }
+        }
+    }
+
+    /// Title for the middle column / nav bar: the selected group's name when a group is active,
+    /// otherwise the Library item's title.
+    public var currentSectionTitle: String {
+        if case .group(let id) = selection, let group = groups.first(where: { $0.id == id }) {
+            return group.name
+        }
+        return selectedSidebarItem.title
+    }
+
     public var filteredProjects: [DDEVProject] {
         filteredProjects(in: projects)
     }
@@ -203,18 +245,19 @@ public final class ProjectDashboardViewModel {
 
     private func filteredProjects(in sourceProjects: [DDEVProject]) -> [DDEVProject] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let sectionProjects = sourceProjects.filter { project in
-            switch selectedSidebarItem {
-            case .projects:
-                true
-            case .running:
-                project.status == .running
-            case .wordpress:
-                project.isWordPress
-            case .diagnostics:
-                false
-            case .settings:
-                false
+        let sectionProjects: [DDEVProject]
+        if let selectedGroupID, let group = groups.first(where: { $0.id == selectedGroupID }) {
+            let memberSet = Set(group.memberIDs)
+            sectionProjects = sourceProjects.filter { memberSet.contains($0.id) }
+        } else {
+            sectionProjects = sourceProjects.filter { project in
+                switch selectedSidebarItem {
+                case .projects: true
+                case .running: project.status == .running
+                case .wordpress: project.isWordPress
+                case .diagnostics: false
+                case .settings: false
+                }
             }
         }
 
@@ -1150,6 +1193,17 @@ public final class ProjectDashboardViewModel {
         let liveIDs = Set(projects.map(\.id))
         commandStates = commandStates.filter { liveIDs.contains($0.key) || $0.value.isBusy }
 
+        // Drop group memberships for projects that no longer exist so counts/filters stay honest.
+        var didPruneGroups = false
+        for index in groups.indices {
+            let kept = groups[index].memberIDs.filter { liveIDs.contains($0) }
+            if kept.count != groups[index].memberIDs.count {
+                groups[index].memberIDs = kept
+                didPruneGroups = true
+            }
+        }
+        if didPruneGroups { persistGroups() }
+
         if let selectedProjectID,
            let selectedProject = projects.first(where: { $0.id == selectedProjectID }) {
             selectedProjectFallback = selectedProject
@@ -1178,6 +1232,73 @@ public final class ProjectDashboardViewModel {
 
     /// Cap on concurrent `describe` subprocesses during a refresh fan-out (audit M1).
     private static let maxConcurrentDescribes = 4
+
+    // MARK: - Groups
+
+    @discardableResult
+    public func createGroup(name: String, color: GroupColor) -> ProjectGroup.ID? {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let group = ProjectGroup(name: trimmed, colorID: color)
+        groups.append(group)
+        persistGroups()
+        return group.id
+    }
+
+    public func renameGroup(_ id: ProjectGroup.ID, to name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let index = groups.firstIndex(where: { $0.id == id }) else { return }
+        groups[index].name = trimmed
+        persistGroups()
+    }
+
+    public func setColor(_ color: GroupColor, for id: ProjectGroup.ID) {
+        guard let index = groups.firstIndex(where: { $0.id == id }) else { return }
+        groups[index].colorID = color
+        persistGroups()
+    }
+
+    public func deleteGroup(_ id: ProjectGroup.ID) {
+        groups.removeAll { $0.id == id }
+        if selectedGroupID == id { selectedGroupID = nil }
+        persistGroups()
+    }
+
+    public func assignProject(_ projectID: DDEVProject.ID, toGroup groupID: ProjectGroup.ID) {
+        // Single-membership: remove from every group first, then add to the target.
+        for index in groups.indices {
+            groups[index].memberIDs.removeAll { $0 == projectID }
+        }
+        guard let target = groups.firstIndex(where: { $0.id == groupID }) else { persistGroups(); return }
+        groups[target].memberIDs.append(projectID)
+        persistGroups()
+    }
+
+    public func removeProjectFromGroup(_ projectID: DDEVProject.ID) {
+        for index in groups.indices {
+            groups[index].memberIDs.removeAll { $0 == projectID }
+        }
+        persistGroups()
+    }
+
+    public func group(for projectID: DDEVProject.ID) -> ProjectGroup? {
+        groups.first { $0.memberIDs.contains(projectID) }
+    }
+
+    public func memberCount(of groupID: ProjectGroup.ID) -> Int {
+        guard let group = groups.first(where: { $0.id == groupID }) else { return 0 }
+        let liveIDs = Set(projects.map(\.id))
+        return group.memberIDs.filter { liveIDs.contains($0) }.count
+    }
+
+    public func moveGroups(fromOffsets source: IndexSet, toOffset destination: Int) {
+        groups.move(fromOffsets: source, toOffset: destination)
+        persistGroups()
+    }
+
+    private func persistGroups() {
+        groupStore.saveGroups(groups)
+    }
 }
 
 private struct DiagnosticFailure: Error {

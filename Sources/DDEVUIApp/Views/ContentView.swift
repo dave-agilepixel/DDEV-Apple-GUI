@@ -4,6 +4,10 @@ struct ContentView: View {
     @State private var viewModel: ProjectDashboardViewModel
     @State private var prerequisites: PrerequisiteMonitor
     @State private var folderToConfigure: FolderToConfigure?
+    @State private var showNewGroupEditor = false
+    @State private var groupToEdit: ProjectGroup?
+    /// The group row a project is currently being dragged over, for drop-target highlighting.
+    @State private var dropTargetGroupID: ProjectGroup.ID?
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
@@ -30,7 +34,44 @@ struct ContentView: View {
                 Section("Library") {
                     ForEach(ProjectSidebarItem.allCases) { item in
                         SidebarRow(item: item, count: count(for: item))
-                            .tag(item)
+                            .tag(SidebarSelection.library(item))
+                    }
+                }
+                if !viewModel.groups.isEmpty {
+                    Section("Groups") {
+                        ForEach(viewModel.groups) { group in
+                            GroupSidebarRow(group: group, count: viewModel.memberCount(of: group.id))
+                                .tag(SidebarSelection.group(group.id))
+                                .contextMenu { groupContextMenu(group) }
+                                .listRowBackground(
+                                    dropTargetGroupID == group.id
+                                        ? RoundedRectangle(cornerRadius: 6).fill(.tint.opacity(0.25))
+                                        : nil
+                                )
+                                .dropDestination(for: String.self) { droppedIDs, _ in
+                                    // Drag payload is a project id (a plain String). Filter to ids we
+                                    // actually know so a stray text drag can't create a phantom member.
+                                    let knownIDs = droppedIDs.filter { id in
+                                        viewModel.projects.contains { $0.id == id }
+                                    }
+                                    for id in knownIDs { viewModel.assignProject(id, toGroup: group.id) }
+                                    return !knownIDs.isEmpty
+                                } isTargeted: { targeted in
+                                    dropTargetGroupID = targeted ? group.id : (dropTargetGroupID == group.id ? nil : dropTargetGroupID)
+                                }
+                        }
+                        .onMove { viewModel.moveGroups(fromOffsets: $0, toOffset: $1) }
+                    }
+                }
+                Section {
+                    Button {
+                        showNewGroupEditor = true
+                    } label: {
+                        Label("New Group", systemImage: "plus")
+                    }
+                    .buttonStyle(.plain)
+                    .popover(isPresented: $showNewGroupEditor, arrowEdge: .trailing) {
+                        NewGroupEditor(viewModel: viewModel) { showNewGroupEditor = false }
                     }
                 }
             }
@@ -38,17 +79,18 @@ struct ContentView: View {
             .navigationTitle("DDEVUI")
             .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 240)
         } content: {
-            if viewModel.selectedSidebarItem == .settings {
+            switch viewModel.selection {
+            case .library(.settings):
                 SettingsView(viewModel: viewModel)
-            } else if viewModel.selectedSidebarItem == .diagnostics {
+            case .library(.diagnostics):
                 DiagnosticsView(viewModel: viewModel)
                     .navigationSplitViewColumnWidth(min: 480, ideal: 680)
-            } else {
+            default:
                 ProjectListView(viewModel: viewModel)
                     .navigationSplitViewColumnWidth(min: 280, ideal: 320, max: 420)
             }
         } detail: {
-            if viewModel.selectedSidebarItem == .diagnostics {
+            if case .library(.diagnostics) = viewModel.selection {
                 ContentUnavailableView(
                     "Diagnostics",
                     systemImage: "stethoscope",
@@ -89,6 +131,9 @@ struct ContentView: View {
         .sheet(item: $folderToConfigure) { folder in
             AddProjectSheet(folder: folder.url, viewModel: viewModel)
         }
+        .sheet(item: $groupToEdit) { group in
+            EditGroupSheet(viewModel: viewModel, group: group)
+        }
         .sheet(isPresented: Binding(
             get: { prerequisites.shouldBlockUI },
             set: { _ in }
@@ -119,13 +164,20 @@ struct ContentView: View {
         }
     }
 
-    private var sidebarSelection: Binding<ProjectSidebarItem> {
+    private var sidebarSelection: Binding<SidebarSelection?> {
         Binding {
-            viewModel.selectedSidebarItem
+            viewModel.selection
         } set: { newSelection in
-            guard viewModel.selectedSidebarItem != newSelection else { return }
-            viewModel.selectedSidebarItem = newSelection
+            guard let newSelection, viewModel.selection != newSelection else { return }
+            viewModel.selection = newSelection
         }
+    }
+
+    @ViewBuilder
+    private func groupContextMenu(_ group: ProjectGroup) -> some View {
+        Button("Edit Group…") { groupToEdit = group }
+        Divider()
+        Button("Delete Group", role: .destructive) { viewModel.deleteGroup(group.id) }
     }
 
     private func addFolder() {

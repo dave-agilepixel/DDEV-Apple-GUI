@@ -66,6 +66,30 @@ struct ProjectInspectorView: View {
 
                             Divider()
 
+                            Menu("Move to Group") {
+                                ForEach(viewModel.groups) { group in
+                                    Button {
+                                        viewModel.assignProject(project.id, toGroup: group.id)
+                                    } label: {
+                                        Label(group.name,
+                                              systemImage: viewModel.group(for: project.id)?.id == group.id ? "checkmark" : "folder")
+                                    }
+                                }
+                                Divider()
+                                Button("New Group…") {
+                                    if let id = viewModel.createGroup(name: "New Group", color: .blue) {
+                                        viewModel.assignProject(project.id, toGroup: id)
+                                    }
+                                }
+                                if viewModel.group(for: project.id) != nil {
+                                    Button("Remove from Group", role: .destructive) {
+                                        viewModel.removeProjectFromGroup(project.id)
+                                    }
+                                }
+                            }
+
+                            Divider()
+
                             Button(role: .destructive) {
                                 confirmUnlink = true
                             } label: {

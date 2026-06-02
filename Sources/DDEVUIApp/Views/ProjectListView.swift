@@ -12,7 +12,7 @@ struct ProjectListView: View {
             }
             contentBody
         }
-        .navigationTitle(viewModel.selectedSidebarItem.title)
+        .navigationTitle(viewModel.currentSectionTitle)
     }
 
     private var searchBar: some View {
@@ -75,10 +75,12 @@ struct ProjectListView: View {
                             ProjectRow(project: project, viewModel: viewModel)
                                 .tag(project.id)
                                 .listRowSeparator(.visible)
+                                .draggable(project.id)
+                                .contextMenu { moveToGroupMenu(project) }
                         }
                     } header: {
                         HStack {
-                            Text(viewModel.selectedSidebarItem.title)
+                            Text(viewModel.currentSectionTitle)
                                 .font(.headline)
                             Spacer()
                             Text("\(viewModel.filteredProjects.count)")
@@ -103,6 +105,7 @@ struct ProjectListView: View {
 
     private var emptyTitle: String {
         if !viewModel.searchText.isEmpty { return "No Matches" }
+        if case .group = viewModel.selection { return "No Projects in This Group" }
         switch viewModel.selectedSidebarItem {
         case .running: return "Nothing Running"
         case .wordpress: return "No WordPress Projects"
@@ -114,10 +117,38 @@ struct ProjectListView: View {
         if !viewModel.searchText.isEmpty {
             return "Try a different search term."
         }
+        if case .group = viewModel.selection {
+            return "Drag a project here, or use Move to Group on a project."
+        }
         switch viewModel.selectedSidebarItem {
         case .running: return "Start a project to see it here."
         case .wordpress: return "Configure a WordPress site to populate this list."
         default: return "Use Add Folder to register a DDEV project."
+        }
+    }
+
+    @ViewBuilder
+    private func moveToGroupMenu(_ project: DDEVProject) -> some View {
+        Menu("Move to Group") {
+            ForEach(viewModel.groups) { group in
+                Button {
+                    viewModel.assignProject(project.id, toGroup: group.id)
+                } label: {
+                    Label(group.name,
+                          systemImage: viewModel.group(for: project.id)?.id == group.id ? "checkmark" : "folder")
+                }
+            }
+            Divider()
+            Button("New Group…") {
+                if let id = viewModel.createGroup(name: "New Group", color: .blue) {
+                    viewModel.assignProject(project.id, toGroup: id)
+                }
+            }
+            if viewModel.group(for: project.id) != nil {
+                Button("Remove from Group", role: .destructive) {
+                    viewModel.removeProjectFromGroup(project.id)
+                }
+            }
         }
     }
 }
@@ -151,6 +182,9 @@ private struct ProjectRow: View {
                             .foregroundStyle(.tertiary)
                         Text("PHP \(php)")
                             .monospacedDigit()
+                    }
+                    if let group = viewModel.group(for: project.id) {
+                        groupTag(group)
                     }
                 }
                 .font(.caption)
@@ -220,6 +254,23 @@ private struct ProjectRow: View {
         case .stopped: .secondary
         case .unknown: .yellow
         }
+    }
+
+    /// A small coloured pill showing the project's group, so membership is visible at a glance in
+    /// the main listing (the dot carries the group colour; the label stays legible in secondary).
+    @ViewBuilder
+    private func groupTag(_ group: ProjectGroup) -> some View {
+        HStack(spacing: 3) {
+            Circle()
+                .fill(group.colorID.color)
+                .frame(width: 6, height: 6)
+            Text(group.name)
+                .lineLimit(1)
+        }
+        .font(.caption2)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 1)
+        .background(Capsule().fill(group.colorID.color.opacity(0.16)))
     }
 }
 
