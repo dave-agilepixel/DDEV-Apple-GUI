@@ -20,13 +20,6 @@ final class StartProgressParserTests: XCTestCase {
         XCTAssertNil(parser.fraction, "no recognized stage -> indeterminate (nil)")
     }
 
-    func testMarkCompletedReachesOne() {
-        var parser = StartProgressParser()
-        _ = parser.consume("Starting myproject...")
-        parser.markCompleted()
-        XCTAssertEqual(parser.fraction, 1.0)
-    }
-
     func testProgressNeverDecreasesEvenIfStagesArriveOutOfOrder() {
         var parser = StartProgressParser()
         _ = parser.consume("Waiting for the web server to be ready") // late-stage first

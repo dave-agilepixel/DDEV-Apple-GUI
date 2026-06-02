@@ -1066,6 +1066,23 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertNil(viewModel.state(for: "aqua-pura").startProgress,
                      "progress is cleared once the command completes")
     }
+
+    func testRestartRequestsStreamingAndClearsProgressOnCompletion() async {
+        let service = FakeDDEVService(
+            projects: [DDEVProject.sampleWordPress],
+            startOutputLines: ["Starting aqua-pura...", "Container ddev-aqua-pura-web  Started"]
+        )
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        let running = DDEVProject.sampleWordPress // .running
+        viewModel.projects = [running]
+        viewModel.selectedProject = running
+
+        await viewModel.restart(running)
+
+        XCTAssertTrue(service.restartStreamed, "restart passes a non-nil progress handler")
+        XCTAssertNil(viewModel.state(for: "aqua-pura").startProgress,
+                     "progress is cleared once the command completes")
+    }
 }
 
 private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
@@ -1090,6 +1107,7 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
     private let startFolderError: Error?
     private let startOutputLines: [String]
     private var startStreamedFlag = false
+    private var restartStreamedFlag = false
     private var recordedCommands: [String] = []
 
     var commands: [String] {
@@ -1097,6 +1115,7 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
     }
 
     var startStreamed: Bool { lock.withLock { startStreamedFlag } }
+    var restartStreamed: Bool { lock.withLock { restartStreamedFlag } }
 
     init(
         projects: [DDEVProject],
@@ -1175,6 +1194,13 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
 
     func restart(projectName: String) async throws -> CommandResult {
         record("restart:\(projectName)")
+        return commandResult(arguments: ["restart", projectName])
+    }
+
+    func restart(projectName: String, onOutputLine: (@Sendable (String) -> Void)?) async throws -> CommandResult {
+        record("restart:\(projectName)")
+        if onOutputLine != nil { lock.withLock { restartStreamedFlag = true } }
+        for line in startOutputLines { onOutputLine?(line) }
         return commandResult(arguments: ["restart", projectName])
     }
 

@@ -4,8 +4,9 @@ import Foundation
 /// for the project-row donut. This is a stage estimate, not a true percentage — DDEV emits no
 /// percentage. When no stage is recognized (e.g. a future DDEV changes its wording), `fraction`
 /// stays `nil` and the UI falls back to an indeterminate spinner rather than showing a wrong or
-/// stuck number. `1.0` is reserved for `markCompleted()` (process exit), so a recognized run can
-/// never visually "finish" before the command actually returns.
+/// stuck number. Progress is capped strictly below `1.0` while running; the project row dismisses the donut
+/// (the project flips to a non-busy state) the moment the command completes, so there is no
+/// separate 100% step to render.
 public struct StartProgressParser {
     /// Ordered stage needles → fraction. Matched case-insensitively; a line may match several,
     /// in which case the highest wins. Tuned against captured DDEV v1.25.2 output (see
@@ -38,6 +39,4 @@ public struct StartProgressParser {
         return next
     }
 
-    /// Process exited successfully — pin to 100%.
-    public mutating func markCompleted() { fraction = 1.0 }
 }
