@@ -51,7 +51,8 @@ struct ProjectInspectorView: View {
                     async let details: Void = viewModel.loadDetailsForSelectedProject()
                     async let xdebug: Void = viewModel.loadXdebugStatusForSelectedProject()
                     async let driftCheck: Void = viewModel.checkDBMatchForSelectedProject()
-                    _ = await (details, xdebug, driftCheck)
+                    async let customCommands: Void = viewModel.loadCustomCommandsForSelectedProject()
+                    _ = await (details, xdebug, driftCheck, customCommands)
                 }
                 .toolbar {
                     ToolbarItem(placement: .primaryAction) {
@@ -864,6 +865,33 @@ private struct ServiceHealthRow: View {
 
 // MARK: - Manage tab
 
+/// A13 — surfaces user-defined custom commands (`.ddev/commands/…`) discovered at runtime as
+/// buttons. Hidden entirely when the project defines none.
+private struct CustomCommandsView: View {
+    let project: DDEVProject
+    var viewModel: ProjectDashboardViewModel
+
+    var body: some View {
+        if !viewModel.customCommands.isEmpty {
+            InspectorSection("Custom Commands") {
+                FlowHStack(spacing: 8) {
+                    ForEach(viewModel.customCommands) { command in
+                        Button {
+                            Task { await viewModel.runCustomCommandForSelectedProject(command) }
+                        } label: {
+                            Label(command.name, systemImage: "terminal")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .help(command.description ?? "ddev \(command.name) (\(command.scope.rawValue))")
+                    }
+                }
+                .disabled(viewModel.isSelectedProjectBusy)
+            }
+        }
+    }
+}
+
 private struct ManageTabContent: View {
     let project: DDEVProject
     var viewModel: ProjectDashboardViewModel
@@ -872,6 +900,7 @@ private struct ManageTabContent: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 FrameworkCommandLauncherView(project: project, viewModel: viewModel)
+                CustomCommandsView(project: project, viewModel: viewModel)
                 DatabaseOperationsView(project: project, viewModel: viewModel)
                 SnapshotManagerView(project: project, viewModel: viewModel)
                 AddonManagerView(project: project, viewModel: viewModel)

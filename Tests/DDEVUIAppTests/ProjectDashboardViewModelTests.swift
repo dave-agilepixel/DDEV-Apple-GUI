@@ -450,6 +450,36 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertFalse(service.commands.contains { $0.hasPrefix("check-db-match") })
     }
 
+    func testLoadCustomCommandsPopulatesFromDiscovery() async {
+        let discovery = StubCustomCommandDiscovery(commands: [
+            DDEVCustomCommand(name: "deploy", description: "Deploy it", scope: .host)
+        ])
+        let viewModel = ProjectDashboardViewModel(
+            ddevService: FakeDDEVService(projects: [.sampleWordPress]),
+            customCommandDiscovery: discovery
+        )
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.loadCustomCommandsForSelectedProject()
+
+        XCTAssertEqual(viewModel.customCommands.map(\.name), ["deploy"])
+    }
+
+    func testRunCustomCommandRunsDDEVWithCommandName() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.runCustomCommandForSelectedProject(
+            DDEVCustomCommand(name: "deploy", description: nil, scope: .host)
+        )
+
+        XCTAssertEqual(service.commands, [
+            "project-command:/Users/dave/Development/agilepixel/aqua-pura:deploy",
+            "describe:aqua-pura"
+        ])
+    }
+
     func testImportDatabaseUsesSelectedProjectFolderAndRefreshes() async {
         let service = FakeDDEVService(projects: [.sampleWordPress])
         let viewModel = ProjectDashboardViewModel(ddevService: service)
@@ -1236,6 +1266,11 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         vm.selection = .library(.running)
         XCTAssertEqual(vm.currentSectionTitle, ProjectSidebarItem.running.title)
     }
+}
+
+private struct StubCustomCommandDiscovery: CustomCommandDiscovering {
+    let commands: [DDEVCustomCommand]
+    func discoverCustomCommands(appRoot: String) async -> [DDEVCustomCommand] { commands }
 }
 
 private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {

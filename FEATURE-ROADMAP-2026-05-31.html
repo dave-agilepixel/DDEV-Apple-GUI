@@ -540,6 +540,7 @@
   <details class="feat" data-v="NICE">
     <summary>
       <span class="badge NICE">NICE TO HAVE</span>
+      <span class="status done">Implemented</span>
       <span class="sgrow">
         <span class="stitle">A13 · Custom-command discovery</span>
         <div class="smeta"><span class="id">maps to</span> <span class="cmd">.ddev/commands/</span> <span class="cmd">ddev help</span></div>
@@ -558,6 +559,7 @@
       <h4>Native-GUI fit</h4>
       <p>Good, and a nice dynamic-UI exercise — but only valuable to users who actually write custom commands.</p>
       <div class="verdict NICE"><b>Verdict:</b> Backlog. Cool, but its audience is narrow. Do it if you personally use custom commands.</div>
+      <div class="verdict NICE"><b>Built 2026-06-02:</b> Runtime discovery by scanning <code>.ddev/commands/{host,web,db}</code> (project) and <code>~/.ddev/commands/…</code> (global) — filename is the command name, <code>## Description:</code> annotation becomes the tooltip; <code>README*</code>, <code>*.example</code> and dotfiles are skipped, and a project command overrides a global one of the same name. Discovered commands render as buttons in a <b>Custom Commands</b> section (hidden when none), running <code>ddev &lt;name&gt;</code>. Discovery is behind an injectable filesystem seam so it's fully unit-tested.</div>
     </div>
   </details>
 
