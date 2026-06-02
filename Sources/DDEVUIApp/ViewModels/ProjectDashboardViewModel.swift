@@ -1476,7 +1476,7 @@ public final class ProjectDashboardViewModel {
     }
 
     private func notifyIfBackground(project: DDEVProject, succeeded: Bool, summary: String) async {
-        guard project.id != selectedProjectID else { return }
+        guard !selectedProjectIDs.contains(project.id) else { return }
         await notifier.notifyCommandFinished(projectName: project.name, summary: summary, succeeded: succeeded)
     }
 
