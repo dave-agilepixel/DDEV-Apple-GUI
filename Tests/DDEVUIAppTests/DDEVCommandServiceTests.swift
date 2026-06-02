@@ -25,6 +25,21 @@ final class DDEVCommandServiceTests: XCTestCase {
         ])
     }
 
+    func testVersionInfoRunsDDEVVersionJSON() async throws {
+        let runner = RecordingCommandRunner(result: .success(CommandResult.success(
+            stdout: #"{"raw":{"DDEV version":"v1.25.2","docker":"29.5.2","mutagen":"0.18.1"}}"#)))
+        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
+
+        let info = try await service.versionInfo()
+
+        XCTAssertEqual(info.ddevVersion, "v1.25.2")
+        XCTAssertEqual(info.docker, "29.5.2")
+        XCTAssertEqual(info.mutagen, "0.18.1")
+        XCTAssertEqual(runner.commands, [
+            CommandSpec(executable: "ddev", arguments: ["version", "-j"], workingDirectory: nil)
+        ])
+    }
+
     func testLifecycleCommandsUseProjectName() async throws {
         let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
         let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")

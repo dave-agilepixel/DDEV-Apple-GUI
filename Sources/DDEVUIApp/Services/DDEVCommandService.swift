@@ -259,6 +259,11 @@ public final class DDEVCommandService: Sendable {
         try await runDDEV(["version"])
     }
 
+    public func versionInfo() async throws -> DDEVVersionInfo {
+        let result = try await runDDEV(["version", "-j"])
+        return try DDEVVersionInfo.decodeVersionPayload(Data(result.stdout.utf8))
+    }
+
     @discardableResult
     public func utilityDiagnose(in appRoot: String? = nil) async throws -> CommandResult {
         try await runDDEV(["utility", "diagnose"], workingDirectory: appRoot)
