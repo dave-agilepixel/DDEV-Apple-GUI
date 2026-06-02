@@ -98,7 +98,8 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         viewModel.projects = [.sampleWordPress, .sampleLaravel]
 
         viewModel.selectedSidebarItem = .projects
-        XCTAssertEqual(viewModel.filteredProjects, [.sampleWordPress, .sampleLaravel])
+        // Default sort is by name (B5): agilebugs (Laravel) sorts ahead of aqua-pura (WordPress).
+        XCTAssertEqual(viewModel.filteredProjects, [.sampleLaravel, .sampleWordPress])
 
         viewModel.selectedSidebarItem = .running
         XCTAssertEqual(viewModel.filteredProjects, [.sampleWordPress])
@@ -211,7 +212,9 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         let viewModel = ProjectDashboardViewModel(ddevService: service)
 
         await viewModel.refresh()
-        XCTAssertEqual(viewModel.selectedProject, .sampleWordPress)
+        // Select WordPress explicitly (don't depend on the default sort's auto-selection), so the
+        // stop below acts on a *non-selected* project — the behavior under test.
+        viewModel.selectedProject = .sampleWordPress
 
         await viewModel.stop(.sampleLaravel)
 
@@ -1939,6 +1942,12 @@ private final class InMemoryAppPreferencesStore: AppPreferencesStoring, @uncheck
     func saveDefaultDatabaseTool(_ databaseTool: DDEVDatabaseTool?) {
         lock.withLock {
             storedPreferences.defaultDatabaseTool = databaseTool
+        }
+    }
+
+    func saveProjectSort(_ sort: ProjectSort) {
+        lock.withLock {
+            storedPreferences.projectSort = sort
         }
     }
 }
