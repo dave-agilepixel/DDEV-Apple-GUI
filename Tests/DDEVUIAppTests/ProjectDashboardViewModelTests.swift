@@ -14,6 +14,17 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertNil(viewModel.globalErrorMessage)
     }
 
+    func testLoadVersionInfoPopulatesState() async {
+        let viewModel = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: []))
+        XCTAssertNil(viewModel.ddevVersionInfo)
+
+        await viewModel.loadVersionInfo()
+
+        XCTAssertEqual(viewModel.ddevVersionInfo?.ddevVersion, "v1.25.2")
+        XCTAssertEqual(viewModel.ddevVersionInfo?.docker, "29.5.2")
+        XCTAssertNil(viewModel.versionInfoErrorMessage)
+    }
+
     func testSearchFiltersProjectsByNamePathAndType() {
         let viewModel = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: []))
         viewModel.projects = [.sampleWordPress, .sampleLaravel]
@@ -1548,6 +1559,17 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
             throw diagnosticError
         }
         return commandResult(arguments: ["version"], stdout: "ddev version v1.24.8\n")
+    }
+
+    func versionInfo() async throws -> DDEVVersionInfo {
+        record("version-info")
+        if let diagnosticError {
+            throw diagnosticError
+        }
+        return DDEVVersionInfo(items: [
+            DDEVVersionInfo.Item(key: "DDEV version", value: "v1.25.2"),
+            DDEVVersionInfo.Item(key: "docker", value: "29.5.2")
+        ])
     }
 
     func utilityDiagnose(in appRoot: String?) async throws -> CommandResult {
