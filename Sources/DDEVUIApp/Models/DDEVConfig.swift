@@ -144,6 +144,15 @@ public enum DDEVDatabaseType: String, CaseIterable, Identifiable, Sendable {
         case .postgres: "PostgreSQL"
         }
     }
+
+    /// Whether `ddev utility migrate-database` can convert to/from this type (A12). MySQL and
+    /// MariaDB are interconvertible; PostgreSQL is explicitly unsupported.
+    public var supportsMigration: Bool {
+        switch self {
+        case .mysql, .mariadb: true
+        case .postgres: false
+        }
+    }
 }
 
 public enum DDEVWebserverType: String, CaseIterable, Identifiable, Sendable {

@@ -70,6 +70,7 @@ private final class SuspendedConfigDDEVService: DDEVServicing, @unchecked Sendab
     func setPHPVersion(_ version: String, in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
     func launchDatabaseTool(_ tool: DDEVDatabaseTool, in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
     func importDatabase(_ options: DDEVDatabaseImportOptions, in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
+    func importFiles(_ options: DDEVImportFilesOptions, in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
     func exportDatabase(_ options: DDEVDatabaseExportOptions, in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
     func createSnapshot(name: String?, in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
     func listSnapshots(in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
@@ -84,10 +85,18 @@ private final class SuspendedConfigDDEVService: DDEVServicing, @unchecked Sendab
     func removeAddOn(named name: String, projectName: String, in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
     func applyConfigChange(_ change: DDEVConfigChange, in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
     func runProjectCommand(arguments: [String], in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
+    func exec(command: String, service: DDEVExecService, in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
     func version() async throws -> CommandResult { throw UnexpectedCallError() }
+    func versionInfo() async throws -> DDEVVersionInfo { throw UnexpectedCallError() }
+    func poweroff() async throws -> CommandResult { throw UnexpectedCallError() }
+    func deleteImages() async throws -> CommandResult { throw UnexpectedCallError() }
+    func downloadImages() async throws -> CommandResult { throw UnexpectedCallError() }
+    func globalConfig() async throws -> DDEVGlobalConfig { throw UnexpectedCallError() }
+    func applyGlobalConfig(_ changes: [DDEVGlobalConfigChange]) async throws -> CommandResult { throw UnexpectedCallError() }
     func utilityDiagnose(in appRoot: String?) async throws -> CommandResult { throw UnexpectedCallError() }
     func utilityCheckCustomConfig(in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
     func utilityCheckDBMatch(in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
+    func migrateDatabase(to type: DDEVDatabaseType, version: String, in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
     func mutagen(_ command: DDEVMutagenCommand, in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
     func xhgui(_ command: DDEVXHGuiCommand, in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
     func xdebug(_ command: DDEVXdebugCommand, in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }

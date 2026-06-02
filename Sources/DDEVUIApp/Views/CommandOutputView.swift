@@ -4,11 +4,19 @@ struct CommandOutputView: View {
     let result: CommandResult?
     let history: [CommandHistoryEntry]
     let errorMessage: String?
+    /// B4 — re-run a past command. When nil, the re-run action is hidden (copy still works).
+    let onRerun: ((CommandResult) -> Void)?
 
-    init(result: CommandResult?, history: [CommandHistoryEntry] = [], errorMessage: String?) {
+    init(
+        result: CommandResult?,
+        history: [CommandHistoryEntry] = [],
+        errorMessage: String?,
+        onRerun: ((CommandResult) -> Void)? = nil
+    ) {
         self.result = result
         self.history = history
         self.errorMessage = errorMessage
+        self.onRerun = onRerun
     }
 
     var body: some View {
@@ -85,7 +93,39 @@ struct CommandOutputView: View {
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(result.succeeded ? .green : .red)
             }
+
+            actionsMenu(for: result)
         }
+    }
+
+    /// B4 — per-entry copy/re-run actions.
+    private func actionsMenu(for result: CommandResult) -> some View {
+        Menu {
+            Button {
+                Pasteboard.copy(result.commandLine)
+            } label: {
+                Label("Copy Command", systemImage: "doc.on.doc")
+            }
+            Button {
+                Pasteboard.copy(outputText(for: result))
+            } label: {
+                Label("Copy Output", systemImage: "text.alignleft")
+            }
+            if let onRerun, result.isSafelyRerunnable {
+                Divider()
+                Button {
+                    onRerun(result)
+                } label: {
+                    Label("Re-run", systemImage: "arrow.clockwise")
+                }
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle")
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Copy or re-run this command")
     }
 
     private func outputText(for result: CommandResult) -> String {
