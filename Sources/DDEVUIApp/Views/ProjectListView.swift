@@ -75,6 +75,8 @@ struct ProjectListView: View {
                             ProjectRow(project: project, viewModel: viewModel)
                                 .tag(project.id)
                                 .listRowSeparator(.visible)
+                                .draggable(ProjectTransfer(projectID: project.id))
+                                .contextMenu { moveToGroupMenu(project) }
                         }
                     } header: {
                         HStack {
@@ -118,6 +120,31 @@ struct ProjectListView: View {
         case .running: return "Start a project to see it here."
         case .wordpress: return "Configure a WordPress site to populate this list."
         default: return "Use Add Folder to register a DDEV project."
+        }
+    }
+
+    @ViewBuilder
+    private func moveToGroupMenu(_ project: DDEVProject) -> some View {
+        Menu("Move to Group") {
+            ForEach(viewModel.groups) { group in
+                Button {
+                    viewModel.assignProject(project.id, toGroup: group.id)
+                } label: {
+                    Label(group.name,
+                          systemImage: viewModel.group(for: project.id)?.id == group.id ? "checkmark" : "folder")
+                }
+            }
+            Divider()
+            Button("New Group…") {
+                if let id = viewModel.createGroup(name: "New Group", color: .blue) {
+                    viewModel.assignProject(project.id, toGroup: id)
+                }
+            }
+            if viewModel.group(for: project.id) != nil {
+                Button("Remove from Group", role: .destructive) {
+                    viewModel.removeProjectFromGroup(project.id)
+                }
+            }
         }
     }
 }
