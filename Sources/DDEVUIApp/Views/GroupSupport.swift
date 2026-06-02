@@ -96,24 +96,39 @@ struct NewGroupEditor: View {
     }
 }
 
-struct RenameGroupSheet: View {
+/// Edit a group's name and colour. Colour selection lives here (a normal view) rather than in the
+/// sidebar context menu, because macOS renders menu-item SF Symbols as monochrome templates — so
+/// coloured swatches can't show their colour inside a `Menu`.
+struct EditGroupSheet: View {
     @Bindable var viewModel: ProjectDashboardViewModel
     let group: ProjectGroup
     @Environment(\.dismiss) private var dismiss
     @State private var name: String
+    @State private var color: GroupColor
 
     init(viewModel: ProjectDashboardViewModel, group: ProjectGroup) {
         self.viewModel = viewModel
         self.group = group
         _name = State(initialValue: group.name)
+        _color = State(initialValue: group.colorID)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Rename Group").font(.headline)
+            Text("Edit Group").font(.headline)
             TextField("Group name", text: $name)
                 .textFieldStyle(.roundedBorder)
                 .onSubmit(commit)
+            HStack(spacing: 6) {
+                ForEach(GroupColor.allCases, id: \.self) { swatch in
+                    Circle()
+                        .fill(swatch.color)
+                        .frame(width: 18, height: 18)
+                        .overlay(Circle().strokeBorder(.primary, lineWidth: color == swatch ? 2 : 0))
+                        .onTapGesture { color = swatch }
+                        .accessibilityLabel(swatch.rawValue)
+                }
+            }
             HStack {
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }
@@ -128,6 +143,7 @@ struct RenameGroupSheet: View {
 
     private func commit() {
         viewModel.renameGroup(group.id, to: name)
+        viewModel.setColor(color, for: group.id)
         dismiss()
     }
 }

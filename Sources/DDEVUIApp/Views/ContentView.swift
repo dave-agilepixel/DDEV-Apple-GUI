@@ -5,7 +5,7 @@ struct ContentView: View {
     @State private var prerequisites: PrerequisiteMonitor
     @State private var folderToConfigure: FolderToConfigure?
     @State private var showNewGroupEditor = false
-    @State private var groupToRename: ProjectGroup?
+    @State private var groupToEdit: ProjectGroup?
     /// The group row a project is currently being dragged over, for drop-target highlighting.
     @State private var dropTargetGroupID: ProjectGroup.ID?
     @Environment(\.scenePhase) private var scenePhase
@@ -126,8 +126,8 @@ struct ContentView: View {
         .sheet(item: $folderToConfigure) { folder in
             AddProjectSheet(folder: folder.url, viewModel: viewModel)
         }
-        .sheet(item: $groupToRename) { group in
-            RenameGroupSheet(viewModel: viewModel, group: group)
+        .sheet(item: $groupToEdit) { group in
+            EditGroupSheet(viewModel: viewModel, group: group)
         }
         .sheet(isPresented: Binding(
             get: { prerequisites.shouldBlockUI },
@@ -170,16 +170,7 @@ struct ContentView: View {
 
     @ViewBuilder
     private func groupContextMenu(_ group: ProjectGroup) -> some View {
-        Button("Rename…") { groupToRename = group }
-        Menu("Change Colour") {
-            ForEach(GroupColor.allCases, id: \.self) { swatch in
-                Button {
-                    viewModel.setColor(swatch, for: group.id)
-                } label: {
-                    Label(swatch.rawValue.capitalized, systemImage: group.colorID == swatch ? "checkmark" : "circle.fill")
-                }
-            }
-        }
+        Button("Edit Group…") { groupToEdit = group }
         Divider()
         Button("Delete Group", role: .destructive) { viewModel.deleteGroup(group.id) }
     }
