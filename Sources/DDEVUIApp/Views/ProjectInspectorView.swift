@@ -50,8 +50,10 @@ struct ProjectInspectorView: View {
                     // They're independent subprocesses, so run them concurrently to keep selection snappy.
                     async let details: Void = viewModel.loadDetailsForSelectedProject()
                     async let xdebug: Void = viewModel.loadXdebugStatusForSelectedProject()
+                    async let xhgui: Void = viewModel.loadXHGuiStatusForSelectedProject()
                     async let driftCheck: Void = viewModel.checkDBMatchForSelectedProject()
-                    _ = await (details, xdebug, driftCheck)
+                    async let customCommands: Void = viewModel.loadCustomCommandsForSelectedProject()
+                    _ = await (details, xdebug, xhgui, driftCheck, customCommands)
                 }
                 .toolbar {
                     ToolbarItem(placement: .primaryAction) {
@@ -277,15 +279,18 @@ struct ProjectInspectorView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
+                .keyboardShortcut("o", modifiers: .command)
                 .disabled(!isRunning || project.primaryURL == nil)
 
                 if isRunning {
+                    // B6 — ⌘R is the primary lifecycle action (Restart when running, Start when stopped).
                     Button {
                         Task { await viewModel.restartSelectedProject() }
                     } label: {
                         Label("Restart", systemImage: "arrow.clockwise")
                     }
                     .controlSize(.large)
+                    .keyboardShortcut("r", modifiers: .command)
 
                     Button {
                         Task { await viewModel.stopSelectedProject() }
@@ -293,6 +298,7 @@ struct ProjectInspectorView: View {
                         Label("Stop", systemImage: "stop.fill")
                     }
                     .controlSize(.large)
+                    .keyboardShortcut(".", modifiers: .command)
                 } else {
                     Button {
                         Task { await viewModel.startSelectedProject() }
@@ -300,6 +306,7 @@ struct ProjectInspectorView: View {
                         Label("Start", systemImage: "play.fill")
                     }
                     .controlSize(.large)
+                    .keyboardShortcut("r", modifiers: .command)
                 }
 
                 Spacer(minLength: 0)
@@ -658,6 +665,22 @@ private struct OverviewTabContent: View {
                     })
                 }
 
+                // A17 — live XHGui/XHProf profiling toggle, same shape as Xdebug. XHGui is DDEV's
+                // XHProf UI; live state comes from `ddev xhgui status`. (No `ddev blackfire` command
+                // exists in this DDEV, so Blackfire is intentionally not surfaced.)
+                if let xhguiEnabled = viewModel.selectedProjectXHGuiEnabled {
+                    metaRow("XHProf (XHGui)", trailing: {
+                        Toggle("XHProf", isOn: Binding(
+                            get: { xhguiEnabled },
+                            set: { newValue in Task { await viewModel.setXHGuiForSelectedProject(newValue) } }
+                        ))
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                        .disabled(viewModel.isSelectedProjectBusy)
+                    })
+                }
+
                 metaRow("Project type", trailing: {
                     Text(project.projectType.displayName)
                         .foregroundStyle(.secondary)
@@ -864,6 +887,156 @@ private struct ServiceHealthRow: View {
 
 // MARK: - Manage tab
 
+/// A10 — tool passthrough: run `ddev composer/npm/drush/wp` with free-text arguments. The available
+/// tools are derived from the project type. Output flows into the Logs-tab command output.
+private struct ToolRunnerView: View {
+    let project: DDEVProject
+    var viewModel: ProjectDashboardViewModel
+
+    private var tools: [DDEVTool] { DDEVTool.tools(for: project.projectType) }
+
+    var body: some View {
+        InspectorSection("Tools") {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Run a tool inside the web container with your own arguments (ddev <tool> …). Output appears under the Logs tab.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                ForEach(tools) { tool in
+                    ToolRow(tool: tool, project: project, viewModel: viewModel)
+                }
+
+                if project.status != .running {
+                    Text("Start the project to run tools.")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+        }
+    }
+}
+
+private struct ToolRow: View {
+    let tool: DDEVTool
+    let project: DDEVProject
+    var viewModel: ProjectDashboardViewModel
+
+    @State private var args = ""
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(tool.displayName)
+                .font(.callout.weight(.medium))
+                .frame(width: 84, alignment: .leading)
+
+            TextField(tool.placeholder, text: $args)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(.body, design: .monospaced))
+                .onSubmit(run)
+
+            Button("Run", action: run)
+                .disabled(!canRun)
+        }
+    }
+
+    private var canRun: Bool {
+        project.status == .running
+            && !viewModel.isSelectedProjectBusy
+            && !args.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func run() {
+        guard canRun else { return }
+        let toRun = args
+        Task { await viewModel.runToolForSelectedProject(tool, argumentString: toRun) }
+    }
+}
+
+/// A9 — run an arbitrary one-shot command inside a service container (`ddev exec`). Output flows
+/// into the normal command-output channel (Logs tab). The command is run via `bash -c`, so pipes
+/// and shell features work.
+private struct ExecConsoleView: View {
+    let project: DDEVProject
+    var viewModel: ProjectDashboardViewModel
+
+    @State private var command = ""
+    @State private var service: DDEVExecService = .web
+
+    var body: some View {
+        InspectorSection("Run Command") {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Run a one-shot shell command inside a container (ddev exec). Output appears under the Logs tab.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                HStack(spacing: 8) {
+                    Picker("Service", selection: $service) {
+                        ForEach(DDEVExecService.allCases) { service in
+                            Text(service.displayName).tag(service)
+                        }
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+
+                    TextField("e.g. composer install", text: $command)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(.body, design: .monospaced))
+                        .onSubmit(run)
+
+                    Button("Run", action: run)
+                        .buttonStyle(.borderedProminent)
+                        .disabled(!canRun)
+                }
+
+                if project.status != .running {
+                    Text("Start the project to run commands in its containers.")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+        }
+    }
+
+    private var canRun: Bool {
+        project.status == .running
+            && !viewModel.isSelectedProjectBusy
+            && !command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func run() {
+        guard canRun else { return }
+        let toRun = command
+        Task { await viewModel.runExecForSelectedProject(command: toRun, service: service) }
+    }
+}
+
+/// A13 — surfaces user-defined custom commands (`.ddev/commands/…`) discovered at runtime as
+/// buttons. Hidden entirely when the project defines none.
+private struct CustomCommandsView: View {
+    let project: DDEVProject
+    var viewModel: ProjectDashboardViewModel
+
+    var body: some View {
+        if !viewModel.customCommands.isEmpty {
+            InspectorSection("Custom Commands") {
+                FlowHStack(spacing: 8) {
+                    ForEach(viewModel.customCommands) { command in
+                        Button {
+                            Task { await viewModel.runCustomCommandForSelectedProject(command) }
+                        } label: {
+                            Label(command.name, systemImage: "terminal")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .help(command.description ?? "ddev \(command.name) (\(command.scope.rawValue))")
+                    }
+                }
+                .disabled(viewModel.isSelectedProjectBusy)
+            }
+        }
+    }
+}
+
 private struct ManageTabContent: View {
     let project: DDEVProject
     var viewModel: ProjectDashboardViewModel
@@ -872,6 +1045,9 @@ private struct ManageTabContent: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 FrameworkCommandLauncherView(project: project, viewModel: viewModel)
+                CustomCommandsView(project: project, viewModel: viewModel)
+                ToolRunnerView(project: project, viewModel: viewModel)
+                ExecConsoleView(project: project, viewModel: viewModel)
                 DatabaseOperationsView(project: project, viewModel: viewModel)
                 SnapshotManagerView(project: project, viewModel: viewModel)
                 AddonManagerView(project: project, viewModel: viewModel)
@@ -932,7 +1108,10 @@ private struct LogsTabContent: View {
                 CommandOutputView(
                     result: viewModel.selectedProjectState.lastResult,
                     history: viewModel.selectedProjectState.history,
-                    errorMessage: viewModel.selectedProjectState.lastErrorMessage
+                    errorMessage: viewModel.selectedProjectState.lastErrorMessage,
+                    onRerun: { result in
+                        Task { await viewModel.rerunCommandForSelectedProject(result) }
+                    }
                 )
             }
         }

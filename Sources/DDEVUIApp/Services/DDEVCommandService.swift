@@ -114,6 +114,27 @@ public final class DDEVCommandService: Sendable {
     }
 
     @discardableResult
+    public func importFiles(_ options: DDEVImportFilesOptions, in appRoot: String) async throws -> CommandResult {
+        // Surface a missing/unreadable source as a clear precondition error rather than an opaque
+        // ddev exit code (mirrors importDatabase, audit L10). `isReadableFile` is true for both a
+        // readable directory and a readable archive, which is exactly what import-files accepts.
+        guard fileExists(options.source) else {
+            throw DDEVCommandPreconditionError.fileNotReadable(path: options.source)
+        }
+
+        var arguments = ["import-files", "--source=\(options.source)"]
+
+        if let target = options.target {
+            arguments.append("--target=\(target)")
+        }
+        if let extractPath = options.extractPath {
+            arguments.append("--extract-path=\(extractPath)")
+        }
+
+        return try await runDDEV(arguments, workingDirectory: appRoot)
+    }
+
+    @discardableResult
     public func exportDatabase(_ options: DDEVDatabaseExportOptions, in appRoot: String) async throws -> CommandResult {
         try await runDDEV(
             [
@@ -242,9 +263,65 @@ public final class DDEVCommandService: Sendable {
         return try await runDDEV(arguments, workingDirectory: appRoot)
     }
 
+    /// Runs an arbitrary one-shot command inside a service container (A9). The command is handed to
+    /// `bash -c` as a single opaque argument, so the user's flags/pipes are never parsed as `ddev`
+    /// flags (no flag-injection) and shell features (pipes, redirects, `&&`) work. `Process` invokes
+    /// `ddev` without a shell, so there's no host-side shell injection either.
+    @discardableResult
+    public func exec(command: String, service: DDEVExecService = .web, in appRoot: String) async throws -> CommandResult {
+        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw DDEVCommandValidationError.emptyProjectCommand
+        }
+        return try await runDDEV(
+            ["exec", "--service=\(service.rawValue)", "bash", "-c", trimmed],
+            workingDirectory: appRoot
+        )
+    }
+
     @discardableResult
     public func version() async throws -> CommandResult {
         try await runDDEV(["version"])
+    }
+
+    public func versionInfo() async throws -> DDEVVersionInfo {
+        let result = try await runDDEV(["version", "-j"])
+        return try DDEVVersionInfo.decodeVersionPayload(Data(result.stdout.utf8))
+    }
+
+    // MARK: - Global housekeeping (A15)
+
+    /// Stops all running projects and containers (`ddev poweroff`).
+    @discardableResult
+    public func poweroff() async throws -> CommandResult {
+        try await runDDEV(["poweroff"])
+    }
+
+    /// Removes DDEV Docker images to reclaim disk (`ddev delete images -y`). Images are re-pulled
+    /// on next start — this is disk reclamation, not data loss.
+    @discardableResult
+    public func deleteImages() async throws -> CommandResult {
+        try await runDDEV(["delete", "images", "-y"])
+    }
+
+    /// Pre-pulls all images DDEV needs (`ddev utility download-images`) so the next start is fast.
+    @discardableResult
+    public func downloadImages() async throws -> CommandResult {
+        try await runDDEV(["utility", "download-images"])
+    }
+
+    // MARK: - Global configuration (A14)
+
+    /// Reads the current global config via `ddev config global` (printed as `key=value` lines).
+    public func globalConfig() async throws -> DDEVGlobalConfig {
+        let result = try await runDDEV(["config", "global"])
+        return DDEVGlobalConfig.parse(result.stdout)
+    }
+
+    /// Applies global config changes via `ddev config global --flag=value …` (A14).
+    @discardableResult
+    public func applyGlobalConfig(_ changes: [DDEVGlobalConfigChange]) async throws -> CommandResult {
+        try await runDDEV(["config", "global"] + changes.flatMap(\.ddevFlags))
     }
 
     @discardableResult
@@ -271,6 +348,14 @@ public final class DDEVCommandService: Sendable {
     @discardableResult
     public func utilityCheckDBMatch(in appRoot: String) async throws -> CommandResult {
         try await runDDEV(["utility", "check-db-match"], workingDirectory: appRoot)
+    }
+
+    /// Safely migrates the project's database to a different type/version (A12), the supported path
+    /// for MySQL↔MariaDB changes that also converts the on-disk data (vs. a bare config rewrite,
+    /// which would leave the volume mismatched — the A5 drift state).
+    @discardableResult
+    public func migrateDatabase(to type: DDEVDatabaseType, version: String, in appRoot: String) async throws -> CommandResult {
+        try await runDDEV(["utility", "migrate-database", "\(type.rawValue):\(version)"], workingDirectory: appRoot)
     }
 
     @discardableResult
@@ -382,6 +467,22 @@ public enum DDEVXdebugCommand: String, CaseIterable, Sendable {
     case on
     case off
     case status
+}
+
+/// Target container for an arbitrary `ddev exec` (A9). Closed set so the `--service` value can't be
+/// an injection vector.
+public enum DDEVExecService: String, CaseIterable, Identifiable, Sendable {
+    case web
+    case db
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .web: "Web"
+        case .db: "Database"
+        }
+    }
 }
 
 public enum DDEVCommandValidationError: Error, Equatable, Sendable {

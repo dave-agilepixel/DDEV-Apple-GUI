@@ -25,6 +25,57 @@ final class DDEVCommandServiceTests: XCTestCase {
         ])
     }
 
+    func testVersionInfoRunsDDEVVersionJSON() async throws {
+        let runner = RecordingCommandRunner(result: .success(CommandResult.success(
+            stdout: #"{"raw":{"DDEV version":"v1.25.2","docker":"29.5.2","mutagen":"0.18.1"}}"#)))
+        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
+
+        let info = try await service.versionInfo()
+
+        XCTAssertEqual(info.ddevVersion, "v1.25.2")
+        XCTAssertEqual(info.docker, "29.5.2")
+        XCTAssertEqual(info.mutagen, "0.18.1")
+        XCTAssertEqual(runner.commands, [
+            CommandSpec(executable: "ddev", arguments: ["version", "-j"], workingDirectory: nil)
+        ])
+    }
+
+    func testGlobalHousekeepingCommands() async throws {
+        let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
+        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
+
+        _ = try await service.poweroff()
+        _ = try await service.deleteImages()
+        _ = try await service.downloadImages()
+
+        XCTAssertEqual(runner.commands, [
+            CommandSpec(executable: "ddev", arguments: ["poweroff"], workingDirectory: nil),
+            CommandSpec(executable: "ddev", arguments: ["delete", "images", "-y"], workingDirectory: nil),
+            CommandSpec(executable: "ddev", arguments: ["utility", "download-images"], workingDirectory: nil)
+        ])
+    }
+
+    func testGlobalConfigReadsAndAppliesFlags() async throws {
+        let runner = RecordingCommandRunner(result: .success(CommandResult.success(
+            stdout: "performance-mode=mutagen\nproject-tld=ddev.site\n")))
+        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
+
+        let config = try await service.globalConfig()
+        XCTAssertEqual(config.performanceMode, "mutagen")
+        XCTAssertEqual(config.projectTLD, "ddev.site")
+
+        _ = try await service.applyGlobalConfig([.instrumentationOptIn(false), .routerHTTPPort("8080")])
+
+        XCTAssertEqual(runner.commands, [
+            CommandSpec(executable: "ddev", arguments: ["config", "global"], workingDirectory: nil),
+            CommandSpec(
+                executable: "ddev",
+                arguments: ["config", "global", "--instrumentation-opt-in=false", "--router-http-port=8080"],
+                workingDirectory: nil
+            )
+        ])
+    }
+
     func testListAllAddOnsRunsAddOnListJSONAndDecodesStars() async throws {
         let runner = RecordingCommandRunner(result: .success(CommandResult.success(
             stdout: #"{"raw":[{"title":"ddev/ddev-redis","type":"official","stars":80}]}"#)))
@@ -163,6 +214,127 @@ final class DDEVCommandServiceTests: XCTestCase {
                     "--extract-path=dump/database.sql",
                     "--no-drop"
                 ],
+                workingDirectory: "/Users/dave/site"
+            )
+        ])
+    }
+
+    func testImportFilesWithSourceOnlyRunsInProjectDirectory() async throws {
+        let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
+        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev", fileExists: { _ in true })
+
+        _ = try await service.importFiles(
+            DDEVImportFilesOptions(source: "/Users/dave/Downloads/files.tar.gz"),
+            in: "/Users/dave/site"
+        )
+
+        XCTAssertEqual(runner.commands, [
+            CommandSpec(
+                executable: "ddev",
+                arguments: ["import-files", "--source=/Users/dave/Downloads/files.tar.gz"],
+                workingDirectory: "/Users/dave/site"
+            )
+        ])
+    }
+
+    func testImportFilesIncludesTargetAndExtractPath() async throws {
+        let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
+        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev", fileExists: { _ in true })
+
+        _ = try await service.importFiles(
+            DDEVImportFilesOptions(
+                source: "/Users/dave/Downloads/files.tar.gz",
+                target: "sites/default/files",
+                extractPath: "inner/dir"
+            ),
+            in: "/Users/dave/site"
+        )
+
+        XCTAssertEqual(runner.commands, [
+            CommandSpec(
+                executable: "ddev",
+                arguments: [
+                    "import-files",
+                    "--source=/Users/dave/Downloads/files.tar.gz",
+                    "--target=sites/default/files",
+                    "--extract-path=inner/dir"
+                ],
+                workingDirectory: "/Users/dave/site"
+            )
+        ])
+    }
+
+    func testImportFilesThrowsWhenSourceNotReadable() async throws {
+        let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
+        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev", fileExists: { _ in false })
+
+        do {
+            _ = try await service.importFiles(
+                DDEVImportFilesOptions(source: "/Users/dave/Downloads/missing"),
+                in: "/Users/dave/site"
+            )
+            XCTFail("Expected a precondition error for an unreadable source")
+        } catch let error as DDEVCommandPreconditionError {
+            XCTAssertEqual(error, .fileNotReadable(path: "/Users/dave/Downloads/missing"))
+        }
+
+        XCTAssertTrue(runner.commands.isEmpty, "ddev is not invoked when the source is unreadable")
+    }
+
+    func testExecRunsBashCInWebServiceByDefault() async throws {
+        let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
+        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
+
+        _ = try await service.exec(command: "php -v", service: .web, in: "/Users/dave/site")
+
+        XCTAssertEqual(runner.commands, [
+            CommandSpec(
+                executable: "ddev",
+                arguments: ["exec", "--service=web", "bash", "-c", "php -v"],
+                workingDirectory: "/Users/dave/site"
+            )
+        ])
+    }
+
+    func testExecTargetsChosenServiceAndTrimsCommand() async throws {
+        let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
+        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
+
+        _ = try await service.exec(command: "  ls -la /var/www  ", service: .db, in: "/Users/dave/site")
+
+        XCTAssertEqual(runner.commands, [
+            CommandSpec(
+                executable: "ddev",
+                arguments: ["exec", "--service=db", "bash", "-c", "ls -la /var/www"],
+                workingDirectory: "/Users/dave/site"
+            )
+        ])
+    }
+
+    func testExecRejectsBlankCommandWithoutInvokingDDEV() async throws {
+        let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
+        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
+
+        do {
+            _ = try await service.exec(command: "   ", service: .web, in: "/Users/dave/site")
+            XCTFail("Expected an empty-command validation error")
+        } catch let error as DDEVCommandValidationError {
+            XCTAssertEqual(error, .emptyProjectCommand)
+        }
+
+        XCTAssertTrue(runner.commands.isEmpty)
+    }
+
+    func testMigrateDatabaseRunsUtilityMigrateDatabaseWithDBTypeVersion() async throws {
+        let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
+        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
+
+        _ = try await service.migrateDatabase(to: .mysql, version: "8.0", in: "/Users/dave/site")
+
+        XCTAssertEqual(runner.commands, [
+            CommandSpec(
+                executable: "ddev",
+                arguments: ["utility", "migrate-database", "mysql:8.0"],
                 workingDirectory: "/Users/dave/site"
             )
         ])
