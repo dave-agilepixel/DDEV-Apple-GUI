@@ -11,32 +11,68 @@ struct ProjectListView: View {
                 Divider()
             }
             contentBody
+            if viewModel.filteredProjects.count > 1 {
+                Divider()
+                batchBar
+            }
         }
         .navigationTitle(viewModel.currentSectionTitle)
     }
 
-    private var searchBar: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass")
-                .foregroundStyle(.secondary)
-            TextField("Filter projects", text: $viewModel.searchText)
-                .textFieldStyle(.plain)
-                .focused($searchFocused)
-                .onSubmit { searchFocused = false }
-            if !viewModel.searchText.isEmpty {
-                Button {
-                    viewModel.searchText = ""
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.tertiary)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Clear search")
+    // B3 — batch start/stop the current view (sidebar section / group / search is the selection).
+    // Routed through the per-project mutations, so the CommandScheduler caps real concurrency.
+    private var batchBar: some View {
+        HStack(spacing: 8) {
+            Button {
+                Task { await viewModel.startProjectsInCurrentView() }
+            } label: {
+                Label("Start All (\(viewModel.startableProjectsInCurrentView.count))", systemImage: "play.fill")
             }
+            .disabled(viewModel.startableProjectsInCurrentView.isEmpty)
+
+            Button {
+                Task { await viewModel.stopProjectsInCurrentView() }
+            } label: {
+                Label("Stop All (\(viewModel.stoppableProjectsInCurrentView.count))", systemImage: "stop.fill")
+            }
+            .disabled(viewModel.stoppableProjectsInCurrentView.isEmpty)
+
+            Spacer()
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .background(.quaternary, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .labelStyle(.titleAndIcon)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .help("Start or stop every project in the current view")
+    }
+
+    private var searchBar: some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                TextField("Filter projects", text: $viewModel.searchText)
+                    .textFieldStyle(.plain)
+                    .focused($searchFocused)
+                    .onSubmit { searchFocused = false }
+                if !viewModel.searchText.isEmpty {
+                    Button {
+                        viewModel.searchText = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.tertiary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Clear search")
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(.quaternary, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+            sortMenu
+        }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background {
@@ -44,6 +80,27 @@ struct ProjectListView: View {
                 .keyboardShortcut("f", modifiers: .command)
                 .hidden()
         }
+    }
+
+    // B5 — choose how the project list is ordered (persisted).
+    private var sortMenu: some View {
+        Menu {
+            Picker("Sort by", selection: Binding(
+                get: { viewModel.projectSort },
+                set: { viewModel.setProjectSort($0) }
+            )) {
+                ForEach(ProjectSort.allCases) { sort in
+                    Label(sort.displayName, systemImage: sort.systemImage).tag(sort)
+                }
+            }
+        } label: {
+            Image(systemName: "arrow.up.arrow.down")
+                .foregroundStyle(.secondary)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Sort projects (currently: \(viewModel.projectSort.displayName))")
     }
 
     private var contentBody: some View {
