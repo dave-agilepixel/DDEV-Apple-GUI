@@ -450,6 +450,25 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertFalse(service.commands.contains { $0.hasPrefix("check-db-match") })
     }
 
+    func testImportFilesUsesSelectedProjectFolderAndRefreshes() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.importFiles(
+            DDEVImportFilesOptions(
+                source: "/Users/dave/Downloads/files.tar.gz",
+                target: "sites/default/files"
+            )
+        )
+
+        XCTAssertEqual(service.commands, [
+            "import-files:/Users/dave/Development/agilepixel/aqua-pura:/Users/dave/Downloads/files.tar.gz:sites/default/files:",
+            "describe:aqua-pura"
+        ])
+        XCTAssertEqual(viewModel.selectedProjectState.lastResult?.succeeded, true)
+    }
+
     func testImportDatabaseUsesSelectedProjectFolderAndRefreshes() async {
         let service = FakeDDEVService(projects: [.sampleWordPress])
         let viewModel = ProjectDashboardViewModel(ddevService: service)
@@ -1413,6 +1432,14 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
             throw importError
         }
         return commandResult(arguments: ["import-db"], workingDirectory: appRoot)
+    }
+
+    func importFiles(_ options: DDEVImportFilesOptions, in appRoot: String) async throws -> CommandResult {
+        record("import-files:\(appRoot):\(options.source):\(options.target ?? ""):\(options.extractPath ?? "")")
+        if let importError {
+            throw importError
+        }
+        return commandResult(arguments: ["import-files"], workingDirectory: appRoot)
     }
 
     func exportDatabase(_ options: DDEVDatabaseExportOptions, in appRoot: String) async throws -> CommandResult {

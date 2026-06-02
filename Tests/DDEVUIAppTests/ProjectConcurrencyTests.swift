@@ -262,6 +262,7 @@ private actor GatedDDEVService: DDEVServicing {
     func setPHPVersion(_ version: String, in appRoot: String) async throws -> CommandResult { try await runGated("php") }
     func launchDatabaseTool(_ tool: DDEVDatabaseTool, in appRoot: String) async throws -> CommandResult { try await runGated("db") }
     func importDatabase(_ options: DDEVDatabaseImportOptions, in appRoot: String) async throws -> CommandResult { try await runGated("import") }
+    func importFiles(_ options: DDEVImportFilesOptions, in appRoot: String) async throws -> CommandResult { try await runGated("import-files") }
     func exportDatabase(_ options: DDEVDatabaseExportOptions, in appRoot: String) async throws -> CommandResult { try await runGated("export") }
     func createSnapshot(name: String?, in appRoot: String) async throws -> CommandResult { try await runGated("snapshot") }
     func listSnapshots(in appRoot: String) async throws -> CommandResult { recorded.append("snapshot-list"); return runImmediate() }

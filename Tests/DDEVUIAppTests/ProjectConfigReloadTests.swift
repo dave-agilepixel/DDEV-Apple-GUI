@@ -70,6 +70,7 @@ private final class SuspendedConfigDDEVService: DDEVServicing, @unchecked Sendab
     func setPHPVersion(_ version: String, in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
     func launchDatabaseTool(_ tool: DDEVDatabaseTool, in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
     func importDatabase(_ options: DDEVDatabaseImportOptions, in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
+    func importFiles(_ options: DDEVImportFilesOptions, in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
     func exportDatabase(_ options: DDEVDatabaseExportOptions, in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
     func createSnapshot(name: String?, in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
     func listSnapshots(in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
