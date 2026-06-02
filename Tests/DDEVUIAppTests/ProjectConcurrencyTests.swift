@@ -287,6 +287,7 @@ private actor GatedDDEVService: DDEVServicing {
     func updateWordPressCore(in appRoot: String) async throws -> CommandResult { try await runGated("wp-core") }
     func updateWordPressPlugins(in appRoot: String) async throws -> CommandResult { try await runGated("wp-plugins") }
     func updateWordPressThemes(in appRoot: String) async throws -> CommandResult { try await runGated("wp-themes") }
+    func share(in appRoot: String, onOutputLine: (@Sendable (String) -> Void)?) async throws -> CommandResult { recorded.append("share"); return runImmediate() }
 }
 
 extension DDEVProject {
