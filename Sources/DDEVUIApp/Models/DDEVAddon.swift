@@ -15,6 +15,9 @@ public struct DDEVAddon: Equatable, Identifiable, Sendable {
     public let githubURL: URL?
     /// GitHub star count from the registry (A16), `nil` when unknown (e.g. table-parsed output).
     public let stars: Int?
+    /// DDEV's canonical add-on name from `add-on list --installed` (e.g. "bun"), used verbatim for
+    /// removal. `nil` for registry/search results, where it's derived from the repository instead.
+    public let installedName: String?
 
     public init(
         repository: String,
@@ -23,7 +26,8 @@ public struct DDEVAddon: Equatable, Identifiable, Sendable {
         type: AddonType = .unknown,
         dependencies: [String] = [],
         githubURL: URL? = nil,
-        stars: Int? = nil
+        stars: Int? = nil,
+        installedName: String? = nil
     ) {
         self.repository = repository
         self.description = description
@@ -32,16 +36,18 @@ public struct DDEVAddon: Equatable, Identifiable, Sendable {
         self.dependencies = dependencies
         self.githubURL = githubURL
         self.stars = stars
+        self.installedName = installedName?.nilIfBlank
     }
 
     public var id: String {
         repository
     }
 
-    /// The identifier accepted by `ddev add-on remove`. Older DDEV versions reject the
-    /// slashed `org/repo` form; the trailing path component is the safe-compatible form.
+    /// The identifier accepted by `ddev add-on remove`. For installed add-ons DDEV reports its own
+    /// canonical name (e.g. "bun" for `OpenForgeProject/ddev-bun`) — use it verbatim. Otherwise fall
+    /// back to the repository's trailing path component; older DDEV versions reject the slashed form.
     public var installName: String {
-        repository.split(separator: "/").last.map(String.init) ?? repository
+        installedName ?? repository.split(separator: "/").last.map(String.init) ?? repository
     }
 
     public var isOfficial: Bool {
@@ -133,7 +139,8 @@ public struct DDEVAddon: Equatable, Identifiable, Sendable {
             type: AddonType(rawValue: rawAddon.type ?? "") ?? .unknown,
             dependencies: rawAddon.dependencies ?? [],
             githubURL: rawAddon.githubURL.flatMap(URL.init(string:)),
-            stars: rawAddon.stars
+            stars: rawAddon.stars,
+            installedName: rawAddon.name
         )
     }
 }
@@ -142,6 +149,12 @@ private struct DDEVAddonJSONPayload: Decodable {
     let raw: [DDEVRawAddon]?
 }
 
+/// Decodes a single `raw` add-on entry from either DDEV schema:
+/// - registry / search (`ddev add-on list`, `ddev add-on search`) — lowercase `title`, `user`,
+///   `repo`, `tag_name`, `dependencies`, `type`, `stars`, `github_url`.
+/// - installed (`ddev add-on list --installed`) — PascalCase `Name`, `Repository`, `Version`,
+///   `Dependencies`. Each field falls back to its installed-schema counterpart when the
+///   registry key is absent, so one type handles both outputs.
 private struct DDEVRawAddon: Decodable {
     let title: String?
     let githubURL: String?
@@ -152,6 +165,8 @@ private struct DDEVRawAddon: Decodable {
     let dependencies: [String]?
     let type: String?
     let stars: Int?
+    /// DDEV's canonical name from installed output (the `Name` key); `nil` for registry/search.
+    let name: String?
 
     enum CodingKeys: String, CodingKey {
         case title
@@ -163,6 +178,30 @@ private struct DDEVRawAddon: Decodable {
         case dependencies
         case type
         case stars
+        case installedName = "Name"
+        case installedRepository = "Repository"
+        case installedVersion = "Version"
+        case installedDependencies = "Dependencies"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        // Installed output carries the org/repo identifier under `Repository`; the registry's
+        // equivalent is `title`. Resolving both here lets `repository` parsing stay unchanged.
+        title = try container.decodeIfPresent(String.self, forKey: .title)
+            ?? container.decodeIfPresent(String.self, forKey: .installedRepository)
+        githubURL = try container.decodeIfPresent(String.self, forKey: .githubURL)
+        description = try container.decodeIfPresent(String.self, forKey: .description)
+        user = try container.decodeIfPresent(String.self, forKey: .user)
+        repo = try container.decodeIfPresent(String.self, forKey: .repo)
+        tagName = try container.decodeIfPresent(String.self, forKey: .tagName)
+            ?? container.decodeIfPresent(String.self, forKey: .installedVersion)
+        // `Dependencies` is JSON `null` when there are none — `decodeIfPresent` maps that to `nil`.
+        dependencies = try container.decodeIfPresent([String].self, forKey: .dependencies)
+            ?? container.decodeIfPresent([String].self, forKey: .installedDependencies)
+        type = try container.decodeIfPresent(String.self, forKey: .type)
+        stars = try container.decodeIfPresent(Int.self, forKey: .stars)
+        name = try container.decodeIfPresent(String.self, forKey: .installedName)
     }
 }
 
