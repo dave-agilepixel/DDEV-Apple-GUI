@@ -1808,6 +1808,46 @@ final class ProjectDashboardViewModelTests: XCTestCase {
 
         XCTAssertEqual(viewModel.thumbnails["aqua-pura"], Data([0x1]))
     }
+
+    func testRefreshCapturesRunningProjectMissingAThumbnail() async {
+        let png = Data([0xDD])
+        let thumbnailer = StubWebsiteThumbnailer(
+            responses: [DDEVProject.sampleWordPress.primaryURL!.absoluteString: png]
+        )
+        let viewModel = ProjectDashboardViewModel(
+            ddevService: FakeDDEVService(projects: [.sampleWordPress]),  // running, no cache
+            projectCache: InMemoryProjectCacheStore(),
+            thumbnailer: thumbnailer,
+            thumbnailStore: InMemoryThumbnailStore()
+        )
+
+        await viewModel.refresh()
+        await viewModel.pendingThumbnailCaptures?.value   // captures are fire-and-forget; await completion
+
+        XCTAssertEqual(viewModel.thumbnails["aqua-pura"], png)
+    }
+
+    func testRefreshPrunesThumbnailForVanishedProject() async {
+        let store = InMemoryThumbnailStore(thumbnails: [
+            "aqua-pura": Data([0x1]),
+            "agilebugs": Data([0x2]),
+        ])
+        // ddev now only reports aqua-pura; agilebugs has vanished.
+        let viewModel = ProjectDashboardViewModel(
+            ddevService: FakeDDEVService(projects: [.sampleWordPress]),
+            projectCache: InMemoryProjectCacheStore(),
+            thumbnailer: StubWebsiteThumbnailer(),
+            thumbnailStore: store
+        )
+
+        await viewModel.loadCachedProjectsThenRefresh()
+        await viewModel.pendingThumbnailCaptures?.value
+
+        XCTAssertNil(viewModel.thumbnails["agilebugs"])              // dropped from memory
+        let stored = await store.loadAll()
+        XCTAssertNil(stored["agilebugs"])                            // and from disk
+        XCTAssertNotNil(viewModel.thumbnails["aqua-pura"])          // survivor kept
+    }
 }
 
 private struct StubCustomCommandDiscovery: CustomCommandDiscovering {

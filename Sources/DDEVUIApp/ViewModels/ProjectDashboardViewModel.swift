@@ -251,6 +251,11 @@ public final class ProjectDashboardViewModel {
     public let statusPollInterval: Duration
     @ObservationIgnored private var statusPollTask: Task<Void, Never>?
 
+    /// In-flight thumbnail-capture task. Captures are fire-and-forget off the hot refresh path;
+    /// this handle is exposed (internal) so tests can deterministically await capture completion.
+    @ObservationIgnored private var thumbnailCaptureTask: Task<Void, Never>?
+    @ObservationIgnored private var isCapturingThumbnails = false
+
     public init(
         ddevService: DDEVServicing = DDEVCommandService(),
         projectCache: ProjectCacheStoring = FileProjectCacheStore(),
@@ -1637,8 +1642,15 @@ public final class ProjectDashboardViewModel {
 
         let loadedProjects = try await ddevService.listProjects()
         let enrichedProjects = await enrichProjectsWithDetails(loadedProjects)
+        let previous = projects
         applyProjects(enrichedProjects)
         try? await projectCache.saveProjects(enrichedProjects)
+        await thumbnailStore.prune(keeping: Set(enrichedProjects.map(\.id)))
+        enqueueCaptures(Self.projectsToCapture(
+            current: enrichedProjects,
+            previous: previous,
+            existing: Set(thumbnails.keys)
+        ))
     }
 
     private func refreshProjectsFromDDEVInBackground() async {
@@ -1667,8 +1679,9 @@ public final class ProjectDashboardViewModel {
     }
 
     /// Captures each project's homepage serially (one web view at a time), preferring `primaryURL`
-    /// and retrying once with `httpURL` if the first attempt fails. Persists + exposes each PNG.
-    /// Awaitable so callers/tests can sequence it; production callers spawn it off the hot path.
+    /// and retrying once with `httpURL` if the first attempt fails. Exposes each PNG in `thumbnails`
+    /// and attempts to persist it via `thumbnailStore` (disk failures are swallowed — the in-memory
+    /// thumbnail is still shown for the session). Awaitable so production spawns it off the hot path.
     func captureThumbnails(for projects: [DDEVProject]) async {
         for project in projects {
             guard let primary = project.primaryURL else { continue }
@@ -1682,10 +1695,20 @@ public final class ProjectDashboardViewModel {
         }
     }
 
-    /// Fire-and-forget capture so the hot refresh path is never blocked on web views.
+    /// The currently in-flight capture task, or nil when idle. Test seam only.
+    var pendingThumbnailCaptures: Task<Void, Never>? { thumbnailCaptureTask }
+
+    /// Fire-and-forget capture so the hot refresh path is never blocked on web views. Serialized:
+    /// if a capture run is already in flight, this is a no-op — the next refresh re-evaluates what's
+    /// still missing once the in-flight run finishes, so overlapping WKWebView loops can't pile up
+    /// on the status poll.
     private func enqueueCaptures(_ projects: [DDEVProject]) {
-        guard !projects.isEmpty else { return }
-        Task { [weak self] in await self?.captureThumbnails(for: projects) }
+        guard !projects.isEmpty, !isCapturingThumbnails else { return }
+        isCapturingThumbnails = true
+        thumbnailCaptureTask = Task { [weak self] in
+            await self?.captureThumbnails(for: projects)
+            self?.isCapturingThumbnails = false
+        }
     }
 
     private func loadCachedProjects() async -> Bool {
@@ -1704,6 +1727,7 @@ public final class ProjectDashboardViewModel {
         // Busy entries are kept so an in-flight command that briefly drops from the list isn't lost.
         let liveIDs = Set(projects.map(\.id))
         commandStates = commandStates.filter { liveIDs.contains($0.key) || $0.value.isBusy }
+        thumbnails = thumbnails.filter { liveIDs.contains($0.key) }
 
         // Drop group memberships for projects that no longer exist so counts/filters stay honest.
         var didPruneGroups = false
