@@ -12,160 +12,27 @@ struct OverviewTabContent: View {
     private var details: DDEVProjectDetails? { viewModel.selectedProjectDetails }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            environmentSection
-            urlsSection
-            servicesSection
-            databaseCredentialsSection
+        Grid(alignment: .topLeading, horizontalSpacing: 12, verticalSpacing: 12) {
+            GridRow {
+                servicesCard
+                databaseCard
+            }
+            GridRow {
+                environmentCard
+                    .gridCellColumns(2)
+            }
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 20)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var environmentSection: some View {
-        InspectorSection("Environment") {
-            VStack(alignment: .leading, spacing: 8) {
-                metaRow("PHP version", trailing: {
-                    HStack(spacing: 6) {
-                        Text(project.phpVersion ?? "Unknown")
-                            .font(.system(.body, design: .monospaced))
-                        Menu {
-                            ForEach(viewModel.supportedPHPVersions, id: \.self) { version in
-                                Button("PHP \(version)") {
-                                    Task { await viewModel.setPHPVersionForSelectedProject(version) }
-                                }
-                                .disabled(project.phpVersion == version)
-                            }
-                        } label: {
-                            Text("Change")
-                        }
-                        .menuStyle(.borderlessButton)
-                        .fixedSize()
-                        .disabled(viewModel.isSelectedProjectBusy)
-                    }
-                })
-
-                // Bind to the *live* Xdebug state (ddev xdebug status), not describe's config value.
-                // Only present for a running project (the only time the live state is meaningful).
-                if let xdebugEnabled = viewModel.selectedProjectXdebugEnabled {
-                    metaRow("Xdebug", trailing: {
-                        Toggle("Xdebug", isOn: Binding(
-                            get: { xdebugEnabled },
-                            set: { newValue in Task { await viewModel.setXdebugForSelectedProject(newValue) } }
-                        ))
-                        .labelsHidden()
-                        .toggleStyle(.switch)
-                        .controlSize(.small)
-                        .disabled(viewModel.isSelectedProjectBusy)
-                    })
-                }
-
-                // A17 — live XHGui/XHProf profiling toggle, same shape as Xdebug. XHGui is DDEV's
-                // XHProf UI; live state comes from `ddev xhgui status`. (No `ddev blackfire` command
-                // exists in this DDEV, so Blackfire is intentionally not surfaced.)
-                if let xhguiEnabled = viewModel.selectedProjectXHGuiEnabled {
-                    metaRow("XHProf (XHGui)", trailing: {
-                        Toggle("XHProf", isOn: Binding(
-                            get: { xhguiEnabled },
-                            set: { newValue in Task { await viewModel.setXHGuiForSelectedProject(newValue) } }
-                        ))
-                        .labelsHidden()
-                        .toggleStyle(.switch)
-                        .controlSize(.small)
-                        .disabled(viewModel.isSelectedProjectBusy)
-                    })
-                }
-
-                metaRow("Project type", trailing: {
-                    Text(project.projectType.displayName)
-                        .foregroundStyle(.secondary)
-                })
-
-                if !project.docroot.isEmpty {
-                    metaRow("Docroot", trailing: {
-                        Text(project.docroot)
-                            .font(.system(.body, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                    })
-                }
-
-                if let mutagen = project.mutagenStatus, project.mutagenEnabled {
-                    metaRow("Mutagen", trailing: {
-                        Text(mutagen)
-                            .foregroundStyle(.secondary)
-                    })
-                }
-
-                HStack(spacing: 8) {
-                    // B8 — open the raw .ddev/ files in the editor instead of building fragile
-                    // GUI forms for advanced config.
-                    Button {
-                        workspaceOpener.openFolder(project.appRoot + "/.ddev", editor: viewModel.effectiveDefaultEditor)
-                    } label: {
-                        Label(".ddev/", systemImage: "folder")
-                    }
-                    Button {
-                        workspaceOpener.openFile(project.appRoot + "/.ddev/config.yaml", editor: viewModel.effectiveDefaultEditor)
-                    } label: {
-                        Label("config.yaml", systemImage: "doc.text")
-                    }
-
-                    Spacer()
-
-                    Button {
-                        showConfigEditor = true
-                    } label: {
-                        Label("Edit Config", systemImage: "slider.horizontal.3")
-                    }
-                    .disabled(viewModel.isSelectedProjectBusy)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-            }
-        }
-    }
+    // MARK: Services
 
     @ViewBuilder
-    private var urlsSection: some View {
-        // A1 — one place to open every URL the project exposes, including add-on service UIs
-        // (phpMyAdmin, Adminer, …) derived from the live describe detail.
-        let links = projectLaunchLinks(project, details)
-
-        if !links.isEmpty || project.xhguiStatus == .disabled {
-            InspectorSection("Open") {
-                FlowHStack(spacing: 8) {
-                    ForEach(links) { link in
-                        Button {
-                            workspaceOpener.openURL(link.url)
-                        } label: {
-                            Label(link.name, systemImage: link.systemImage)
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                    }
-
-                    if project.xhguiStatus == .disabled {
-                        Button {
-                            Task { await viewModel.enableXHGuiForSelectedProject() }
-                        } label: {
-                            Label("Enable XHGui", systemImage: "chart.bar.xaxis")
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                    }
-                }
-                .disabled(project.status != .running)
-            }
-        }
-    }
-
-    // A4 — per-service health + the ephemeral 127.0.0.1 ports Docker assigned, plus router and
-    // ssh-agent health. Surfaces partial/unhealthy states the single status badge flattens.
-    @ViewBuilder
-    private var servicesSection: some View {
-        if let details, !details.services.isEmpty {
-            InspectorSection("Services") {
+    private var servicesCard: some View {
+        InspectorCard("Services") {
+            if let details, !details.services.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(details.services) { service in
                         ServiceRow(service: service, workspaceOpener: workspaceOpener)
@@ -177,16 +44,26 @@ struct OverviewTabContent: View {
                         ServiceHealthRow(label: "SSH agent", status: ssh)
                     }
                 }
+            } else {
+                Text(project.status == .running ? "Loading services…" : "Start the project to see its services.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
     }
 
-    // A3 — copyable database credentials. Only shown for a running project (the dbinfo only exists
-    // then), and the password is masked until revealed.
+    // MARK: Database credentials
+
     @ViewBuilder
-    private var databaseCredentialsSection: some View {
-        if project.status == .running, let db = details?.databaseInfo {
-            InspectorSection("Database Credentials") {
+    private var databaseCard: some View {
+        let databaseTool = viewModel.effectiveDefaultDatabaseTool
+        let canOpenTool = project.status == .running && databaseTool != nil
+        InspectorCard(
+            "Database",
+            headerActionTitle: canOpenTool ? "Open in \(databaseTool!.displayName)" : nil,
+            headerAction: canOpenTool ? { Task { await viewModel.launchDefaultDatabaseTool() } } : nil
+        ) {
+            if project.status == .running, let db = details?.databaseInfo {
                 VStack(alignment: .leading, spacing: 6) {
                     CopyableRow(label: "Database", value: db.name)
                     CopyableRow(label: "Username", value: db.username)
@@ -202,16 +79,130 @@ struct OverviewTabContent: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     }
+                    if viewModel.effectiveDefaultDatabaseTool == nil {
+                        Label("Install TablePlus, Sequel Ace, Querious, or DBeaver to open databases here.", systemImage: "info.circle")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
+            } else {
+                Text("Start the project to see database credentials.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
     }
 
-    private func metaRow<Trailing: View>(_ label: String, @ViewBuilder trailing: () -> Trailing) -> some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text(label)
-                .foregroundStyle(.secondary)
-            Spacer()
+    // MARK: Environment
+
+    private var environmentCard: some View {
+        InspectorCard("Environment") {
+            VStack(alignment: .leading, spacing: 10) {
+                Grid(alignment: .leading, horizontalSpacing: 24, verticalSpacing: 8) {
+                    GridRow {
+                        envRow("PHP version") {
+                            HStack(spacing: 6) {
+                                Text(project.phpVersion ?? "Unknown")
+                                    .font(.system(.body, design: .monospaced))
+                                Menu {
+                                    ForEach(viewModel.supportedPHPVersions, id: \.self) { version in
+                                        Button("PHP \(version)") {
+                                            Task { await viewModel.setPHPVersionForSelectedProject(version) }
+                                        }
+                                        .disabled(project.phpVersion == version)
+                                    }
+                                } label: { Text("Change") }
+                                .menuStyle(.borderlessButton)
+                                .fixedSize()
+                                .disabled(viewModel.isSelectedProjectBusy)
+                            }
+                        }
+                        envRow("Project type") {
+                            Text(project.projectType.displayName).foregroundStyle(.secondary)
+                        }
+                    }
+                    if !project.docroot.isEmpty || (project.mutagenEnabled && project.mutagenStatus != nil) {
+                        GridRow {
+                            if !project.docroot.isEmpty {
+                                envRow("Docroot") {
+                                    Text(project.docroot)
+                                        .font(.system(.body, design: .monospaced))
+                                        .foregroundStyle(.secondary)
+                                }
+                            } else {
+                                Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
+                            }
+                            if let mutagen = project.mutagenStatus, project.mutagenEnabled {
+                                envRow("Mutagen") { Text(mutagen).foregroundStyle(.secondary) }
+                            } else {
+                                Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
+                            }
+                        }
+                    }
+                    if viewModel.selectedProjectXdebugEnabled != nil || viewModel.selectedProjectXHGuiEnabled != nil {
+                        GridRow {
+                            if let xdebugEnabled = viewModel.selectedProjectXdebugEnabled {
+                                envRow("Xdebug") {
+                                    Toggle("Xdebug", isOn: Binding(
+                                        get: { xdebugEnabled },
+                                        set: { newValue in Task { await viewModel.setXdebugForSelectedProject(newValue) } }
+                                    ))
+                                    .labelsHidden().toggleStyle(.switch).controlSize(.small)
+                                    .disabled(viewModel.isSelectedProjectBusy)
+                                }
+                            } else {
+                                Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
+                            }
+                            if let xhguiEnabled = viewModel.selectedProjectXHGuiEnabled {
+                                envRow("XHProf (XHGui)") {
+                                    Toggle("XHProf", isOn: Binding(
+                                        get: { xhguiEnabled },
+                                        set: { newValue in Task { await viewModel.setXHGuiForSelectedProject(newValue) } }
+                                    ))
+                                    .labelsHidden().toggleStyle(.switch).controlSize(.small)
+                                    .disabled(viewModel.isSelectedProjectBusy)
+                                }
+                            } else {
+                                Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
+                            }
+                        }
+                    }
+                }
+
+                if project.xhguiStatus == .disabled {
+                    Button {
+                        Task { await viewModel.enableXHGuiForSelectedProject() }
+                    } label: {
+                        Label("Enable XHGui", systemImage: "chart.bar.xaxis")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(project.status != .running || viewModel.isSelectedProjectBusy)
+                }
+
+                HStack(spacing: 8) {
+                    Button {
+                        workspaceOpener.openFolder(project.appRoot + "/.ddev", editor: viewModel.effectiveDefaultEditor)
+                    } label: { Label(".ddev/", systemImage: "folder") }
+                    Button {
+                        workspaceOpener.openFile(project.appRoot + "/.ddev/config.yaml", editor: viewModel.effectiveDefaultEditor)
+                    } label: { Label("config.yaml", systemImage: "doc.text") }
+                    Spacer()
+                    Button {
+                        showConfigEditor = true
+                    } label: { Label("Edit Config", systemImage: "slider.horizontal.3") }
+                    .disabled(viewModel.isSelectedProjectBusy)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+        }
+    }
+
+    private func envRow<Trailing: View>(_ label: String, @ViewBuilder trailing: () -> Trailing) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(label).foregroundStyle(.secondary)
+            Spacer(minLength: 8)
             trailing()
         }
         .font(.callout)
