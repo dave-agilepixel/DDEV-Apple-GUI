@@ -3,7 +3,8 @@ import Foundation
 public protocol ThumbnailStoring: Sendable {
     /// All cached thumbnails, keyed by project id. Read once on launch. Missing dir → empty.
     func loadAll() async -> [String: Data]
-    /// Persist (overwrite) one project's PNG.
+    /// Persist (overwrite) one project's PNG. `projectID` must be a path-safe identifier
+    /// (ddev project names are); it is also sanitized defensively before use as a filename.
     func save(_ data: Data, projectID: String) async throws
     /// Delete cached files for projects no longer present.
     func prune(keeping liveIDs: Set<String>) async
@@ -22,11 +23,15 @@ public struct FileThumbnailStore: ThumbnailStoring {
             .appendingPathComponent("thumbnails", isDirectory: true)
     }
 
-    /// Project ids are ddev project names; replace path separators so an id can't escape `directory`.
-    private func fileURL(for projectID: String) -> URL {
-        let safe = projectID.replacingOccurrences(of: "/", with: "_")
+    /// Project ids are ddev project names (already path-safe). Sanitization is a traversal-safety
+    /// net only — `/` and `:` are neutralised so an id can never escape `directory`.
+    static func safeFilename(for projectID: String) -> String {
+        projectID.replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: ":", with: "_")
-        return directory.appendingPathComponent("\(safe).png", isDirectory: false)
+    }
+
+    private func fileURL(for projectID: String) -> URL {
+        directory.appendingPathComponent("\(Self.safeFilename(for: projectID)).png", isDirectory: false)
     }
 
     public func loadAll() async -> [String: Data] {
@@ -52,12 +57,13 @@ public struct FileThumbnailStore: ThumbnailStoring {
     }
 
     public func prune(keeping liveIDs: Set<String>) async {
+        let liveSafe = Set(liveIDs.map(Self.safeFilename))
         guard let entries = try? FileManager.default.contentsOfDirectory(
             at: directory, includingPropertiesForKeys: nil
         ) else { return }
         for url in entries where url.pathExtension == "png" {
             let id = url.deletingPathExtension().lastPathComponent
-            if !liveIDs.contains(id) {
+            if !liveSafe.contains(id) {
                 try? FileManager.default.removeItem(at: url)
             }
         }

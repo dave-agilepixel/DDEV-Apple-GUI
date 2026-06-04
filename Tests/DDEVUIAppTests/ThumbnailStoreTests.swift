@@ -35,7 +35,7 @@ final class ThumbnailStoreTests: XCTestCase {
         await store.prune(keeping: ["keep"])
 
         let all = await store.loadAll()
-        XCTAssertEqual(Array(all.keys), ["keep"])
+        XCTAssertEqual(Set(all.keys), ["keep"])
     }
 
     func testSavedFileIsOwnerOnly() async throws {
