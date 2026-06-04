@@ -13,7 +13,7 @@ struct DatabaseOperationsView: View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Text("Database")
+                    Text("Import / Export")
                         .sectionHeaderStyle()
                     Spacer()
                 }
