@@ -1,0 +1,92 @@
+import Foundation
+
+public protocol ThumbnailStoring: Sendable {
+    /// All cached thumbnails, keyed by project id. Read once on launch. Missing dir → empty.
+    func loadAll() async -> [String: Data]
+    /// Persist (overwrite) one project's thumbnail (JPEG). `projectID` must be a path-safe identifier
+    /// (ddev project names are); it is also sanitized defensively before use as a filename.
+    func save(_ data: Data, projectID: String) async throws
+    /// Delete cached files for projects no longer present.
+    func prune(keeping liveIDs: Set<String>) async
+}
+
+/// Disk-backed JPEG cache, one `<id>.jpg` per project. Non-actor-isolated value type with `async`
+/// members, so encode + disk I/O run off the `@MainActor` caller (mirrors `FileProjectCacheStore`).
+public struct FileThumbnailStore: ThumbnailStoring {
+    private let directory: URL
+
+    public init(directory: URL? = nil) {
+        self.directory = directory ?? FileManager.default.urls(
+            for: .applicationSupportDirectory, in: .userDomainMask
+        )[0]
+            .appendingPathComponent("DDEVUI", isDirectory: true)
+            .appendingPathComponent("thumbnails", isDirectory: true)
+    }
+
+    /// Project ids are ddev project names (already path-safe). Sanitization is a traversal-safety
+    /// net only — `/` and `:` are neutralised so an id can never escape `directory`.
+    static func safeFilename(for projectID: String) -> String {
+        projectID.replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: ":", with: "_")
+    }
+
+    /// On-disk format: lossy JPEG (small files — a thumbnail is a recognition cue, not hi-fi).
+    /// Single source of truth so save/load/prune can't drift on the extension.
+    private static let fileExtension = "jpg"
+
+    private func fileURL(for projectID: String) -> URL {
+        directory.appendingPathComponent("\(Self.safeFilename(for: projectID)).\(Self.fileExtension)", isDirectory: false)
+    }
+
+    public func loadAll() async -> [String: Data] {
+        guard let entries = try? FileManager.default.contentsOfDirectory(
+            at: directory, includingPropertiesForKeys: nil
+        ) else { return [:] }
+
+        var result: [String: Data] = [:]
+        for url in entries where url.pathExtension == Self.fileExtension {
+            if let data = try? Data(contentsOf: url) {
+                result[url.deletingPathExtension().lastPathComponent] = data
+            }
+        }
+        return result
+    }
+
+    public func save(_ data: Data, projectID: String) async throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = fileURL(for: projectID)
+        try data.write(to: url, options: .atomic)
+        // Owner-only: machine-only cache, not world-readable (mirrors the project cache, audit S1).
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+    }
+
+    public func prune(keeping liveIDs: Set<String>) async {
+        let liveSafe = Set(liveIDs.map(Self.safeFilename))
+        guard let entries = try? FileManager.default.contentsOfDirectory(
+            at: directory, includingPropertiesForKeys: nil
+        ) else { return }
+        for url in entries where url.pathExtension == Self.fileExtension {
+            let id = url.deletingPathExtension().lastPathComponent
+            if !liveSafe.contains(id) {
+                try? FileManager.default.removeItem(at: url)
+            }
+        }
+    }
+}
+
+public final class InMemoryThumbnailStore: ThumbnailStoring, @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: [String: Data]
+
+    public init(thumbnails: [String: Data] = [:]) { self.storage = thumbnails }
+
+    public func loadAll() async -> [String: Data] { lock.withLock { storage } }
+
+    public func save(_ data: Data, projectID: String) async throws {
+        lock.withLock { storage[projectID] = data }
+    }
+
+    public func prune(keeping liveIDs: Set<String>) async {
+        lock.withLock { storage = storage.filter { liveIDs.contains($0.key) } }
+    }
+}

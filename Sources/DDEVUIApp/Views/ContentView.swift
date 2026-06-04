@@ -255,7 +255,9 @@ private struct FolderToConfigure: Identifiable {
 #Preview {
     ContentView(
         viewModel: ProjectDashboardViewModel(
-            ddevService: DDEVCommandService(commandRunner: PreviewCommandRunner())
+            ddevService: DDEVCommandService(commandRunner: PreviewCommandRunner()),
+            thumbnailer: StubWebsiteThumbnailer(),
+            thumbnailStore: InMemoryThumbnailStore()
         ),
         prerequisites: PrerequisiteMonitor(
             service: StaticPrerequisiteService(

@@ -230,6 +230,15 @@ struct ProjectInspectorView: View {
 
     private func header(_ project: DDEVProject) -> some View {
         VStack(alignment: .leading, spacing: 10) {
+            ProjectThumbnailView(
+                thumbnail: viewModel.thumbnails[project.id],
+                fallbackSymbol: project.projectType.symbol,
+                cornerRadius: 10
+            )
+            .frame(maxWidth: 360)
+            .frame(height: 200)
+            .accessibilityLabel("Homepage preview for \(project.name)")
+
             HStack(alignment: .firstTextBaseline, spacing: 12) {
                 Text(project.name)
                     .font(.largeTitle.bold())

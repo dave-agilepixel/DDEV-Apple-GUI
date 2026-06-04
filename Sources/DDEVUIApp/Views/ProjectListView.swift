@@ -211,10 +211,12 @@ private struct ProjectRow: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
-            Image(systemName: project.projectType.symbol)
-                .font(.title3)
-                .foregroundStyle(.tint)
-                .frame(width: 28, alignment: .center)
+            ProjectThumbnailView(
+                thumbnail: viewModel.thumbnails[project.id],
+                fallbackSymbol: project.projectType.symbol
+            )
+            .frame(width: 36, height: 36)
+            .accessibilityLabel("Homepage preview for \(project.name)")
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
