@@ -285,6 +285,7 @@ public final class ProjectDashboardViewModel {
     deinit {
         statusPollTask?.cancel()
         shareTask?.cancel()
+        thumbnailCaptureTask?.cancel()
     }
 
     // MARK: - Preferences (forwarded to PreferencesModel)
@@ -1684,6 +1685,7 @@ public final class ProjectDashboardViewModel {
     /// thumbnail is still shown for the session). Awaitable so production spawns it off the hot path.
     func captureThumbnails(for projects: [DDEVProject]) async {
         for project in projects {
+            guard !Task.isCancelled else { break }
             guard let primary = project.primaryURL else { continue }
             var data = await thumbnailer.capture(url: primary)
             if data == nil, let http = project.httpURL, http != primary {
@@ -1706,8 +1708,8 @@ public final class ProjectDashboardViewModel {
         guard !projects.isEmpty, !isCapturingThumbnails else { return }
         isCapturingThumbnails = true
         thumbnailCaptureTask = Task { [weak self] in
+            defer { self?.isCapturingThumbnails = false }
             await self?.captureThumbnails(for: projects)
-            self?.isCapturingThumbnails = false
         }
     }
 
