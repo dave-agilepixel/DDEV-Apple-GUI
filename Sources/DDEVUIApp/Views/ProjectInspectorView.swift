@@ -229,48 +229,49 @@ struct ProjectInspectorView: View {
     // MARK: - Header
 
     private func header(_ project: DDEVProject) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        HStack(alignment: .top, spacing: 16) {
             ProjectThumbnailView(
                 thumbnail: viewModel.thumbnails[project.id],
                 fallbackSymbol: project.projectType.symbol,
-                cornerRadius: 10
+                cornerRadius: 9
             )
-            .frame(maxWidth: 360)
-            .frame(height: 200)
+            .frame(width: 168, height: 96)
             .accessibilityLabel("Homepage preview for \(project.name)")
 
-            HStack(alignment: .firstTextBaseline, spacing: 12) {
-                Text(project.name)
-                    .font(.largeTitle.bold())
-                    .lineLimit(1)
-
-                ProjectStatusBadge(status: project.status)
-            }
-
-            HStack(spacing: 14) {
-                Label(project.projectType.displayName, systemImage: project.projectType.symbol)
-                if let php = project.phpVersion {
-                    Label("PHP \(php)", systemImage: "swift")
-                        .labelStyle(.titleAndIcon)
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Text(project.name)
+                        .font(.largeTitle.bold())
+                        .lineLimit(1)
+                    ProjectStatusBadge(status: project.status)
                 }
-                if project.mutagenEnabled {
-                    Label("Mutagen", systemImage: "arrow.triangle.2.circlepath")
+
+                HStack(spacing: 14) {
+                    Label(project.projectType.displayName, systemImage: project.projectType.symbol)
+                    if let php = project.phpVersion {
+                        Label("PHP \(php)", systemImage: "swift")
+                            .labelStyle(.titleAndIcon)
+                    }
+                    if project.mutagenEnabled {
+                        Label("Mutagen", systemImage: "arrow.triangle.2.circlepath")
+                    }
+                }
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .labelStyle(InspectorChipLabelStyle())
+
+                HStack(spacing: 6) {
+                    Image(systemName: "folder")
+                        .foregroundStyle(.tertiary)
+                    Text(project.appRoot)
+                        .font(.system(.callout, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
                 }
             }
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
-            .labelStyle(InspectorChipLabelStyle())
-
-            HStack(spacing: 6) {
-                Image(systemName: "folder")
-                    .foregroundStyle(.tertiary)
-                Text(project.appRoot)
-                    .font(.system(.callout, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
+            Spacer(minLength: 0)
         }
     }
 
