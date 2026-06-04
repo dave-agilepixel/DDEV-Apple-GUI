@@ -78,8 +78,20 @@ public final class WebKitWebsiteThumbnailer: NSObject, WebsiteThumbnailing {
         try? await Task.sleep(for: settle)
         guard !Task.isCancelled else { return nil }   // bail if cancelled during the settle window
 
+        // When the user's macOS "Show scroll bars" setting is "Always", the off-screen web view
+        // paints legacy (space-reserving) scrollbars on any page taller or wider than the viewport,
+        // and `takeSnapshot` bakes those gutters into the image as a white border down the right edge
+        // and along the bottom. WKWebView ignores `::-webkit-scrollbar`/`overflow` styling on the
+        // main frame, so the reliable fix is to measure the space the scrollbars reserve and crop it
+        // out of the snapshot rect.
+        let inset = await scrollbarInset(in: webView)
+
         let config = WKSnapshotConfiguration()
-        config.rect = CGRect(origin: .zero, size: viewport)   // top viewport only
+        config.rect = CGRect(
+            x: 0, y: 0,
+            width: viewport.width - inset.width,
+            height: viewport.height - inset.height
+        )
         let image: NSImage? = await withCheckedContinuation { continuation in
             webView.takeSnapshot(with: config) { image, _ in
                 continuation.resume(returning: image)
@@ -87,6 +99,26 @@ public final class WebKitWebsiteThumbnailer: NSObject, WebsiteThumbnailing {
         }
         guard let image else { return nil }
         return Self.downscaledJPEG(image, targetWidth: targetWidth)
+    }
+
+    /// The space (in points) the main-frame scrollbars reserve along the right and bottom edges.
+    /// `innerWidth`/`innerHeight` include the scrollbar; the documentElement's `clientWidth`/
+    /// `clientHeight` exclude it — the difference is the legacy scrollbar thickness (0 when the page
+    /// doesn't overflow, or when the system uses overlay scrollbars).
+    private func scrollbarInset(in webView: WKWebView) async -> CGSize {
+        let js = """
+        [window.innerWidth - document.documentElement.clientWidth,
+         window.innerHeight - document.documentElement.clientHeight]
+        """
+        return await withCheckedContinuation { (c: CheckedContinuation<CGSize, Never>) in
+            webView.evaluateJavaScript(js) { value, _ in
+                guard let pair = value as? [Double], pair.count == 2 else {
+                    c.resume(returning: .zero)
+                    return
+                }
+                c.resume(returning: CGSize(width: max(0, pair[0]), height: max(0, pair[1])))
+            }
+        }
     }
 
     /// Downscale to `targetWidth` (keeping aspect) and encode JPEG. A lossy thumbnail is fine here —

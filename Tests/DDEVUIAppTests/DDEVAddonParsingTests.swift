@@ -70,6 +70,39 @@ final class DDEVAddonParsingTests: XCTestCase {
         ])
     }
 
+    func testParsesInstalledPascalCaseRawSchema() throws {
+        // Real output of `ddev add-on list --installed --json-output` (DDEV v1.25.2): the
+        // `raw` objects use PascalCase keys (Name/Repository/Version/Dependencies), unlike the
+        // registry/search schema. Previously this decoded to zero add-ons and the UI dumped
+        // the raw JSON blob.
+        let output = #"""
+        {"level":"info","msg":"┌────────┬─────────┬───────────────────────────┬───────────────────────────┐\n│ ADD-ON │ VERSION │ REPOSITORY                │ DATE INSTALLED            │\n├────────┼─────────┼───────────────────────────┼───────────────────────────┤\n│ bun    │ 1.1.2   │ OpenForgeProject/ddev-bun │ 2026-05-28T09:52:47+01:00 │\n└────────┴─────────┴───────────────────────────┴───────────────────────────┘\n","raw":[{"Name":"bun","Repository":"OpenForgeProject/ddev-bun","Version":"1.1.2","Dependencies":null,"InstallDate":"2026-05-28T09:52:47+01:00","ProjectFiles":["commands/web/bun","web-build/Dockerfile.bun"],"GlobalFiles":[],"RemovalActions":[]}],"time":"2026-06-04T15:31:56+01:00"}
+        """#
+
+        let addons = try DDEVAddon.parseListOutput(output)
+
+        XCTAssertEqual(addons.count, 1)
+        XCTAssertEqual(addons.first?.repository, "OpenForgeProject/ddev-bun")
+        XCTAssertEqual(addons.first?.version, "1.1.2")
+        XCTAssertEqual(addons.first?.dependencies, [])
+        // `installName` must be DDEV's canonical name ("bun"), the identifier
+        // `ddev add-on remove` expects — not the "ddev-bun" repo path tail.
+        XCTAssertEqual(addons.first?.installName, "bun")
+    }
+
+    func testParsesInstalledRawSchemaWithDependencies() throws {
+        let output = #"""
+        {"raw":[{"Name":"keydb","Repository":"kwasib/ddev-keydb","Version":"v0.1.0","Dependencies":["redis"],"InstallDate":"2026-05-28T09:52:47+01:00"}]}
+        """#
+
+        let addons = try DDEVAddon.parseListOutput(output)
+
+        XCTAssertEqual(addons.first?.repository, "kwasib/ddev-keydb")
+        XCTAssertEqual(addons.first?.version, "v0.1.0")
+        XCTAssertEqual(addons.first?.dependencies, ["redis"])
+        XCTAssertEqual(addons.first?.installName, "keydb")
+    }
+
     func testFallsBackToConservativeTableParsing() throws {
         let output = """
         ┌─────────────────────────┬────────────────────────────────────────┐
