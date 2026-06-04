@@ -50,22 +50,24 @@ public final class WebKitWebsiteThumbnailer: NSObject, WebsiteThumbnailing {
 
     public func capture(url: URL) async -> Data? {
         let webView = WKWebView(frame: CGRect(origin: .zero, size: viewport))
-        let coordinator = LoadCoordinator(host: url.host)
+        let coordinator = LoadCoordinator(host: url.host(percentEncoded: false))
         webView.navigationDelegate = coordinator
 
-        // Host off-screen so the page actually lays out and paints.
+        // The window is never shown on-screen; it exists only to give the web view a backing
+        // layer tree so the page actually lays out and paints for the snapshot.
         let window = NSWindow(
             contentRect: CGRect(origin: .zero, size: viewport),
             styleMask: [.borderless], backing: .buffered, defer: false
         )
+        window.isReleasedWhenClosed = false
         window.alphaValue = 0
         window.contentView?.addSubview(webView)
-        window.orderOut(nil)
 
         defer {
             webView.stopLoading()
             webView.navigationDelegate = nil
             webView.removeFromSuperview()
+            window.close()
         }
 
         webView.load(URLRequest(url: url))
@@ -92,6 +94,8 @@ public final class WebKitWebsiteThumbnailer: NSObject, WebsiteThumbnailing {
               let source = NSBitmapImageRep(data: tiff),
               source.pixelsWide > 0 else { return nil }
 
+        // targetWidth is measured in physical pixels of the snapshot bitmap. On a Retina display
+        // that is ~2× the logical point width — intentional and fine for a thumbnail indicator.
         let scale = targetWidth / CGFloat(source.pixelsWide)
         let size = NSSize(width: targetWidth, height: CGFloat(source.pixelsHigh) * scale)
 
@@ -112,6 +116,7 @@ private final class LoadCoordinator: NSObject, WKNavigationDelegate {
     private let host: String?
     private var continuation: CheckedContinuation<Bool, Never>?
     private var settled = false
+    private var timeoutTask: Task<Void, Never>?
 
     init(host: String?) { self.host = host }
 
@@ -120,13 +125,16 @@ private final class LoadCoordinator: NSObject, WKNavigationDelegate {
         // The timeout task calls finish(false) after sleeping; the delegate callbacks call
         // finish(true/false) on navigation events. finish() is guarded by `settled` so
         // the continuation is resumed exactly once regardless of ordering.
-        await withCheckedContinuation { c in
+        let result = await withCheckedContinuation { (c: CheckedContinuation<Bool, Never>) in
             self.continuation = c
-            Task { @MainActor in
+            self.timeoutTask = Task { @MainActor [weak self] in
                 try? await Task.sleep(for: timeout)
-                self.finish(false)
+                self?.finish(false)
             }
         }
+        timeoutTask?.cancel()
+        timeoutTask = nil
+        return result
     }
 
     private func finish(_ success: Bool) {
