@@ -76,6 +76,7 @@ public final class WebKitWebsiteThumbnailer: NSObject, WebsiteThumbnailing {
         guard loaded else { return nil }
 
         try? await Task.sleep(for: settle)
+        guard !Task.isCancelled else { return nil }   // bail if cancelled during the settle window
 
         let config = WKSnapshotConfiguration()
         config.rect = CGRect(origin: .zero, size: viewport)   // top viewport only
