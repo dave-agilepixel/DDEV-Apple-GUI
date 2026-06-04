@@ -234,6 +234,13 @@ public final class ProjectDashboardViewModel {
     private let customCommandDiscovery: CustomCommandDiscovering
     private let scheduler: CommandScheduler
     private let notifier: NotificationScheduling
+    private let thumbnailer: WebsiteThumbnailing
+    private let thumbnailStore: ThumbnailStoring
+
+    /// Cached homepage screenshots, PNG `Data` keyed by project id. Painted on launch from disk,
+    /// refreshed off the hot path for running projects that are missing one or just (re)started.
+    /// `Data` (not `NSImage`) keeps this view model Sendable-clean; the view layer decodes.
+    public private(set) var thumbnails: [DDEVProject.ID: Data] = [:]
     private var selectedProjectFallback: DDEVProject?
     /// Guards `refreshProjectsFromDDEV` against overlapping runs (audit M4). Internal
     /// serialization only — `isRunningGlobalCommand` is what drives the UI spinner.
@@ -253,6 +260,8 @@ public final class ProjectDashboardViewModel {
         notifier: NotificationScheduling = NoopNotificationScheduler(),
         groupStore: ProjectGroupStoring = UserDefaultsProjectGroupStore(),
         customCommandDiscovery: CustomCommandDiscovering = FileSystemCustomCommandDiscovery(),
+        thumbnailer: WebsiteThumbnailing = WebKitWebsiteThumbnailer(),
+        thumbnailStore: ThumbnailStoring = FileThumbnailStore(),
         statusPollInterval: Duration = .seconds(10)
     ) {
         self.ddevService = ddevService
@@ -262,6 +271,8 @@ public final class ProjectDashboardViewModel {
         self.preferencesModel = PreferencesModel(preferencesStore: preferencesStore, appAvailability: appAvailability)
         self.groupStore = groupStore
         self.customCommandDiscovery = customCommandDiscovery
+        self.thumbnailer = thumbnailer
+        self.thumbnailStore = thumbnailStore
         self.statusPollInterval = statusPollInterval
         self.groups = groupStore.loadGroups()
     }
@@ -447,6 +458,7 @@ public final class ProjectDashboardViewModel {
     }
 
     public func loadCachedProjectsThenRefresh() async {
+        thumbnails = await thumbnailStore.loadAll()
         let loadedCachedProjects = await loadCachedProjects()
 
         if loadedCachedProjects {
@@ -1635,6 +1647,45 @@ public final class ProjectDashboardViewModel {
         } catch {
             return
         }
+    }
+
+    /// Running projects that need a (re)capture: those missing a thumbnail, plus those that just
+    /// transitioned stopped→running (so a restart refreshes the shot even if one already exists).
+    /// Stopped projects are never captured — they have no reachable URL.
+    static func projectsToCapture(
+        current: [DDEVProject],
+        previous: [DDEVProject],
+        existing: Set<DDEVProject.ID>
+    ) -> [DDEVProject] {
+        let wasRunning = Set(previous.filter { $0.status == .running }.map(\.id))
+        return current.filter { project in
+            guard project.status == .running else { return false }
+            let missing = !existing.contains(project.id)
+            let newlyRunning = !wasRunning.contains(project.id)
+            return missing || newlyRunning
+        }
+    }
+
+    /// Captures each project's homepage serially (one web view at a time), preferring `primaryURL`
+    /// and retrying once with `httpURL` if the first attempt fails. Persists + exposes each PNG.
+    /// Awaitable so callers/tests can sequence it; production callers spawn it off the hot path.
+    func captureThumbnails(for projects: [DDEVProject]) async {
+        for project in projects {
+            guard let primary = project.primaryURL else { continue }
+            var data = await thumbnailer.capture(url: primary)
+            if data == nil, let http = project.httpURL, http != primary {
+                data = await thumbnailer.capture(url: http)
+            }
+            guard let data else { continue }
+            thumbnails[project.id] = data
+            try? await thumbnailStore.save(data, projectID: project.id)
+        }
+    }
+
+    /// Fire-and-forget capture so the hot refresh path is never blocked on web views.
+    private func enqueueCaptures(_ projects: [DDEVProject]) {
+        guard !projects.isEmpty else { return }
+        Task { [weak self] in await self?.captureThumbnails(for: projects) }
     }
 
     private func loadCachedProjects() async -> Bool {

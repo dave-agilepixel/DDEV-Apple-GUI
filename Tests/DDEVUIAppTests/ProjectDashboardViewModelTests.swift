@@ -1729,6 +1729,85 @@ final class ProjectDashboardViewModelTests: XCTestCase {
 
         XCTAssertEqual(viewModel.selectedProjectIDs, ["aqua-pura", "agilebugs"])
     }
+
+    // MARK: - Thumbnails
+
+    func testProjectsToCaptureIncludesRunningMissingAndNewlyRunning() {
+        let runningMissing = DDEVProject.sampleWordPress                       // aqua-pura, running, no thumb
+        let runningHasThumb = DDEVProject.sampleWithBothURLs                   // dual-url, running, has thumb
+        let stopped = DDEVProject.sampleLaravel.withStatus(.stopped)          // agilebugs, stopped
+
+        let toCapture = ProjectDashboardViewModel.projectsToCapture(
+            current: [runningMissing, runningHasThumb, stopped],
+            previous: [runningHasThumb],                       // dual-url was already running
+            existing: [runningHasThumb.id]                     // dual-url already has a thumbnail
+        )
+
+        XCTAssertEqual(toCapture.map(\.id), ["aqua-pura"])                       // missing → in
+        XCTAssertFalse(toCapture.contains { $0.id == "dual-url" })              // has-thumb + not-new → out
+        XCTAssertFalse(toCapture.contains { $0.id == "agilebugs" })            // stopped → never captured
+    }
+
+    func testProjectsToCaptureIncludesNewlyRunningEvenWithThumbnail() {
+        let restarted = DDEVProject.sampleWordPress                            // now running
+        let toCapture = ProjectDashboardViewModel.projectsToCapture(
+            current: [restarted],
+            previous: [restarted.withStatus(.stopped)],          // was stopped → newly running
+            existing: [restarted.id]                             // already has a thumbnail
+        )
+        XCTAssertEqual(toCapture.map(\.id), [restarted.id])      // transition forces a refresh
+    }
+
+    func testCaptureThumbnailsStoresAndExposesPNG() async {
+        let project = DDEVProject.sampleWordPress                 // primaryURL https://aqua-pura.ddev.site
+        let png = Data([0xAA, 0xBB])
+        let thumbnailer = StubWebsiteThumbnailer(responses: [project.primaryURL!.absoluteString: png])
+        let store = InMemoryThumbnailStore()
+        let viewModel = ProjectDashboardViewModel(
+            ddevService: FakeDDEVService(projects: []),
+            thumbnailer: thumbnailer,
+            thumbnailStore: store
+        )
+
+        await viewModel.captureThumbnails(for: [project])
+
+        XCTAssertEqual(viewModel.thumbnails[project.id], png)
+        let stored = await store.loadAll()
+        XCTAssertEqual(stored[project.id], png)
+    }
+
+    func testCaptureFallsBackToHTTPWhenHTTPSReturnsNil() async {
+        let project = DDEVProject.sampleWithBothURLs              // helper below
+        let png = Data([0xCC])
+        let thumbnailer = StubWebsiteThumbnailer(
+            responses: [project.httpURL!.absoluteString: png]    // only http succeeds
+        )
+        let viewModel = ProjectDashboardViewModel(
+            ddevService: FakeDDEVService(projects: []),
+            thumbnailer: thumbnailer,
+            thumbnailStore: InMemoryThumbnailStore()
+        )
+
+        await viewModel.captureThumbnails(for: [project])
+
+        XCTAssertEqual(viewModel.thumbnails[project.id], png)
+        XCTAssertEqual(thumbnailer.capturedURLs.map(\.absoluteString),
+                       [project.primaryURL!.absoluteString, project.httpURL!.absoluteString])
+    }
+
+    func testLaunchLoadsCachedThumbnailsFromStore() async {
+        let store = InMemoryThumbnailStore(thumbnails: ["aqua-pura": Data([0x1])])
+        let viewModel = ProjectDashboardViewModel(
+            ddevService: FakeDDEVService(projects: [.sampleWordPress]),
+            projectCache: InMemoryProjectCacheStore(),          // never touch the real on-disk cache
+            thumbnailer: StubWebsiteThumbnailer(),
+            thumbnailStore: store
+        )
+
+        await viewModel.loadCachedProjectsThenRefresh()
+
+        XCTAssertEqual(viewModel.thumbnails["aqua-pura"], Data([0x1]))
+    }
 }
 
 private struct StubCustomCommandDiscovery: CustomCommandDiscovering {
@@ -2291,6 +2370,22 @@ extension DDEVProject {
             phpVersion: phpVersion
         )
     }
+
+    /// A running project exposing BOTH an https primary and a distinct http URL (for fallback tests).
+    static let sampleWithBothURLs = DDEVProject(
+        name: "dual-url",
+        appRoot: "/tmp/dual-url",
+        shortRoot: "~/dual-url",
+        status: .running,
+        statusDescription: "running",
+        projectType: .wordpress,
+        docroot: "",
+        primaryURL: URL(string: "https://dual-url.ddev.site"),
+        httpURL: URL(string: "http://dual-url.ddev.site"),
+        httpsURL: URL(string: "https://dual-url.ddev.site"),
+        mailpitURL: nil, mailpitHTTPSURL: nil, xhguiURL: nil, xhguiHTTPSURL: nil,
+        xhguiStatus: nil, mutagenEnabled: false, mutagenStatus: nil, phpVersion: nil
+    )
 
     func withXHGuiURLs(xhguiURL: URL?, xhguiHTTPSURL: URL?) -> DDEVProject {
         DDEVProject(
