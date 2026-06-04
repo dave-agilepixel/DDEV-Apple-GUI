@@ -175,7 +175,7 @@ struct ProjectInspectorView: View {
             if let warning = viewModel.dbMatchWarning {
                 DBDriftBanner(message: warning) { showConfigEditor = true }
             }
-            tabPicker
+            tabRow(project)
         }
         .padding(.horizontal, 24)
         .padding(.top, 20)
@@ -204,6 +204,59 @@ struct ProjectInspectorView: View {
             }
         }
         .animation(.snappy, value: hasUnseenLogActivity)
+    }
+
+    private func tabRow(_ project: DDEVProject) -> some View {
+        HStack(spacing: 10) {
+            tabPicker
+            Spacer(minLength: 8)
+            urlStrip(project)
+        }
+    }
+
+    /// Persistent quick-launch for the project's browser URLs, shown across every tab. `Primary` is
+    /// omitted (it's the Open Site button). Common links are chips; the remainder fold into a menu.
+    @ViewBuilder
+    private func urlStrip(_ project: DDEVProject) -> some View {
+        let links = projectLaunchLinks(project, viewModel.selectedProjectDetails)
+            .filter { $0.name != "Primary" }
+        if !links.isEmpty {
+            let inline = Array(links.prefix(3))
+            let overflow = Array(links.dropFirst(3))
+            HStack(spacing: 6) {
+                Text("Open")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .textCase(.uppercase)
+                ForEach(inline) { link in
+                    Button {
+                        workspaceOpener.openURL(link.url)
+                    } label: {
+                        Label(link.name, systemImage: link.systemImage)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+                if !overflow.isEmpty {
+                    Menu {
+                        ForEach(overflow) { link in
+                            Button {
+                                workspaceOpener.openURL(link.url)
+                            } label: {
+                                Label(link.name, systemImage: link.systemImage)
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                    .controlSize(.small)
+                }
+            }
+            .labelStyle(.titleAndIcon)
+            .disabled(project.status != .running)
+        }
     }
 
     @ViewBuilder
