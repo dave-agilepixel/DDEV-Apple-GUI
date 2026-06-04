@@ -3,27 +3,42 @@ import SwiftUI
 
 // MARK: - Manage tab
 
-/// A10 — tool passthrough: run `ddev composer/npm/drush/wp` with free-text arguments. The available
-/// tools are derived from the project type. Output flows into the Logs-tab command output.
-struct ToolRunnerView: View {
+/// Run card — framework + custom command dropdowns plus one unified runner (tools + exec).
+struct RunCard: View {
     let project: DDEVProject
     var viewModel: ProjectDashboardViewModel
 
-    private var tools: [DDEVTool] { DDEVTool.tools(for: project.projectType) }
-
     var body: some View {
-        InspectorSection("Tools") {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Run a tool inside the web container with your own arguments (ddev <tool> …). Output appears under the Logs tab.")
+        InspectorCard("Run", systemImage: "play.fill") {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Commands and tools run inside the project's containers. Output appears in the Logs tab.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                ForEach(tools) { tool in
-                    ToolRow(tool: tool, project: project, viewModel: viewModel)
+                FrameworkCommandLauncherView(project: project, viewModel: viewModel)
+
+                if !viewModel.customCommands.isEmpty {
+                    Menu {
+                        ForEach(viewModel.customCommands) { command in
+                            Button {
+                                Task { await viewModel.runCustomCommandForSelectedProject(command) }
+                            } label: {
+                                Label(command.name, systemImage: "terminal")
+                            }
+                            .help(command.description ?? "ddev \(command.name) (\(command.scope.rawValue))")
+                        }
+                    } label: {
+                        Label("Custom", systemImage: "star")
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                    .disabled(viewModel.isSelectedProjectBusy)
                 }
 
+                RunCommandRow(project: project, viewModel: viewModel)
+
                 if project.status != .running {
-                    Text("Start the project to run tools.")
+                    Text("Start the project to run commands.")
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }
@@ -32,28 +47,21 @@ struct ToolRunnerView: View {
     }
 }
 
-struct ToolRow: View {
-    let tool: DDEVTool
+/// The unified runner: a target picker (tools + exec services) + an arguments field + Run.
+private struct RunCommandRow: View {
     let project: DDEVProject
     var viewModel: ProjectDashboardViewModel
 
+    @State private var target: RunTarget
     @State private var args = ""
 
-    var body: some View {
-        HStack(spacing: 8) {
-            Text(tool.displayName)
-                .font(.callout.weight(.medium))
-                .frame(width: 84, alignment: .leading)
-
-            TextField(tool.placeholder, text: $args)
-                .textFieldStyle(.roundedBorder)
-                .font(.system(.body, design: .monospaced))
-                .onSubmit(run)
-
-            Button("Run", action: run)
-                .disabled(!canRun)
-        }
+    init(project: DDEVProject, viewModel: ProjectDashboardViewModel) {
+        self.project = project
+        self.viewModel = viewModel
+        _target = State(initialValue: RunTarget.available(for: project.projectType).first ?? .exec(.web))
     }
+
+    private var targets: [RunTarget] { RunTarget.available(for: project.projectType) }
 
     private var canRun: Bool {
         project.status == .running
@@ -61,93 +69,44 @@ struct ToolRow: View {
             && !args.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    private func run() {
-        guard canRun else { return }
-        let toRun = args
-        Task { await viewModel.runToolForSelectedProject(tool, argumentString: toRun) }
-    }
-}
-
-/// A9 — run an arbitrary one-shot command inside a service container (`ddev exec`). Output flows
-/// into the normal command-output channel (Logs tab). The command is run via `bash -c`, so pipes
-/// and shell features work.
-struct ExecConsoleView: View {
-    let project: DDEVProject
-    var viewModel: ProjectDashboardViewModel
-
-    @State private var command = ""
-    @State private var service: DDEVExecService = .web
-
     var body: some View {
-        InspectorSection("Run Command") {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Run a one-shot shell command inside a container (ddev exec). Output appears under the Logs tab.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                HStack(spacing: 8) {
-                    Picker("Service", selection: $service) {
-                        ForEach(DDEVExecService.allCases) { service in
-                            Text(service.displayName).tag(service)
-                        }
-                    }
-                    .labelsHidden()
-                    .fixedSize()
-
-                    TextField("e.g. composer install", text: $command)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(.body, design: .monospaced))
-                        .onSubmit(run)
-
-                    Button("Run", action: run)
-                        .buttonStyle(.borderedProminent)
-                        .disabled(!canRun)
+        HStack(spacing: 8) {
+            Picker("Target", selection: $target) {
+                ForEach(targets) { t in
+                    Text(t.label).tag(t)
                 }
+            }
+            .labelsHidden()
+            .fixedSize()
 
-                if project.status != .running {
-                    Text("Start the project to run commands in its containers.")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                }
+            TextField(target.placeholder, text: $args)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(.body, design: .monospaced))
+                .onSubmit(run)
+
+            Button("Run", action: run)
+                .buttonStyle(.borderedProminent)
+                .disabled(!canRun)
+        }
+        // If the project's type changes in place (e.g. a config edit), the available targets shift —
+        // clamp the selection so a stale target can't fire the wrong tool.
+        .onChange(of: targets) { _, newTargets in
+            if !newTargets.contains(target) {
+                target = newTargets.first ?? .exec(.web)
             }
         }
     }
 
-    private var canRun: Bool {
-        project.status == .running
-            && !viewModel.isSelectedProjectBusy
-            && !command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
     private func run() {
         guard canRun else { return }
-        let toRun = command
-        Task { await viewModel.runExecForSelectedProject(command: toRun, service: service) }
-    }
-}
-
-/// A13 — surfaces user-defined custom commands (`.ddev/commands/…`) discovered at runtime as
-/// buttons. Hidden entirely when the project defines none.
-struct CustomCommandsView: View {
-    let project: DDEVProject
-    var viewModel: ProjectDashboardViewModel
-
-    var body: some View {
-        if !viewModel.customCommands.isEmpty {
-            InspectorSection("Custom Commands") {
-                FlowHStack(spacing: 8) {
-                    ForEach(viewModel.customCommands) { command in
-                        Button {
-                            Task { await viewModel.runCustomCommandForSelectedProject(command) }
-                        } label: {
-                            Label(command.name, systemImage: "terminal")
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .help(command.description ?? "ddev \(command.name) (\(command.scope.rawValue))")
-                    }
-                }
-                .disabled(viewModel.isSelectedProjectBusy)
+        let toRun = args
+        let chosen = target
+        Task {
+            switch chosen {
+            case .tool(let tool):
+                await viewModel.runToolForSelectedProject(tool, argumentString: toRun)
+            case .exec(let service):
+                await viewModel.runExecForSelectedProject(command: toRun, service: service)
             }
         }
     }
@@ -243,10 +202,7 @@ struct ManageTabContent: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                FrameworkCommandLauncherView(project: project, viewModel: viewModel)
-                CustomCommandsView(project: project, viewModel: viewModel)
-                ToolRunnerView(project: project, viewModel: viewModel)
-                ExecConsoleView(project: project, viewModel: viewModel)
+                RunCard(project: project, viewModel: viewModel)
                 DatabaseOperationsView(project: project, viewModel: viewModel)
                 ShareView(project: project, viewModel: viewModel)
                 SnapshotManagerView(project: project, viewModel: viewModel)
