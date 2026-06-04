@@ -86,11 +86,13 @@ public final class WebKitWebsiteThumbnailer: NSObject, WebsiteThumbnailing {
             }
         }
         guard let image else { return nil }
-        return Self.downscaledPNG(image, targetWidth: targetWidth)
+        return Self.downscaledJPEG(image, targetWidth: targetWidth)
     }
 
-    /// Downscale to `targetWidth` (keeping aspect) and encode PNG.
-    private static func downscaledPNG(_ image: NSImage, targetWidth: CGFloat) -> Data? {
+    /// Downscale to `targetWidth` (keeping aspect) and encode JPEG. A lossy thumbnail is fine here —
+    /// it's a recognition cue, not a hi-fi image — and JPEG is far smaller than PNG for photographic
+    /// homepages (PNG screenshots ran into the megabytes).
+    private static func downscaledJPEG(_ image: NSImage, targetWidth: CGFloat) -> Data? {
         guard let tiff = image.tiffRepresentation,
               let source = NSBitmapImageRep(data: tiff),
               source.pixelsWide > 0 else { return nil }
@@ -107,7 +109,7 @@ public final class WebKitWebsiteThumbnailer: NSObject, WebsiteThumbnailing {
 
         guard let outTiff = target.tiffRepresentation,
               let rep = NSBitmapImageRep(data: outTiff) else { return nil }
-        return rep.representation(using: .png, properties: [:])
+        return rep.representation(using: .jpeg, properties: [.compressionFactor: 0.6])
     }
 }
 

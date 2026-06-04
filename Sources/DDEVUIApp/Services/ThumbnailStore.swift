@@ -3,14 +3,14 @@ import Foundation
 public protocol ThumbnailStoring: Sendable {
     /// All cached thumbnails, keyed by project id. Read once on launch. Missing dir → empty.
     func loadAll() async -> [String: Data]
-    /// Persist (overwrite) one project's PNG. `projectID` must be a path-safe identifier
+    /// Persist (overwrite) one project's thumbnail (JPEG). `projectID` must be a path-safe identifier
     /// (ddev project names are); it is also sanitized defensively before use as a filename.
     func save(_ data: Data, projectID: String) async throws
     /// Delete cached files for projects no longer present.
     func prune(keeping liveIDs: Set<String>) async
 }
 
-/// Disk-backed PNG cache, one `<id>.png` per project. Non-actor-isolated value type with `async`
+/// Disk-backed JPEG cache, one `<id>.jpg` per project. Non-actor-isolated value type with `async`
 /// members, so encode + disk I/O run off the `@MainActor` caller (mirrors `FileProjectCacheStore`).
 public struct FileThumbnailStore: ThumbnailStoring {
     private let directory: URL
@@ -30,8 +30,12 @@ public struct FileThumbnailStore: ThumbnailStoring {
             .replacingOccurrences(of: ":", with: "_")
     }
 
+    /// On-disk format: lossy JPEG (small files — a thumbnail is a recognition cue, not hi-fi).
+    /// Single source of truth so save/load/prune can't drift on the extension.
+    private static let fileExtension = "jpg"
+
     private func fileURL(for projectID: String) -> URL {
-        directory.appendingPathComponent("\(Self.safeFilename(for: projectID)).png", isDirectory: false)
+        directory.appendingPathComponent("\(Self.safeFilename(for: projectID)).\(Self.fileExtension)", isDirectory: false)
     }
 
     public func loadAll() async -> [String: Data] {
@@ -40,7 +44,7 @@ public struct FileThumbnailStore: ThumbnailStoring {
         ) else { return [:] }
 
         var result: [String: Data] = [:]
-        for url in entries where url.pathExtension == "png" {
+        for url in entries where url.pathExtension == Self.fileExtension {
             if let data = try? Data(contentsOf: url) {
                 result[url.deletingPathExtension().lastPathComponent] = data
             }
@@ -61,7 +65,7 @@ public struct FileThumbnailStore: ThumbnailStoring {
         guard let entries = try? FileManager.default.contentsOfDirectory(
             at: directory, includingPropertiesForKeys: nil
         ) else { return }
-        for url in entries where url.pathExtension == "png" {
+        for url in entries where url.pathExtension == Self.fileExtension {
             let id = url.deletingPathExtension().lastPathComponent
             if !liveSafe.contains(id) {
                 try? FileManager.default.removeItem(at: url)

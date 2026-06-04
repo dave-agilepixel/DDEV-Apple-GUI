@@ -45,7 +45,7 @@ final class ThumbnailStoreTests: XCTestCase {
         try await store.save(Data([0x1]), projectID: "aqua-pura")
 
         let perms = try FileManager.default.attributesOfItem(
-            atPath: dir.appendingPathComponent("aqua-pura.png").path
+            atPath: dir.appendingPathComponent("aqua-pura.jpg").path
         )[.posixPermissions] as? NSNumber
         XCTAssertEqual(perms?.int16Value, 0o600)
     }
