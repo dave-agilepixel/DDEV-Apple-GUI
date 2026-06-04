@@ -201,12 +201,25 @@ struct ManageTabContent: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: 12) {
                 RunCard(project: project, viewModel: viewModel)
-                DatabaseOperationsView(project: project, viewModel: viewModel)
-                ShareView(project: project, viewModel: viewModel)
-                SnapshotManagerView(project: project, viewModel: viewModel)
-                AddonManagerView(project: project, viewModel: viewModel)
+
+                Grid(alignment: .topLeading, horizontalSpacing: 12, verticalSpacing: 12) {
+                    GridRow {
+                        InspectorCard("Database", systemImage: "cylinder.split.1x2") {
+                            VStack(alignment: .leading, spacing: 12) {
+                                DatabaseOperationsView(project: project, viewModel: viewModel)
+                                SnapshotManagerView(project: project, viewModel: viewModel)
+                            }
+                        }
+                        InspectorCard("Project", systemImage: "gearshape") {
+                            VStack(alignment: .leading, spacing: 12) {
+                                ShareView(project: project, viewModel: viewModel)
+                                AddonManagerView(project: project, viewModel: viewModel)
+                            }
+                        }
+                    }
+                }
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 20)
