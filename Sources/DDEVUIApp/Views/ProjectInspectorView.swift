@@ -321,9 +321,8 @@ struct ProjectInspectorView: View {
 
                 Spacer(minLength: 0)
 
-                shellSplitButton(project, isRunning: isRunning)
-                editorSplitButton(project)
                 databaseSplitButton(isRunning: isRunning)
+                openMenu(project, isRunning: isRunning)
             }
 
             if viewModel.effectiveDefaultDatabaseTool == nil {
@@ -340,61 +339,33 @@ struct ProjectInspectorView: View {
         .glassEffect(in: .rect(cornerRadius: 14))
     }
 
-    /// A11 — hands a shell session off to Terminal.app. Primary action opens `ddev ssh` in the web
-    /// container; the menu offers the db shell and the MySQL client. Mirrors the editor/database
-    /// split-button idiom for visual consistency.
-    private func shellSplitButton(_ project: DDEVProject, isRunning: Bool) -> some View {
-        HStack(spacing: 0) {
-            Button {
-                workspaceOpener.openShell(in: project.appRoot, target: .webShell)
-            } label: {
-                Label("Shell", systemImage: "terminal")
-            }
-            .help("Open a shell in the web container in Terminal")
-
-            Menu {
+    /// Demoted launchers (shell + editor) — daily-but-not-primary, folded into one menu so they
+    /// don't eat the action bar.
+    private func openMenu(_ project: DDEVProject, isRunning: Bool) -> some View {
+        Menu {
+            Section("Shell") {
                 ForEach(DDEVShellTarget.allCases) { target in
                     Button {
                         workspaceOpener.openShell(in: project.appRoot, target: target)
                     } label: {
                         Label(target.displayName, systemImage: target.systemImage)
                     }
+                    .disabled(!isRunning)
                 }
-            } label: {
-                EmptyView()
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.visible)
-            .fixedSize()
-        }
-        .controlSize(.large)
-        .fixedSize()
-        .disabled(!isRunning)
-    }
-
-    private func editorSplitButton(_ project: DDEVProject) -> some View {
-        HStack(spacing: 0) {
-            Button {
-                workspaceOpener.openFolder(project.appRoot, editor: viewModel.effectiveDefaultEditor)
-            } label: {
-                Label("Open", systemImage: "square.and.pencil")
-            }
-
-            Menu {
+            Section("Editor") {
                 ForEach(viewModel.availableEditors) { editor in
                     Button(editor.displayName) {
                         workspaceOpener.openFolder(project.appRoot, editor: editor)
                     }
                 }
-            } label: {
-                EmptyView()
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.visible)
-            .fixedSize()
+        } label: {
+            Label("Open", systemImage: "arrow.up.forward.app")
         }
-        .controlSize(.large)
+        .menuStyle(.borderlessButton)
         .fixedSize()
+        .controlSize(.large)
     }
 
     private func databaseSplitButton(isRunning: Bool) -> some View {
