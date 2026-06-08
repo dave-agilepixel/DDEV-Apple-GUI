@@ -1848,6 +1848,40 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertNil(stored["agilebugs"])                            // and from disk
         XCTAssertNotNil(viewModel.thumbnails["aqua-pura"])          // survivor kept
     }
+
+    func testEmptyListRefreshDoesNotWipeGroupsCacheOrThumbnails() async {
+        // `ddev list -j` exits 0 with an empty list both when the user genuinely has zero
+        // projects AND when the daemon/registry isn't warm yet (common right after launch
+        // or an app update). An empty *successful* list is ambiguous, so it must never
+        // destroy persisted groups or caches — otherwise a transient empty result silently
+        // wipes user data. A thrown error already takes the safe path; this guards the
+        // empty-but-succeeded path that does not throw.
+        let group = ProjectGroup(name: "Clients", colorID: .blue, memberIDs: ["aqua-pura"])
+        let groupStore = InMemoryProjectGroupStore(groups: [group])
+        let cache = InMemoryProjectCacheStore(projects: [.sampleWordPress])
+        let thumbnails = InMemoryThumbnailStore(thumbnails: ["aqua-pura": Data([0x1])])
+
+        let viewModel = ProjectDashboardViewModel(
+            ddevService: FakeDDEVService(projects: []),   // exit 0, empty list — NOT an error
+            projectCache: cache,
+            groupStore: groupStore,
+            thumbnailer: StubWebsiteThumbnailer(),
+            thumbnailStore: thumbnails
+        )
+
+        await viewModel.refresh()
+        await viewModel.pendingThumbnailCaptures?.value
+
+        XCTAssertEqual(viewModel.groups.first?.memberIDs, ["aqua-pura"],
+                       "Group membership must survive an empty refresh in memory")
+        XCTAssertEqual(groupStore.loadGroups().first?.memberIDs, ["aqua-pura"],
+                       "Group membership must not be persisted away on an empty refresh")
+        XCTAssertEqual(cache.projects, [.sampleWordPress],
+                       "The on-disk project cache must not be overwritten with an empty list")
+        let storedThumbnails = await thumbnails.loadAll()
+        XCTAssertEqual(storedThumbnails["aqua-pura"], Data([0x1]),
+                       "Thumbnails must not be pruned away on an empty refresh")
+    }
 }
 
 private struct StubCustomCommandDiscovery: CustomCommandDiscovering {

@@ -1642,6 +1642,14 @@ public final class ProjectDashboardViewModel {
         defer { isRefreshInFlight = false }
 
         let loadedProjects = try await ddevService.listProjects()
+        // An empty `ddev list` is ambiguous: ddev exits 0 with an empty list both when the
+        // user genuinely has zero projects AND when the daemon/registry isn't ready yet
+        // (common right after launch or an app update). Reconciling against an empty list
+        // would delete persisted group memberships, the project cache, and every cached
+        // thumbnail. We can't tell the two cases apart, so we treat empty as "no trustworthy
+        // data" and keep what we have rather than destroy it — the next non-empty refresh
+        // reconciles normally. A failed list throws instead and is handled by the caller.
+        guard !loadedProjects.isEmpty else { return }
         let enrichedProjects = await enrichProjectsWithDetails(loadedProjects)
         let previous = projects
         applyProjects(enrichedProjects)
