@@ -178,6 +178,7 @@ struct ContentView: View {
         switch item {
         case .projects: viewModel.projects.count
         case .running: viewModel.projects.filter { $0.status == .running }.count
+        case .paused: viewModel.projects.filter { $0.status == .paused }.count
         case .wordpress: viewModel.projects.filter { $0.isWordPress }.count
         case .diagnostics: nil
         case .settings: nil
@@ -291,6 +292,11 @@ private struct SettingsView: View {
                         .monospacedDigit()
                         .foregroundStyle(.green)
                 }
+                LabeledContent("Paused") {
+                    Text("\(viewModel.projects.filter { $0.status == .paused }.count)")
+                        .monospacedDigit()
+                        .foregroundStyle(.orange)
+                }
                 LabeledContent("WordPress") {
                     Text("\(viewModel.projects.filter { $0.isWordPress }.count)").monospacedDigit()
                 }
@@ -338,6 +344,17 @@ private struct SettingsView: View {
                     Label("Power Off All Projects", systemImage: "power")
                 }
                 .help("Stop all running projects and shared containers (ddev poweroff)")
+
+                Button {
+                    Task { await viewModel.stopPausedProjects() }
+                } label: {
+                    Label(
+                        "Stop Paused Projects (\(viewModel.projects.filter { $0.status == .paused }.count))",
+                        systemImage: "pause.circle"
+                    )
+                }
+                .disabled(viewModel.projects.allSatisfy { $0.status != .paused })
+                .help("Remove paused project containers and Docker networks without deleting databases")
 
                 Button(role: .destructive) {
                     confirmDeleteImages = true

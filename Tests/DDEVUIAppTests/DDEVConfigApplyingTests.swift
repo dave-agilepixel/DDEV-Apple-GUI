@@ -12,7 +12,8 @@ final class DDEVConfigApplyingTests: XCTestCase {
         xdebugEnabled: false,
         xhprofMode: .global,
         uploadDirs: ["web/uploads"],
-        additionalHostnames: ["www"]
+        additionalHostnames: ["www"],
+        additionalFQDNs: ["example.test"]
     )
 
     func testApplyingUpdatesOnlyTheChangedFieldSoSiblingIndicatorsStayAccurate() {
@@ -24,6 +25,7 @@ final class DDEVConfigApplyingTests: XCTestCase {
         XCTAssertEqual(updated.databaseType, base.databaseType)
         XCTAssertEqual(updated.uploadDirs, base.uploadDirs)
         XCTAssertEqual(updated.additionalHostnames, base.additionalHostnames)
+        XCTAssertEqual(updated.additionalFQDNs, base.additionalFQDNs)
     }
 
     func testApplyingDatabaseUpdatesBothTypeAndVersion() {
@@ -40,5 +42,6 @@ final class DDEVConfigApplyingTests: XCTestCase {
         XCTAssertTrue(base.applying(.xdebugEnabled(true)).xdebugEnabled)
         XCTAssertEqual(base.applying(.uploadDirs(["a", "b"])).uploadDirs, ["a", "b"])
         XCTAssertEqual(base.applying(.additionalHostnames(["x"])).additionalHostnames, ["x"])
+        XCTAssertEqual(base.applying(.additionalFQDNs(["example.test"])).additionalFQDNs, ["example.test"])
     }
 }

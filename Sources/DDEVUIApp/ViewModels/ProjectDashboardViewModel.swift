@@ -49,6 +49,7 @@ public protocol DDEVServicing: Sendable {
     func updateWordPressCore(in appRoot: String) async throws -> CommandResult
     func updateWordPressPlugins(in appRoot: String) async throws -> CommandResult
     func updateWordPressThemes(in appRoot: String) async throws -> CommandResult
+    func configureWordPressMultisite(_ options: WordPressMultisiteOptions, in appRoot: String) async throws -> CommandResult
     func start(projectName: String, onOutputLine: (@Sendable (String) -> Void)?) async throws -> CommandResult
     func restart(projectName: String, onOutputLine: (@Sendable (String) -> Void)?) async throws -> CommandResult
     func share(in appRoot: String, onOutputLine: (@Sendable (String) -> Void)?) async throws -> CommandResult
@@ -68,6 +69,7 @@ extension DDEVCommandService: DDEVServicing {}
 public enum ProjectSidebarItem: String, CaseIterable, Identifiable, Sendable {
     case projects
     case running
+    case paused
     case wordpress
     case diagnostics
     case settings
@@ -80,6 +82,8 @@ public enum ProjectSidebarItem: String, CaseIterable, Identifiable, Sendable {
             "Projects"
         case .running:
             "Running"
+        case .paused:
+            "Paused"
         case .wordpress:
             "WordPress"
         case .diagnostics:
@@ -95,6 +99,8 @@ public enum ProjectSidebarItem: String, CaseIterable, Identifiable, Sendable {
             "shippingbox"
         case .running:
             "play.circle"
+        case .paused:
+            "pause.circle"
         case .wordpress:
             "w.circle"
         case .diagnostics:
@@ -390,6 +396,7 @@ public final class ProjectDashboardViewModel {
                 switch selectedSidebarItem {
                 case .projects: true
                 case .running: project.status == .running
+                case .paused: project.status == .paused
                 case .wordpress: project.isWordPress
                 case .diagnostics: false
                 case .settings: false
@@ -565,9 +572,10 @@ public final class ProjectDashboardViewModel {
         batchScopeProjects.filter { $0.status != .running }
     }
 
-    /// Projects in the batch scope that are running (candidates for a batch stop).
+    /// Projects in the batch scope that still own runtime resources (candidates for a batch stop).
+    /// DDEV's paused state can keep Docker networks/containers around, so Stop must include it.
     public var stoppableProjectsInCurrentView: [DDEVProject] {
-        batchScopeProjects.filter { $0.status == .running }
+        batchScopeProjects.filter { $0.status == .running || $0.status == .paused }
     }
 
     public func startProjectsInCurrentView() async {
@@ -576,6 +584,11 @@ public final class ProjectDashboardViewModel {
 
     public func stopProjectsInCurrentView() async {
         await runBatch(stoppableProjectsInCurrentView) { await self.stop($0) }
+    }
+
+    public func stopPausedProjects() async {
+        let pausedProjects = projects.filter { $0.status == .paused }
+        await runBatch(pausedProjects) { await self.stop($0) }
     }
 
     private func runBatch(_ projects: [DDEVProject], _ action: @escaping @Sendable (DDEVProject) async -> Void) async {
@@ -985,6 +998,13 @@ public final class ProjectDashboardViewModel {
         guard let selectedProject, selectedProject.isWordPress else { return }
         await runProjectMutation(selectedProject) {
             try await self.ddevService.updateWordPressThemes(in: selectedProject.appRoot)
+        }
+    }
+
+    public func configureWordPressMultisite(_ options: WordPressMultisiteOptions) async {
+        guard let selectedProject, selectedProject.isWordPress, selectedProject.status == .running else { return }
+        await runProjectMutation(selectedProject, refresh: .fullList) {
+            try await self.ddevService.configureWordPressMultisite(options, in: selectedProject.appRoot)
         }
     }
 

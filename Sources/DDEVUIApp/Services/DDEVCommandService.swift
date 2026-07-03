@@ -395,6 +395,48 @@ public final class DDEVCommandService: Sendable {
         try await runDDEV(["wp", "theme", "update", "--all"], workingDirectory: appRoot)
     }
 
+    @discardableResult
+    public func configureWordPressMultisite(_ options: WordPressMultisiteOptions, in appRoot: String) async throws -> CommandResult {
+        let primaryURL = options.primaryURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !primaryURL.isEmpty else {
+            throw DDEVCommandValidationError.emptyWordPressMultisitePrimaryURL
+        }
+
+        if options.needsDDEVURLConfiguration {
+            let currentConfig = try DDEVConfig.parseYAML(
+                try await utilityConfigYAML(omitKeys: ["web_environment"], in: appRoot).stdout
+            )
+            let mergedHostnames = currentConfig.additionalHostnames.mergingDDEVAliases(options.additionalHostnames)
+            let mergedFQDNs = currentConfig.additionalFQDNs.mergingDDEVAliases(options.additionalFQDNs)
+
+            var configArguments = ["config"]
+            if mergedHostnames != currentConfig.additionalHostnames {
+                configArguments += DDEVConfigChange.additionalHostnames(mergedHostnames).ddevFlags
+            }
+            if mergedFQDNs != currentConfig.additionalFQDNs {
+                configArguments += DDEVConfigChange.additionalFQDNs(mergedFQDNs).ddevFlags
+            }
+
+            if configArguments.count > 1 {
+                _ = try await runDDEV(configArguments, workingDirectory: appRoot)
+                _ = try await runDDEV(["restart"], workingDirectory: appRoot)
+            }
+        }
+
+        var arguments = ["wp", "core", "multisite-convert", "--url=\(primaryURL)"]
+        if let title = options.networkTitle {
+            arguments.append("--title=\(title)")
+        }
+        if let basePath = options.basePath {
+            arguments.append("--base=\(basePath)")
+        }
+        if options.mode.usesSubdomains {
+            arguments.append("--subdomains")
+        }
+
+        return try await runDDEV(arguments, workingDirectory: appRoot)
+    }
+
     private func runDDEV(_ arguments: [String], workingDirectory: String? = nil) async throws -> CommandResult {
         try await commandRunner.run(CommandSpec(executable: ddevExecutable, arguments: arguments, workingDirectory: workingDirectory))
     }
@@ -492,7 +534,31 @@ public enum DDEVExecService: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-public enum DDEVCommandValidationError: Error, Equatable, Sendable {
+public enum DDEVCommandValidationError: LocalizedError, Equatable, Sendable {
     case emptyProjectCommand
     case dashPrefixedArgument(field: String, value: String)
+    case emptyWordPressMultisitePrimaryURL
+
+    public var errorDescription: String? {
+        switch self {
+        case .emptyProjectCommand:
+            "Project command cannot be empty."
+        case .dashPrefixedArgument(let field, let value):
+            "\(field) cannot start with '-': \(value)"
+        case .emptyWordPressMultisitePrimaryURL:
+            "WordPress multisite needs a primary URL."
+        }
+    }
+}
+
+private extension Array where Element == String {
+    func mergingDDEVAliases(_ aliases: [String]) -> [String] {
+        var merged = self
+        for alias in aliases {
+            if !merged.contains(alias) {
+                merged.append(alias)
+            }
+        }
+        return merged
+    }
 }

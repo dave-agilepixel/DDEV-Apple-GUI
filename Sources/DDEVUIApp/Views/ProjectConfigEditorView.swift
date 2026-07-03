@@ -16,6 +16,7 @@ struct ProjectConfigEditorView: View {
     @State private var xhprofMode = DDEVXHProfMode.global
     @State private var uploadDirsText = ""
     @State private var additionalHostnamesText = ""
+    @State private var additionalFQDNsText = ""
     @State private var confirmMigrate = false
 
     var body: some View {
@@ -296,6 +297,13 @@ struct ProjectConfigEditorView: View {
             } apply: {
                 await apply(.additionalHostnames(additionalHostnames))
             }
+
+            editableRow(title: "Additional FQDNs", hasChanges: additionalFQDNs != loadedConfig?.additionalFQDNs) {
+                TextField("example.test, shop.example.test", text: $additionalFQDNsText)
+                    .textFieldStyle(.roundedBorder)
+            } apply: {
+                await apply(.additionalFQDNs(additionalFQDNs))
+            }
         }
     }
 
@@ -332,6 +340,10 @@ struct ProjectConfigEditorView: View {
 
     private var additionalHostnames: [String] {
         commaList(from: additionalHostnamesText)
+    }
+
+    private var additionalFQDNs: [String] {
+        commaList(from: additionalFQDNsText)
     }
 
     private func editableRow<Control: View>(
@@ -381,6 +393,7 @@ struct ProjectConfigEditorView: View {
         xhprofMode = config.xhprofMode
         uploadDirsText = config.uploadDirs.joined(separator: ", ")
         additionalHostnamesText = config.additionalHostnames.joined(separator: ", ")
+        additionalFQDNsText = config.additionalFQDNs.joined(separator: ", ")
     }
 
     private func commaList(from text: String) -> [String] {

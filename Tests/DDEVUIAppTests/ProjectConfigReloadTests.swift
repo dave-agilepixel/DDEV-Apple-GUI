@@ -105,6 +105,7 @@ private final class SuspendedConfigDDEVService: DDEVServicing, @unchecked Sendab
     func updateWordPressCore(in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
     func updateWordPressPlugins(in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
     func updateWordPressThemes(in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
+    func configureWordPressMultisite(_ options: WordPressMultisiteOptions, in appRoot: String) async throws -> CommandResult { throw UnexpectedCallError() }
 }
 
 private actor AsyncGate {

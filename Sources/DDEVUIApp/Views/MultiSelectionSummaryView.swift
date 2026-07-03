@@ -45,14 +45,18 @@ struct MultiSelectionSummaryView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    /// "2 running · 1 stopped" over the batch scope. "stopped" covers every non-running status
-    /// (stopped/paused/unknown), matching what the Start button targets.
+    /// Shows the real lifecycle mix over the batch scope, so paused projects never read as stopped.
     private var statusBreakdown: String {
-        let running = viewModel.stoppableProjectsInCurrentView.count
-        let notRunning = viewModel.startableProjectsInCurrentView.count
+        let scopedProjects = viewModel.batchScopeProjects
+        let running = scopedProjects.filter { $0.status == .running }.count
+        let paused = scopedProjects.filter { $0.status == .paused }.count
+        let stopped = scopedProjects.filter { $0.status == .stopped }.count
+        let unknown = scopedProjects.filter { $0.status == .unknown }.count
         var parts: [String] = []
         if running > 0 { parts.append("\(running) running") }
-        if notRunning > 0 { parts.append("\(notRunning) stopped") }
+        if paused > 0 { parts.append("\(paused) paused") }
+        if stopped > 0 { parts.append("\(stopped) stopped") }
+        if unknown > 0 { parts.append("\(unknown) unknown") }
         return parts.isEmpty ? "None in the current view" : parts.joined(separator: " · ")
     }
 }

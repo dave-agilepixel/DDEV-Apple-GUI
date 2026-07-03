@@ -149,6 +149,92 @@ final class DDEVCommandServiceTests: XCTestCase {
         ])
     }
 
+    func testWordPressMultisiteMergesDDEVAliasesRestartsAndConverts() async throws {
+        let config = """
+        php_version: "8.4"
+        nodejs_version: "24"
+        database:
+          type: mariadb
+          version: "11.8"
+        webserver_type: nginx-fpm
+        additional_hostnames: [www]
+        additional_fqdns: [existing.test]
+        """
+        let runner = RecordingCommandRunner(results: [
+            .success(CommandResult.success(stdout: config)),
+            .success(CommandResult.success()),
+            .success(CommandResult.success()),
+            .success(CommandResult.success())
+        ])
+        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
+
+        _ = try await service.configureWordPressMultisite(
+            WordPressMultisiteOptions(
+                mode: .subdomains,
+                primaryURL: "https://aqua-pura.ddev.site",
+                networkTitle: "Aqua Network",
+                basePath: "/",
+                additionalHostnames: ["*.aqua-pura"],
+                additionalFQDNs: ["shop.test"]
+            ),
+            in: "/Users/dave/site"
+        )
+
+        XCTAssertEqual(runner.commands, [
+            CommandSpec(
+                executable: "ddev",
+                arguments: ["utility", "configyaml", "--full-yaml", "--omit-keys=web_environment"],
+                workingDirectory: "/Users/dave/site"
+            ),
+            CommandSpec(
+                executable: "ddev",
+                arguments: [
+                    "config",
+                    "--additional-hostnames=www,*.aqua-pura",
+                    "--additional-fqdns=existing.test,shop.test"
+                ],
+                workingDirectory: "/Users/dave/site"
+            ),
+            CommandSpec(executable: "ddev", arguments: ["restart"], workingDirectory: "/Users/dave/site"),
+            CommandSpec(
+                executable: "ddev",
+                arguments: [
+                    "wp",
+                    "core",
+                    "multisite-convert",
+                    "--url=https://aqua-pura.ddev.site",
+                    "--title=Aqua Network",
+                    "--base=/",
+                    "--subdomains"
+                ],
+                workingDirectory: "/Users/dave/site"
+            )
+        ])
+    }
+
+    func testWordPressMultisiteWithoutAliasesOnlyRunsWPCLIConvert() async throws {
+        let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
+        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
+
+        _ = try await service.configureWordPressMultisite(
+            WordPressMultisiteOptions(
+                mode: .subdirectories,
+                primaryURL: "https://aqua-pura.ddev.site",
+                networkTitle: nil,
+                basePath: nil
+            ),
+            in: "/Users/dave/site"
+        )
+
+        XCTAssertEqual(runner.commands, [
+            CommandSpec(
+                executable: "ddev",
+                arguments: ["wp", "core", "multisite-convert", "--url=https://aqua-pura.ddev.site"],
+                workingDirectory: "/Users/dave/site"
+            )
+        ])
+    }
+
     func testAddFolderCommandsUseSelectedFolderAsWorkingDirectory() async throws {
         let runner = RecordingCommandRunner(result: .success(CommandResult.success()))
         let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev")
@@ -661,7 +747,7 @@ private func XCTAssertThrowsValidationError(
 
 private final class RecordingCommandRunner: CommandRunning, @unchecked Sendable {
     private let lock = NSLock()
-    private let result: Result<CommandResult, Error>
+    private var results: [Result<CommandResult, Error>]
     private var recordedCommands: [CommandSpec] = []
 
     var commands: [CommandSpec] {
@@ -669,12 +755,20 @@ private final class RecordingCommandRunner: CommandRunning, @unchecked Sendable 
     }
 
     init(result: Result<CommandResult, Error>) {
-        self.result = result
+        self.results = [result]
+    }
+
+    init(results: [Result<CommandResult, Error>]) {
+        self.results = results
     }
 
     func run(_ spec: CommandSpec) async throws -> CommandResult {
-        lock.withLock {
+        let result = lock.withLock {
             recordedCommands.append(spec)
+            if results.count > 1 {
+                return results.removeFirst()
+            }
+            return results.first ?? .success(CommandResult.success())
         }
         return try result.get()
     }

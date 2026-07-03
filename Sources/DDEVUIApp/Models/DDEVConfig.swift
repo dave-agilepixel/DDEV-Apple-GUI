@@ -11,6 +11,7 @@ public struct DDEVConfig: Equatable, Sendable, CustomStringConvertible {
     public let xhprofMode: DDEVXHProfMode
     public let uploadDirs: [String]
     public let additionalHostnames: [String]
+    public let additionalFQDNs: [String]
 
     public init(
         phpVersion: String,
@@ -22,7 +23,8 @@ public struct DDEVConfig: Equatable, Sendable, CustomStringConvertible {
         xdebugEnabled: Bool,
         xhprofMode: DDEVXHProfMode,
         uploadDirs: [String],
-        additionalHostnames: [String]
+        additionalHostnames: [String],
+        additionalFQDNs: [String]
     ) {
         self.phpVersion = phpVersion
         self.nodeJSVersion = nodeJSVersion
@@ -34,6 +36,7 @@ public struct DDEVConfig: Equatable, Sendable, CustomStringConvertible {
         self.xhprofMode = xhprofMode
         self.uploadDirs = uploadDirs
         self.additionalHostnames = additionalHostnames
+        self.additionalFQDNs = additionalFQDNs
     }
 
     /// Returns a copy with only the field(s) addressed by `change` updated. The config editor
@@ -45,6 +48,7 @@ public struct DDEVConfig: Equatable, Sendable, CustomStringConvertible {
         var web = webserverType, perf = performanceMode
         var xdebug = xdebugEnabled, xhprof = xhprofMode
         var uploads = uploadDirs, hostnames = additionalHostnames
+        var fqdns = additionalFQDNs
 
         switch change {
         case .phpVersion(let value): php = value
@@ -56,6 +60,7 @@ public struct DDEVConfig: Equatable, Sendable, CustomStringConvertible {
         case .xhprofMode(let value): xhprof = value
         case .uploadDirs(let value): uploads = value
         case .additionalHostnames(let value): hostnames = value
+        case .additionalFQDNs(let value): fqdns = value
         }
 
         return DDEVConfig(
@@ -68,7 +73,8 @@ public struct DDEVConfig: Equatable, Sendable, CustomStringConvertible {
             xdebugEnabled: xdebug,
             xhprofMode: xhprof,
             uploadDirs: uploads,
-            additionalHostnames: hostnames
+            additionalHostnames: hostnames,
+            additionalFQDNs: fqdns
         )
     }
 
@@ -97,7 +103,8 @@ public struct DDEVConfig: Equatable, Sendable, CustomStringConvertible {
             xdebugEnabled: xdebugEnabled,
             xhprofMode: xhprofMode,
             uploadDirs: document.list("upload_dirs"),
-            additionalHostnames: document.list("additional_hostnames")
+            additionalHostnames: document.list("additional_hostnames"),
+            additionalFQDNs: document.list("additional_fqdns")
         )
     }
 
@@ -111,7 +118,8 @@ public struct DDEVConfig: Equatable, Sendable, CustomStringConvertible {
             "xdebugEnabled=\(xdebugEnabled)",
             "xhprofMode=\(xhprofMode.rawValue)",
             "uploadDirs=\(uploadDirs.joined(separator: ","))",
-            "additionalHostnames=\(additionalHostnames.joined(separator: ","))"
+            "additionalHostnames=\(additionalHostnames.joined(separator: ","))",
+            "additionalFQDNs=\(additionalFQDNs.joined(separator: ","))"
         ].joined(separator: "; ")
     }
 }
@@ -213,6 +221,7 @@ public enum DDEVConfigChange: Equatable, Sendable {
     case xhprofMode(DDEVXHProfMode)
     case uploadDirs([String])
     case additionalHostnames([String])
+    case additionalFQDNs([String])
 
     public var ddevFlags: [String] {
         switch self {
@@ -234,6 +243,8 @@ public enum DDEVConfigChange: Equatable, Sendable {
             ["--upload-dirs=\(dirs.ddevCommaList)"]
         case .additionalHostnames(let hostnames):
             ["--additional-hostnames=\(hostnames.ddevCommaList)"]
+        case .additionalFQDNs(let fqdns):
+            ["--additional-fqdns=\(fqdns.ddevCommaList)"]
         }
     }
 }

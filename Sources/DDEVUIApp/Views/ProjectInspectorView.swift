@@ -291,8 +291,9 @@ struct ProjectInspectorView: View {
                 .keyboardShortcut("o", modifiers: .command)
                 .disabled(!isRunning || project.primaryURL == nil)
 
-                if isRunning {
-                    // B6 — ⌘R is the primary lifecycle action (Restart when running, Start when stopped).
+                switch project.status {
+                case .running:
+                    // B6 — ⌘R is the primary lifecycle action (Restart when running, Start otherwise).
                     Button {
                         Task { await viewModel.restartSelectedProject() }
                     } label: {
@@ -308,7 +309,24 @@ struct ProjectInspectorView: View {
                     }
                     .controlSize(.large)
                     .keyboardShortcut(".", modifiers: .command)
-                } else {
+                case .paused:
+                    Button {
+                        Task { await viewModel.startSelectedProject() }
+                    } label: {
+                        Label("Start", systemImage: "play.fill")
+                    }
+                    .controlSize(.large)
+                    .keyboardShortcut("r", modifiers: .command)
+
+                    Button {
+                        Task { await viewModel.stopSelectedProject() }
+                    } label: {
+                        Label("Stop", systemImage: "stop.fill")
+                    }
+                    .controlSize(.large)
+                    .keyboardShortcut(".", modifiers: .command)
+
+                case .stopped, .unknown:
                     Button {
                         Task { await viewModel.startSelectedProject() }
                     } label: {
@@ -323,6 +341,13 @@ struct ProjectInspectorView: View {
                 shellSplitButton(project, isRunning: isRunning)
                 editorSplitButton(project)
                 databaseSplitButton(isRunning: isRunning)
+            }
+
+            if project.status == .paused {
+                Label("Paused projects can still reserve Docker network space. Stop to clean that up.",
+                      systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
             }
 
             if viewModel.effectiveDefaultDatabaseTool == nil {
@@ -453,20 +478,14 @@ struct ProjectStatusBadge: View {
     let status: DDEVProjectStatus
 
     var body: some View {
-        HStack(spacing: 6) {
-            Circle()
-                .fill(color)
-                .frame(width: 8, height: 8)
-                .overlay(
-                    Circle()
-                        .stroke(color.opacity(0.35), lineWidth: 4)
-                        .blur(radius: 2)
-                        .opacity(status == .running ? 1 : 0)
-                )
-            Text(label)
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(.secondary)
-        }
+        Label(label, systemImage: systemImage)
+            .font(.subheadline.weight(.medium))
+            .labelStyle(.titleAndIcon)
+            .foregroundStyle(color)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Capsule().fill(color.opacity(0.14)))
+            .help(helpText)
     }
 
     private var color: Color {
@@ -478,12 +497,34 @@ struct ProjectStatusBadge: View {
         }
     }
 
+    private var systemImage: String {
+        switch status {
+        case .running: "play.fill"
+        case .paused: "pause.fill"
+        case .stopped: "stop.fill"
+        case .unknown: "questionmark"
+        }
+    }
+
     private var label: String {
         switch status {
         case .running: "Running"
         case .paused: "Paused"
         case .stopped: "Stopped"
         case .unknown: "Unknown"
+        }
+    }
+
+    private var helpText: String {
+        switch status {
+        case .running:
+            "Running project"
+        case .paused:
+            "Paused projects can still reserve Docker network space. Stop them to clean that up."
+        case .stopped:
+            "Stopped project"
+        case .unknown:
+            "DDEV did not report a known status"
         }
     }
 }
@@ -1046,6 +1087,193 @@ private struct CustomCommandsView: View {
     }
 }
 
+private struct WordPressMultisiteView: View {
+    let project: DDEVProject
+    var viewModel: ProjectDashboardViewModel
+
+    @State private var mode = WordPressMultisiteMode.subdirectories
+    @State private var primaryURLText = ""
+    @State private var networkTitle = ""
+    @State private var basePath = "/"
+    @State private var additionalHostnamesText = ""
+    @State private var additionalFQDNsText = ""
+    @State private var seededProjectID: DDEVProject.ID?
+    @State private var pendingOptions: WordPressMultisiteOptions?
+
+    var body: some View {
+        if project.isWordPress {
+            InspectorSection("WordPress Multisite") {
+                VStack(alignment: .leading, spacing: 10) {
+                    Label("Converts this install into a WordPress network and updates DDEV routing for the entered domains.",
+                          systemImage: "network")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    multisiteRow("Mode") {
+                        Picker("Mode", selection: $mode) {
+                            ForEach(WordPressMultisiteMode.allCases) { mode in
+                                Text(mode.displayName).tag(mode)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        .frame(maxWidth: 280)
+                    }
+
+                    multisiteRow("Primary URL") {
+                        TextField("https://\(project.name).ddev.site", text: $primaryURLText)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(.body, design: .monospaced))
+                    }
+
+                    multisiteRow("Network title") {
+                        TextField("\(project.name) Network", text: $networkTitle)
+                            .textFieldStyle(.roundedBorder)
+                    }
+
+                    multisiteRow("Base path") {
+                        TextField("/", text: $basePath)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(.body, design: .monospaced))
+                            .frame(maxWidth: 160)
+                    }
+
+                    multisiteRow("DDEV hostnames") {
+                        TextField(defaultAdditionalHostname, text: $additionalHostnamesText)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(.body, design: .monospaced))
+                    }
+
+                    multisiteRow("DDEV FQDNs") {
+                        TextField("example.test, shop.example.test", text: $additionalFQDNsText)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(.body, design: .monospaced))
+                    }
+
+                    HStack {
+                        if project.status != .running {
+                            Text("Start the project before converting WordPress.")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                        } else if !hasValidPrimaryURL {
+                            Text("Enter a valid primary URL.")
+                                .font(.caption2)
+                                .foregroundStyle(.orange)
+                        }
+
+                        Spacer()
+
+                        Button {
+                            pendingOptions = multisiteOptions
+                        } label: {
+                            Label("Configure Multisite", systemImage: "network")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        .disabled(!canConfigure)
+                    }
+                }
+            }
+            .onAppear { seedStateIfNeeded() }
+            .onChange(of: project.id) { _, _ in seedStateIfNeeded(force: true) }
+            .onChange(of: mode) { oldValue, newValue in
+                if newValue == .subdomains, additionalHostnames.isEmpty {
+                    additionalHostnamesText = defaultAdditionalHostname
+                } else if oldValue == .subdomains, additionalHostnamesText == defaultAdditionalHostname {
+                    additionalHostnamesText = ""
+                }
+            }
+            .confirmationDialog(
+                "Convert \(project.name) to WordPress multisite?",
+                isPresented: .isPresent($pendingOptions),
+                presenting: pendingOptions
+            ) { options in
+                Button("Convert To Multisite", role: .destructive) {
+                    Task { await viewModel.configureWordPressMultisite(options) }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: { options in
+                Text("Runs `ddev wp core multisite-convert` for \(options.primaryURL), creates network tables, and updates wp-config.php. Back up files and the database first.")
+            }
+        }
+    }
+
+    private func multisiteRow<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(title)
+                .foregroundStyle(.secondary)
+                .frame(width: 112, alignment: .leading)
+            content()
+        }
+        .font(.callout)
+    }
+
+    private var canConfigure: Bool {
+        project.status == .running && !viewModel.isSelectedProjectBusy && hasValidPrimaryURL
+    }
+
+    private var hasValidPrimaryURL: Bool {
+        guard let components = URLComponents(string: normalizedPrimaryURL) else { return false }
+        let scheme = components.scheme?.lowercased()
+        guard let host = components.host else { return false }
+        return (scheme == "http" || scheme == "https") && !host.isEmpty
+    }
+
+    private var multisiteOptions: WordPressMultisiteOptions {
+        WordPressMultisiteOptions(
+            mode: mode,
+            primaryURL: normalizedPrimaryURL,
+            networkTitle: networkTitle,
+            basePath: basePath,
+            additionalHostnames: effectiveAdditionalHostnames,
+            additionalFQDNs: additionalFQDNs
+        )
+    }
+
+    private var normalizedPrimaryURL: String {
+        let trimmed = primaryURLText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !trimmed.contains("://") else { return trimmed }
+        return "https://\(trimmed)"
+    }
+
+    private var effectiveAdditionalHostnames: [String] {
+        if mode == .subdomains, additionalHostnames.isEmpty {
+            return [defaultAdditionalHostname]
+        }
+        return additionalHostnames
+    }
+
+    private var additionalHostnames: [String] {
+        commaList(from: additionalHostnamesText)
+    }
+
+    private var additionalFQDNs: [String] {
+        commaList(from: additionalFQDNsText)
+    }
+
+    private var defaultAdditionalHostname: String {
+        "*.\(project.name)"
+    }
+
+    private func seedStateIfNeeded(force: Bool = false) {
+        guard force || seededProjectID != project.id else { return }
+        mode = .subdirectories
+        primaryURLText = (project.httpsURL ?? project.primaryURL ?? project.httpURL)?.absoluteString ?? "https://\(project.name).ddev.site"
+        networkTitle = "\(project.name) Network"
+        basePath = "/"
+        additionalHostnamesText = ""
+        additionalFQDNsText = ""
+        seededProjectID = project.id
+    }
+
+    private func commaList(from text: String) -> [String] {
+        text
+            .split(separator: ",", omittingEmptySubsequences: false)
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+}
+
 /// A8 — expose the project on a temporary public URL via `ddev share`. Shows the parsed tunnel URL
 /// with open/copy, and a prominent Stop control. The tunnel is a long-running process owned by the
 /// view model.
@@ -1137,6 +1365,7 @@ private struct ManageTabContent: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 FrameworkCommandLauncherView(project: project, viewModel: viewModel)
+                WordPressMultisiteView(project: project, viewModel: viewModel)
                 CustomCommandsView(project: project, viewModel: viewModel)
                 ToolRunnerView(project: project, viewModel: viewModel)
                 ExecConsoleView(project: project, viewModel: viewModel)

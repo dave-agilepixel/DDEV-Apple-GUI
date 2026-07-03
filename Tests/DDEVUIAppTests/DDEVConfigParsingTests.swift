@@ -22,6 +22,9 @@ final class DDEVConfigParsingTests: XCTestCase {
         additional_hostnames:
           - app
           - cms
+        additional_fqdns:
+          - example.test
+          - shop.example.test
         web_environment:
           - SECRET_TOKEN=do-not-expose
         """
@@ -38,6 +41,7 @@ final class DDEVConfigParsingTests: XCTestCase {
         XCTAssertEqual(config.xhprofMode, .xhgui)
         XCTAssertEqual(config.uploadDirs, ["web/app/uploads", "web/sites/default/files"])
         XCTAssertEqual(config.additionalHostnames, ["app", "cms"])
+        XCTAssertEqual(config.additionalFQDNs, ["example.test", "shop.example.test"])
     }
 
     func testParsesInlineListsAndDoesNotExposeWebEnvironment() throws {
@@ -53,6 +57,7 @@ final class DDEVConfigParsingTests: XCTestCase {
         xhprof_mode: prepend
         upload_dirs: ["public/uploads", "assets"]
         additional_hostnames: [www, admin]
+        additional_fqdns: ["example.test", "shop.example.test"]
         web_environment:
           - API_KEY=secret
         """
@@ -66,6 +71,7 @@ final class DDEVConfigParsingTests: XCTestCase {
         XCTAssertEqual(config.xhprofMode, .prepend)
         XCTAssertEqual(config.uploadDirs, ["public/uploads", "assets"])
         XCTAssertEqual(config.additionalHostnames, ["www", "admin"])
+        XCTAssertEqual(config.additionalFQDNs, ["example.test", "shop.example.test"])
         XCTAssertFalse(String(describing: config).contains("API_KEY"))
     }
 
@@ -87,6 +93,7 @@ final class DDEVConfigParsingTests: XCTestCase {
         XCTAssertEqual(config.xhprofMode, .xhgui)
         XCTAssertEqual(config.uploadDirs, [])
         XCTAssertEqual(config.additionalHostnames, [])
+        XCTAssertEqual(config.additionalFQDNs, [])
     }
 
     func testYAMLCommentStrippingPreservesHashInsideQuotedStrings() throws {
@@ -107,12 +114,14 @@ final class DDEVConfigParsingTests: XCTestCase {
         xhprof_mode: global
         upload_dirs: ["public/uploads#archive"]
         additional_hostnames: ["alpha", "beta # not-a-comment"]
+        additional_fqdns: ["example#one.test", "shop # not-a-comment.test"]
         """
 
         let config = try DDEVConfig.parseYAML(yaml)
 
         XCTAssertEqual(config.uploadDirs, ["public/uploads#archive"])
         XCTAssertEqual(config.additionalHostnames, ["alpha", "beta # not-a-comment"])
+        XCTAssertEqual(config.additionalFQDNs, ["example#one.test", "shop # not-a-comment.test"])
     }
 
     func testConfigChangesMapToDDEVFlags() {
@@ -125,5 +134,6 @@ final class DDEVConfigParsingTests: XCTestCase {
         XCTAssertEqual(DDEVConfigChange.xhprofMode(.global).ddevFlags, ["--xhprof-mode=global"])
         XCTAssertEqual(DDEVConfigChange.uploadDirs(["public/uploads", "assets"]).ddevFlags, ["--upload-dirs=public/uploads,assets"])
         XCTAssertEqual(DDEVConfigChange.additionalHostnames(["www", "admin"]).ddevFlags, ["--additional-hostnames=www,admin"])
+        XCTAssertEqual(DDEVConfigChange.additionalFQDNs(["example.test", "shop.example.test"]).ddevFlags, ["--additional-fqdns=example.test,shop.example.test"])
     }
 }

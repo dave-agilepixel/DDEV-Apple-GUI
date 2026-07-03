@@ -218,6 +218,9 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         viewModel.selectedSidebarItem = .running
         XCTAssertEqual(viewModel.filteredProjects, [.sampleWordPress])
 
+        viewModel.selectedSidebarItem = .paused
+        XCTAssertEqual(viewModel.filteredProjects, [.sampleLaravel])
+
         viewModel.selectedSidebarItem = .wordpress
         XCTAssertEqual(viewModel.filteredProjects, [.sampleWordPress])
 
@@ -321,24 +324,27 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.selectedProjectState.lastResult?.succeeded, true)
     }
 
-    func testStartProjectsInCurrentViewStartsOnlyStoppedOnes() async {
+    func testStartProjectsInCurrentViewStartsNonRunningProjects() async {
         let running = DDEVProject.sampleWordPress                    // aqua-pura, running
-        let stopped = DDEVProject.sampleLaravel.withStatus(.stopped) // agilebugs, stopped
-        let service = FakeDDEVService(projects: [running, stopped])
+        let paused = DDEVProject.sampleLaravel                       // agilebugs, paused
+        let stopped = DDEVProject.sampleDrupal.withStatus(.stopped)  // drupal-demo, stopped
+        let service = FakeDDEVService(projects: [running, paused, stopped])
         let viewModel = ProjectDashboardViewModel(ddevService: service)
         await viewModel.refresh()
 
         await viewModel.startProjectsInCurrentView()
 
         let commands = service.commands
-        XCTAssertTrue(commands.contains("start:agilebugs"), "Stopped project is started")
+        XCTAssertTrue(commands.contains("start:agilebugs"), "Paused project can be started again")
+        XCTAssertTrue(commands.contains("start:drupal-demo"), "Stopped project is started")
         XCTAssertFalse(commands.contains("start:aqua-pura"), "Already-running project is left alone")
     }
 
-    func testStopProjectsInCurrentViewStopsOnlyRunningOnes() async {
+    func testStopProjectsInCurrentViewStopsRunningAndPausedProjects() async {
         let running = DDEVProject.sampleWordPress                    // aqua-pura, running
-        let stopped = DDEVProject.sampleLaravel.withStatus(.stopped) // agilebugs, stopped
-        let service = FakeDDEVService(projects: [running, stopped])
+        let paused = DDEVProject.sampleLaravel                       // agilebugs, paused
+        let stopped = DDEVProject.sampleDrupal.withStatus(.stopped)  // drupal-demo, stopped
+        let service = FakeDDEVService(projects: [running, paused, stopped])
         let viewModel = ProjectDashboardViewModel(ddevService: service)
         await viewModel.refresh()
 
@@ -346,33 +352,51 @@ final class ProjectDashboardViewModelTests: XCTestCase {
 
         let commands = service.commands
         XCTAssertTrue(commands.contains("stop:aqua-pura"), "Running project is stopped")
-        XCTAssertFalse(commands.contains("stop:agilebugs"), "Already-stopped project is left alone")
+        XCTAssertTrue(commands.contains("stop:agilebugs"), "Paused project is stopped to free Docker resources")
+        XCTAssertFalse(commands.contains("stop:drupal-demo"), "Already-stopped project is left alone")
+    }
+
+    func testStopPausedProjectsStopsOnlyPausedProjects() async {
+        let running = DDEVProject.sampleWordPress                    // aqua-pura, running
+        let paused = DDEVProject.sampleLaravel                       // agilebugs, paused
+        let stopped = DDEVProject.sampleDrupal.withStatus(.stopped)  // drupal-demo, stopped
+        let service = FakeDDEVService(projects: [running, paused, stopped])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        await viewModel.refresh()
+
+        await viewModel.stopPausedProjects()
+
+        let commands = service.commands
+        XCTAssertTrue(commands.contains("stop:agilebugs"))
+        XCTAssertFalse(commands.contains("stop:aqua-pura"))
+        XCTAssertFalse(commands.contains("stop:drupal-demo"))
     }
 
     func testBatchScopeIsWholeViewWhenNotMultiSelecting() async {
         let running = DDEVProject.sampleWordPress                    // aqua-pura, running
-        let stopped = DDEVProject.sampleLaravel.withStatus(.stopped) // agilebugs, stopped
-        let viewModel = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: [running, stopped]))
+        let paused = DDEVProject.sampleLaravel                       // agilebugs, paused
+        let stopped = DDEVProject.sampleDrupal.withStatus(.stopped)  // drupal-demo, stopped
+        let viewModel = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: [running, paused, stopped]))
         await viewModel.refresh() // auto-selects the first project → single selection, not multi
 
         XCTAssertFalse(viewModel.isMultiSelecting)
-        XCTAssertEqual(Set(viewModel.batchScopeProjects.map(\.id)), ["aqua-pura", "agilebugs"])
-        XCTAssertEqual(viewModel.startableProjectsInCurrentView.map(\.id), ["agilebugs"])
-        XCTAssertEqual(viewModel.stoppableProjectsInCurrentView.map(\.id), ["aqua-pura"])
+        XCTAssertEqual(Set(viewModel.batchScopeProjects.map(\.id)), ["aqua-pura", "agilebugs", "drupal-demo"])
+        XCTAssertEqual(Set(viewModel.startableProjectsInCurrentView.map(\.id)), ["agilebugs", "drupal-demo"])
+        XCTAssertEqual(Set(viewModel.stoppableProjectsInCurrentView.map(\.id)), ["aqua-pura", "agilebugs"])
     }
 
     func testBatchScopeIsTheSelectedSubsetWhenMultiSelecting() {
         let running = DDEVProject.sampleWordPress                    // aqua-pura, running
-        let stopped = DDEVProject.sampleLaravel.withStatus(.stopped) // agilebugs, stopped
+        let paused = DDEVProject.sampleLaravel                       // agilebugs, paused
         let extra = DDEVProject.sampleDrupal                         // drupal-demo, running (excluded)
         let viewModel = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: []))
-        viewModel.projects = [running, stopped, extra]
+        viewModel.projects = [running, paused, extra]
 
         viewModel.selectedProjectIDs = ["aqua-pura", "agilebugs"] // exclude drupal-demo
         XCTAssertTrue(viewModel.isMultiSelecting)
         XCTAssertEqual(Set(viewModel.batchScopeProjects.map(\.id)), ["aqua-pura", "agilebugs"])
         XCTAssertEqual(viewModel.startableProjectsInCurrentView.map(\.id), ["agilebugs"])
-        XCTAssertEqual(viewModel.stoppableProjectsInCurrentView.map(\.id), ["aqua-pura"])
+        XCTAssertEqual(Set(viewModel.stoppableProjectsInCurrentView.map(\.id)), ["aqua-pura", "agilebugs"])
     }
 
     func testBatchScopeExcludesSelectedProjectsHiddenBySearch() {
@@ -507,6 +531,27 @@ final class ProjectDashboardViewModelTests: XCTestCase {
             "wp-plugins:/Users/dave/Development/agilepixel/aqua-pura",
             "describe:aqua-pura",
             "wp-themes:/Users/dave/Development/agilepixel/aqua-pura",
+            "describe:aqua-pura"
+        ])
+    }
+
+    func testWordPressMultisiteActionUsesSelectedProjectFolderAndRefreshesList() async {
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(ddevService: service)
+        viewModel.selectedProject = .sampleWordPress
+
+        await viewModel.configureWordPressMultisite(
+            WordPressMultisiteOptions(
+                mode: .subdomains,
+                primaryURL: "https://aqua-pura.ddev.site",
+                additionalHostnames: ["*.aqua-pura"],
+                additionalFQDNs: ["shop.test"]
+            )
+        )
+
+        XCTAssertEqual(service.commands, [
+            "wp-multisite:/Users/dave/Development/agilepixel/aqua-pura:subdomains:https://aqua-pura.ddev.site:*.aqua-pura:shop.test",
+            "list",
             "describe:aqua-pura"
         ])
     }
@@ -2068,6 +2113,24 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
     func updateWordPressThemes(in appRoot: String) async throws -> CommandResult {
         record("wp-themes:\(appRoot)")
         return commandResult(arguments: ["wp", "theme", "update", "--all"], workingDirectory: appRoot)
+    }
+
+    func configureWordPressMultisite(_ options: WordPressMultisiteOptions, in appRoot: String) async throws -> CommandResult {
+        record(
+            [
+                "wp-multisite",
+                appRoot,
+                options.mode.rawValue,
+                options.primaryURL,
+                options.additionalHostnames.joined(separator: ","),
+                options.additionalFQDNs.joined(separator: ",")
+            ].joined(separator: ":")
+        )
+        var arguments = ["wp", "core", "multisite-convert", "--url=\(options.primaryURL)"]
+        if options.mode.usesSubdomains {
+            arguments.append("--subdomains")
+        }
+        return commandResult(arguments: arguments, workingDirectory: appRoot)
     }
 
     func setPHPVersion(_ version: String, in appRoot: String) async throws -> CommandResult {

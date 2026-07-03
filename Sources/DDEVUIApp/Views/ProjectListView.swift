@@ -47,8 +47,8 @@ struct ProjectListView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .help(viewModel.isMultiSelecting
-              ? "Start or stop the selected projects"
-              : "Start or stop every project in the current view")
+              ? "Start selected non-running projects, or stop selected running and paused projects"
+              : "Start non-running projects, or stop running and paused projects in the current view")
     }
 
     private var searchBar: some View {
@@ -160,6 +160,7 @@ struct ProjectListView: View {
         if case .group = viewModel.selection { return "No Projects in This Group" }
         switch viewModel.selectedSidebarItem {
         case .running: return "Nothing Running"
+        case .paused: return "Nothing Paused"
         case .wordpress: return "No WordPress Projects"
         default: return "No Projects"
         }
@@ -174,6 +175,7 @@ struct ProjectListView: View {
         }
         switch viewModel.selectedSidebarItem {
         case .running: return "Start a project to see it here."
+        case .paused: return "Paused projects show here so you can stop them and free Docker networks."
         case .wordpress: return "Configure a WordPress site to populate this list."
         default: return "Use Add Folder to register a DDEV project."
         }
@@ -220,12 +222,10 @@ private struct ProjectRow: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
-                    Circle()
-                        .fill(statusColor)
-                        .frame(width: 8, height: 8)
                     Text(project.name)
                         .font(.headline)
                         .lineLimit(1)
+                    ProjectRowStatusBadge(status: project.status)
                     Spacer(minLength: 0)
                 }
 
@@ -273,6 +273,13 @@ private struct ProjectRow: View {
                     actionButton("Stop", systemImage: "stop.fill", tint: .red) {
                         await viewModel.stop(project)
                     }
+                } else if project.status == .paused {
+                    actionButton("Start", systemImage: "play.fill", tint: .green) {
+                        await viewModel.start(project)
+                    }
+                    actionButton("Stop and free Docker network", systemImage: "stop.fill", tint: .orange) {
+                        await viewModel.stop(project)
+                    }
                 } else {
                     actionButton("Start", systemImage: "play.fill", tint: .green) {
                         await viewModel.start(project)
@@ -301,15 +308,6 @@ private struct ProjectRow: View {
         .disabled(viewModel.isBusy(project))
     }
 
-    private var statusColor: Color {
-        switch project.status {
-        case .running: .green
-        case .paused: .orange
-        case .stopped: .secondary
-        case .unknown: .yellow
-        }
-    }
-
     /// A small coloured pill showing the project's group, so membership is visible at a glance in
     /// the main listing (the dot carries the group colour; the label stays legible in secondary).
     @ViewBuilder
@@ -325,6 +323,61 @@ private struct ProjectRow: View {
         .padding(.horizontal, 6)
         .padding(.vertical, 1)
         .background(Capsule().fill(group.colorID.color.opacity(0.16)))
+    }
+}
+
+private struct ProjectRowStatusBadge: View {
+    let status: DDEVProjectStatus
+
+    var body: some View {
+        Label(label, systemImage: systemImage)
+            .font(.caption2.weight(.semibold))
+            .labelStyle(.titleAndIcon)
+            .foregroundStyle(color)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(Capsule().fill(color.opacity(0.14)))
+            .help(helpText)
+    }
+
+    private var label: String {
+        switch status {
+        case .running: "Running"
+        case .paused: "Paused"
+        case .stopped: "Stopped"
+        case .unknown: "Unknown"
+        }
+    }
+
+    private var systemImage: String {
+        switch status {
+        case .running: "play.fill"
+        case .paused: "pause.fill"
+        case .stopped: "stop.fill"
+        case .unknown: "questionmark"
+        }
+    }
+
+    private var color: Color {
+        switch status {
+        case .running: .green
+        case .paused: .orange
+        case .stopped: .secondary
+        case .unknown: .yellow
+        }
+    }
+
+    private var helpText: String {
+        switch status {
+        case .running:
+            "Running project"
+        case .paused:
+            "Paused projects can still reserve Docker network space. Stop them to clean that up."
+        case .stopped:
+            "Stopped project"
+        case .unknown:
+            "DDEV did not report a known status"
+        }
     }
 }
 
