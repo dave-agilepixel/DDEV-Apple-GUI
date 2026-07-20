@@ -1506,21 +1506,25 @@ public final class DockerSystemService: Sendable {
 
     private func headroomViaProbeVolume() async throws -> DockerHeadroom {
         _ = try await runDocker(["volume", "create", Self.probeVolumeName])
-        defer {
-            // Fire-and-forget cleanup: the probe volume must never be left behind, even if
-            // the measurement itself failed.
-            Task { [commandRunner, dockerExecutable] in
-                _ = try? await commandRunner.run(CommandSpec(
-                    executable: dockerExecutable,
-                    arguments: ["volume", "rm", Self.probeVolumeName]
-                ))
-            }
-        }
 
-        let result = try await runDocker([
-            "run", "--rm", "-v", "\(Self.probeVolumeName):/probe", "alpine", "df", "-Pk", "/probe"
-        ])
-        return try DockerHeadroom.parse(result.stdout)
+        // Cleanup is awaited on both paths rather than dispatched into a detached Task: the
+        // probe volume must be gone before this function returns, or a later run finds it
+        // already present and the caller sees a stale measurement.
+        do {
+            let result = try await runDocker([
+                "run", "--rm", "-v", "\(Self.probeVolumeName):/probe", "alpine", "df", "-Pk", "/probe"
+            ])
+            let headroom = try DockerHeadroom.parse(result.stdout)
+            await removeProbeVolume()
+            return headroom
+        } catch {
+            await removeProbeVolume()
+            throw error
+        }
+    }
+
+    private func removeProbeVolume() async {
+        _ = try? await runDocker(["volume", "rm", Self.probeVolumeName])
     }
 
     // MARK: - Reclaim
@@ -1567,10 +1571,10 @@ public final class DockerSystemService: Sendable {
 Run: `swift test --filter DockerSystemServiceTests`
 Expected: PASS, 7 tests.
 
-Note on `testHeadroomRemovesProbeVolumeEvenWhenDFFails`: cleanup is dispatched in a detached
-`Task`, so it may not have been recorded by the time the assertion runs. If the test is flaky,
-make cleanup synchronous by replacing the `defer` block with an explicit
-`do { … } catch { await cleanup(); throw error }` structure rather than weakening the assertion.
+`testHeadroomRemovesProbeVolumeEvenWhenDFFails` must pass deterministically — cleanup is
+awaited on both the success and failure paths, so there is no race. If it is flaky, the
+implementation has drifted back to detached cleanup; fix the implementation, never the
+assertion.
 
 - [ ] **Step 5: Commit**
 
