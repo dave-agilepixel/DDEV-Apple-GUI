@@ -47,6 +47,14 @@ public final class DockerDiskViewModel {
     @ObservationIgnored private let warnThreshold: Double
     @ObservationIgnored private let criticalThreshold: Double
 
+    /// Task 12 — owns the periodic headroom-only refresh loop for the menu-bar low-disk warning.
+    /// Held on the class (not a view's `@State`) because this view model is a single shared
+    /// instance owned by `DDEVUIApp` and handed to every `ContentView`; a per-window task handle
+    /// would let a second window ("New Window", Cmd+N) start a second concurrent loop against the
+    /// same shared instance, doubling the rate of `docker` invocations. Mirrors
+    /// `ProjectDashboardViewModel.statusPollTask`'s shape and guard.
+    @ObservationIgnored private var headroomPollTask: Task<Void, Never>?
+
     public init(
         dockerService: DockerSystemServicing = DockerSystemService(),
         ddevService: DDEVServicing? = nil,
@@ -82,6 +90,10 @@ public final class DockerDiskViewModel {
         self.criticalThreshold = clampedCritical
     }
 
+    deinit {
+        headroomPollTask?.cancel()
+    }
+
     private static func clampToRange(_ value: Double) -> Double {
         min(max(value, minThreshold), maxThreshold)
     }
@@ -104,6 +116,29 @@ public final class DockerDiskViewModel {
             // `alertLevel` at `.normal` rather than reporting a false emergency.
             headroom = nil
         }
+    }
+
+    /// Starts the periodic headroom-only refresh (Task 12): a cancellable, idempotent
+    /// sleep-then-refresh loop, mirroring `ProjectDashboardViewModel.startStatusPolling()`. A
+    /// second call while already running (e.g. from a second window's `ContentView`) is a
+    /// no-op, since the task handle lives here on the shared view model rather than on a
+    /// per-window `@State`. Deliberately calls only `refreshHeadroom()` — the cheap call —
+    /// never `refreshFullInventory`, which walks every volume and stays confined to
+    /// `DockerDiskView`'s `.task` and its explicit Refresh button.
+    public func startPeriodicHeadroomRefresh(interval: Duration) {
+        guard headroomPollTask == nil else { return }
+        headroomPollTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: interval)
+                guard !Task.isCancelled, let self else { return }
+                await self.refreshHeadroom()
+            }
+        }
+    }
+
+    public func stopPeriodicHeadroomRefresh() {
+        headroomPollTask?.cancel()
+        headroomPollTask = nil
     }
 
     /// Expensive — walks every volume. Call only when the screen is open or on explicit refresh.

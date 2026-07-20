@@ -55,6 +55,7 @@ private final class FakeDockerSystemService: DockerSystemServicing, @unchecked S
     private(set) var removedVolumes: [String] = []
     private(set) var pruneBuildCacheCallCount = 0
     private(set) var removeVolumesCallCount = 0
+    private(set) var headroomCallCount = 0
 
     init() {
         let zero = DockerUsageCategory(totalCount: 0, active: 0, sizeBytes: 0, reclaimableBytes: 0)
@@ -62,7 +63,12 @@ private final class FakeDockerSystemService: DockerSystemServicing, @unchecked S
     }
 
     func usage() async throws -> DockerUsage { try usageResult.get() }
-    func headroom() async throws -> DockerHeadroom { try headroomResult.get() }
+
+    func headroom() async throws -> DockerHeadroom {
+        headroomCallCount += 1
+        return try headroomResult.get()
+    }
+
     func volumes() async throws -> [DockerVolume] { try volumesResult.get() }
 
     func pruneBuildCache() async throws -> CommandResult {
@@ -538,6 +544,48 @@ final class DockerDiskViewModelTests: XCTestCase {
             warningViewModel.alertLevel, .warning,
             "clamping two out-of-range thresholds must still leave a reachable warning band"
         )
+    }
+
+    // MARK: - Periodic headroom refresh (Task 12)
+
+    /// A second `startPeriodicHeadroomRefresh()` call must not start a second concurrent loop.
+    /// `DockerDiskViewModel` is a single shared instance handed to every `ContentView` — unlike
+    /// `@State`, which is scoped per window — so a missing guard here would double the call rate
+    /// against the same shared instance whenever a second window is opened (Cmd+N), defeating the
+    /// whole point of keeping this path to the cheap `headroom()` call. Mirrors
+    /// `ProjectDashboardViewModelTests.testStatusPollingRefreshesWhileActiveAndStopsOnStop`'s
+    /// magnitude-based approach: a short interval, a bounded wait, then a call-count check wide
+    /// enough to absorb scheduling jitter but tight enough to catch an outright doubling.
+    func testStartPeriodicHeadroomRefreshIsNotReentrant() async throws {
+        let docker = FakeDockerSystemService()
+        let viewModel = makeViewModel(docker: docker)
+
+        viewModel.startPeriodicHeadroomRefresh(interval: .milliseconds(10))
+        viewModel.startPeriodicHeadroomRefresh(interval: .milliseconds(10)) // must not start a second loop
+
+        try await Task.sleep(for: .milliseconds(300))
+        viewModel.stopPeriodicHeadroomRefresh()
+
+        // A single loop ticking every 10ms for ~300ms fires roughly 30 times; a doubled loop (the
+        // regression this test targets) would fire roughly twice that. 45 sits clearly between
+        // the two, with margin either side for scheduling jitter.
+        XCTAssertGreaterThan(docker.headroomCallCount, 0, "the loop must actually run")
+        XCTAssertLessThan(docker.headroomCallCount, 45, "a second start() call must not run a concurrent second loop")
+    }
+
+    func testStopPeriodicHeadroomRefreshHaltsPolling() async throws {
+        let docker = FakeDockerSystemService()
+        let viewModel = makeViewModel(docker: docker)
+
+        viewModel.startPeriodicHeadroomRefresh(interval: .milliseconds(10))
+        try await Task.sleep(for: .milliseconds(60))
+        viewModel.stopPeriodicHeadroomRefresh()
+
+        // Let any in-flight tick settle, snapshot, then confirm no further ticks land.
+        try await Task.sleep(for: .milliseconds(20))
+        let settled = docker.headroomCallCount
+        try await Task.sleep(for: .milliseconds(80))
+        XCTAssertEqual(docker.headroomCallCount, settled, "No further headroom polling after stop")
     }
 
     func testWarnGreaterThanCriticalIsCorrected() async {
