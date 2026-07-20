@@ -33,8 +33,18 @@ struct DDEVUIApp: App {
         }
 
         // B1 — always-there menu-bar controls: start/stop/launch any project without the window.
-        MenuBarExtra("DDEVUI", systemImage: "shippingbox.fill") {
-            MenuBarContentView(viewModel: viewModel)
+        // The icon itself doubles as the proactive low-disk warning (Task 12): it swaps to a
+        // triangle whenever `dockerDiskViewModel.alertLevel` leaves `.normal`, so the warning is
+        // visible even before the menu is opened.
+        MenuBarExtra {
+            MenuBarContentView(viewModel: viewModel, dockerDisk: dockerDiskViewModel)
+        } label: {
+            Label(
+                "DDEVUI",
+                systemImage: dockerDiskViewModel.alertLevel == .normal
+                    ? "shippingbox.fill"
+                    : "exclamationmark.triangle.fill"
+            )
         }
     }
 

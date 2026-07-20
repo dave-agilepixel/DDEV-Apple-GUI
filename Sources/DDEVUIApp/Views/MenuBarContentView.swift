@@ -6,6 +6,7 @@ import SwiftUI
 /// data (kept fresh by B2's status poll + the Refresh item here).
 struct MenuBarContentView: View {
     var viewModel: ProjectDashboardViewModel
+    var dockerDisk: DockerDiskViewModel
     @Environment(\.openWindow) private var openWindow
     private let workspaceOpener = MacWorkspaceOpener()
 
@@ -13,7 +14,34 @@ struct MenuBarContentView: View {
         viewModel.projects.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
+    /// Only shown at/above the warn threshold — absent entirely below it, so the normal case
+    /// stays uncluttered (an explicit design decision, not an oversight).
+    private var reclaimButtonTitle: String {
+        // `plan` is only populated by `refreshFullInventory`, which the cheap periodic cycle
+        // deliberately never calls (it walks every Docker volume). The first time a warning
+        // fires in a session, `plan` may still be empty — showing "Reclaim 0 KB…" would be
+        // actively misleading on the feature's primary early-warning surface, so fall back to
+        // an amount-free title until the Docker Disk screen has computed a real plan.
+        dockerDisk.plan.isEmpty
+            ? "Reclaim Disk Space…"
+            : "Reclaim \(dockerDisk.plan.totalBytes.formattedBytes)…"
+    }
+
     var body: some View {
+        if dockerDisk.alertLevel != .normal, let headroom = dockerDisk.headroom {
+            Text("Docker disk \(headroom.percentUsed)% · \(headroom.availableBytes.formattedBytes) free")
+
+            // Navigates to the Docker Disk screen rather than reclaiming directly — a
+            // destructive bulk operation must never be one hover away from the menu bar.
+            Button(reclaimButtonTitle) {
+                openWindow(id: DDEVUIApp.mainWindowID)
+                NSApp.activate(ignoringOtherApps: true)
+                viewModel.selection = .library(.dockerDisk)
+            }
+
+            Divider()
+        }
+
         if sortedProjects.isEmpty {
             Text("No DDEV projects")
         } else {

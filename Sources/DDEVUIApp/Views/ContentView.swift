@@ -11,6 +11,10 @@ struct ContentView: View {
     @State private var dropTargetGroupID: ProjectGroup.ID?
     @State private var showQuickSwitcher = false
     @Environment(\.scenePhase) private var scenePhase
+    /// Task 12 — repeats `dockerDiskViewModel.refreshHeadroom()` on the same cadence as
+    /// `viewModel`'s status poll, so the menu bar warning stays current. Cheap (a single Docker
+    /// call), unlike `refreshFullInventory`, which is deliberately never called from here.
+    @State private var dockerDiskPollTask: Task<Void, Never>?
 
     init() {
         _viewModel = State(initialValue: ProjectDashboardViewModel(notifier: ContentView.makeNotifier()))
@@ -126,6 +130,7 @@ struct ContentView: View {
         .task {
             await viewModel.requestNotificationAuthorization()
             await viewModel.loadCachedProjectsThenRefresh()
+            await dockerDiskViewModel.refreshHeadroom()
         }
         .toolbar {
             ToolbarItemGroup {
@@ -177,6 +182,7 @@ struct ContentView: View {
         .task {
             prerequisites.start()
             viewModel.startStatusPolling()
+            startDockerDiskPolling()
         }
         .onChange(of: scenePhase) { _, phase in
             // Pause the prerequisite + status polls while backgrounded; re-arm on return (B2 — the
@@ -184,11 +190,32 @@ struct ContentView: View {
             if phase == .active {
                 prerequisites.start()
                 viewModel.startStatusPolling()
+                startDockerDiskPolling()
             } else {
                 prerequisites.stop()
                 viewModel.stopStatusPolling()
+                stopDockerDiskPolling()
             }
         }
+    }
+
+    /// Task 12 — mirrors `ProjectDashboardViewModel.startStatusPolling()`'s shape (idempotent,
+    /// sleep-then-refresh loop) but lives here rather than inside that view model, since
+    /// `DockerDiskViewModel` is a sibling, not something `ProjectDashboardViewModel` knows about.
+    private func startDockerDiskPolling() {
+        guard dockerDiskPollTask == nil else { return }
+        dockerDiskPollTask = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: viewModel.statusPollInterval)
+                guard !Task.isCancelled else { return }
+                await dockerDiskViewModel.refreshHeadroom()
+            }
+        }
+    }
+
+    private func stopDockerDiskPolling() {
+        dockerDiskPollTask?.cancel()
+        dockerDiskPollTask = nil
     }
 
     private func count(for item: ProjectSidebarItem) -> Int? {
