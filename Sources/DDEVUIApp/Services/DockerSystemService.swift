@@ -34,13 +34,22 @@ public final class DockerSystemService: Sendable {
     /// in `DDEVCommandService`, which hits the network for the same reason.
     private static let probeTimeout: Duration = .seconds(45)
 
-    /// Wall-clock cap for `docker system df -v`, deliberately longer than `quickTimeout`.
-    /// Unlike the other local reads, this one stats every volume individually: on a machine with
-    /// 100+ volumes (the development machine this was built against has ~110) it takes seconds
-    /// rather than milliseconds, so the 10s quick cap is close enough to the real runtime to time
-    /// out a read that would have succeeded. This is a user-visible inventory read, not a
-    /// background poll, so a longer wait is cheaper than a spurious failure.
-    private static let inventoryTimeout: Duration = .seconds(60)
+    /// Wall-clock cap for **both** forms of `docker system df`, deliberately far longer than
+    /// `quickTimeout`.
+    ///
+    /// Both forms compute on-disk sizes, and that is genuinely slow at scale — measured on the
+    /// development machine this was built against (98 volumes, 42 GB of volume data):
+    ///
+    ///     docker system df            31.3s
+    ///     docker system df -v         27.7s
+    ///
+    /// The plain form is *not* the cheap read its name suggests; it is marginally slower than the
+    /// verbose one. An earlier revision capped it at `quickTimeout`, which made `usage()` time out
+    /// on every single call on that machine — the screen showed an error and an empty reclaim plan
+    /// permanently. Both are user-initiated inventory reads, never background polls, so waiting is
+    /// far cheaper than a spurious failure. The headroom probe is a separate, genuinely fast call
+    /// and keeps `quickTimeout`.
+    private static let inventoryTimeout: Duration = .seconds(120)
 
     private let commandRunner: CommandRunning
     private let dockerExecutable: String
@@ -56,12 +65,15 @@ public final class DockerSystemService: Sendable {
     // MARK: - Reads
 
     /// Category totals. Emits JSON-lines, one object per category.
+    ///
+    /// Despite lacking `-v` this is not a cheap call — it computes sizes and takes tens of seconds
+    /// on a machine with many volumes, so it carries `inventoryTimeout` rather than `quickTimeout`.
     public func usage() async throws -> DockerUsage {
-        let result = try await runDocker(["system", "df", "--format", "json"], timeout: Self.quickTimeout)
+        let result = try await runDocker(["system", "df", "--format", "json"], timeout: Self.inventoryTimeout)
         return try DockerUsage.decode(result.stdout)
     }
 
-    /// Per-volume inventory. Walks every volume, so this takes seconds on a machine with
+    /// Per-volume inventory. Walks every volume, so this takes tens of seconds on a machine with
     /// many projects — call it on demand, never on a background refresh cycle.
     public func volumes() async throws -> [DockerVolume] {
         let result = try await runDocker(["system", "df", "-v", "--format", "json"], timeout: Self.inventoryTimeout)

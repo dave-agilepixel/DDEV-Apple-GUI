@@ -45,10 +45,38 @@ final class DockerSystemServiceTests: XCTestCase {
                 executable: "/usr/local/bin/docker",
                 arguments: ["system", "df", "--format", "json"],
                 workingDirectory: nil,
-                timeout: .seconds(10)
+                timeout: .seconds(120)
             )
         ])
         XCTAssertEqual(usage.images.totalCount, 32)
+    }
+
+    /// `docker system df` without `-v` still computes on-disk sizes, and on a machine with many
+    /// volumes it is slower than the verbose form (measured: 31.3s vs 27.7s on 98 volumes). An
+    /// earlier revision gave it the 10s quick cap, which made every `usage()` call time out on
+    /// such a machine — the screen showed an error and an empty plan permanently. This pins the
+    /// generous cap so that regression cannot return unnoticed.
+    func testBothSystemDFFormsCarryTheGenerousTimeout() async throws {
+        let dfURL = try XCTUnwrap(Bundle.module.url(forResource: "docker-system-df", withExtension: "json"))
+        let dfVURL = try XCTUnwrap(Bundle.module.url(forResource: "docker-system-df-v", withExtension: "json"))
+        let runner = RecordingCommandRunner(results: [
+            .success(CommandResult.success(stdout: try String(contentsOf: dfURL, encoding: .utf8))),
+            .success(CommandResult.success(stdout: try String(contentsOf: dfVURL, encoding: .utf8)))
+        ])
+        let service = DockerSystemService(commandRunner: runner, dockerExecutable: "docker")
+
+        _ = try await service.usage()
+        _ = try await service.volumes()
+
+        let timeouts = runner.commands.map(\.timeout)
+        XCTAssertEqual(timeouts.count, 2)
+        for timeout in timeouts {
+            let seconds = try XCTUnwrap(timeout).components.seconds
+            XCTAssertGreaterThanOrEqual(
+                seconds, 60,
+                "a size-computing `docker system df` call must not carry a short timeout"
+            )
+        }
     }
 
     func testVolumesRunsSystemDFVerbose() async throws {
