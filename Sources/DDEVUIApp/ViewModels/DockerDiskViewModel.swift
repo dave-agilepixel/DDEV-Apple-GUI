@@ -28,6 +28,9 @@ public final class DockerDiskViewModel {
     /// since `usedFraction` never reaches it.
     private static let minThreshold = 0.5
     private static let maxThreshold = 0.99
+    /// Smallest gap kept between `warnThreshold` and `criticalThreshold` after clamping, so a
+    /// pathological input (e.g. both above 1.0) can never collapse the warning band to nothing.
+    private static let minimumBandWidth = 0.01
 
     public private(set) var headroom: DockerHeadroom?
     public private(set) var usage: DockerUsage?
@@ -61,15 +64,22 @@ public final class DockerDiskViewModel {
         // should always fire before critical — so treat that as the pair being transposed
         // and swap them. Swapping (rather than collapsing both to one value) preserves a
         // genuine warning band instead of making `.warning` unreachable.
-        let clampedWarn = Self.clampToRange(warnThreshold)
-        let clampedCritical = Self.clampToRange(criticalThreshold)
+        var clampedWarn = Self.clampToRange(warnThreshold)
+        var clampedCritical = Self.clampToRange(criticalThreshold)
         if clampedWarn > clampedCritical {
-            self.warnThreshold = clampedCritical
-            self.criticalThreshold = clampedWarn
-        } else {
-            self.warnThreshold = clampedWarn
-            self.criticalThreshold = clampedCritical
+            swap(&clampedWarn, &clampedCritical)
         }
+        // Swapping alone still collapses the band when both inputs clamp to the same edge of
+        // [minThreshold, maxThreshold] (e.g. both above 1.0, both clamping to `maxThreshold`) —
+        // `clampedWarn > clampedCritical` is false for equal values, so no swap occurs, and
+        // `.warning` would stay permanently unreachable. Guarantee a minimum usable band by
+        // nudging `warn` down whenever the two are too close together, clamped so it never
+        // drops below `minThreshold`.
+        if clampedCritical - clampedWarn < Self.minimumBandWidth {
+            clampedWarn = max(Self.minThreshold, clampedCritical - Self.minimumBandWidth)
+        }
+        self.warnThreshold = clampedWarn
+        self.criticalThreshold = clampedCritical
     }
 
     private static func clampToRange(_ value: Double) -> Double {
@@ -120,6 +130,7 @@ public final class DockerDiskViewModel {
     /// aborting the batch.
     public func executeReclaim() async {
         guard !plan.isEmpty else { return }
+        guard !isReclaiming else { return }
         isReclaiming = true
         errorMessage = nil
         defer { isReclaiming = false }
@@ -153,7 +164,7 @@ public final class DockerDiskViewModel {
         }
 
         lastReclaimSummary = failures.isEmpty
-            ? "Reclaimed \(plan.totalBytes.formattedBytes)."
+            ? "Reclaimed an estimated \(plan.totalBytes.formattedBytes)."
             : "Reclaimed with \(failures.count) failure(s): \(failures.joined(separator: ", "))."
 
         await refreshHeadroom()
@@ -162,6 +173,8 @@ public final class DockerDiskViewModel {
     /// Explicit per-item removal — the only route by which a registered project's database
     /// can be deleted.
     public func removeVolume(named name: String) async {
+        guard !isReclaiming else { return }
+        errorMessage = nil
         isReclaiming = true
         defer { isReclaiming = false }
 
@@ -174,6 +187,7 @@ public final class DockerDiskViewModel {
 
     /// Maintenance action — this *consumes* disk rather than reclaiming it.
     public func prefetchImages() async {
+        guard !isReclaiming else { return }
         guard let ddevService else { return }
         isReclaiming = true
         errorMessage = nil
@@ -188,15 +202,16 @@ public final class DockerDiskViewModel {
     /// Runs one reclaim step, funnelled through the scheduler when one is supplied, and
     /// records the item's label as a failure rather than aborting the whole batch.
     ///
-    /// Takes `@escaping @Sendable` rather than the brief's plain closure: a non-escaping,
-    /// non-`Sendable` closure cannot be passed into `CommandScheduler.run`, which requires
-    /// `@Sendable () async throws -> T` under Swift 6 strict concurrency. Call sites above
-    /// capture only `Sendable` values (`dockerService`, `ddevService`, `appRoot`), so marking
-    /// the closures `@Sendable` costs nothing.
+    /// Takes `@Sendable` rather than the brief's plain closure: a non-`Sendable` closure
+    /// cannot be passed into `CommandScheduler.run`, which requires `@Sendable () async throws
+    /// -> T` under Swift 6 strict concurrency. Call sites above capture only `Sendable` values
+    /// (`dockerService`, `ddevService`, `appRoot`), so marking the closures `@Sendable` costs
+    /// nothing. `@escaping` is not required — `CommandScheduler.run`'s parameter is
+    /// non-escaping, and `record` only ever calls `operation` directly within its own scope.
     private func record(
         _ failures: inout [String],
         _ label: String,
-        _ operation: @escaping @Sendable () async throws -> Void
+        _ operation: @Sendable () async throws -> Void
     ) async {
         do {
             if let scheduler {

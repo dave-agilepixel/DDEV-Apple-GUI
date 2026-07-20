@@ -1,15 +1,60 @@
 import XCTest
 @testable import DDEVUIApp
 
+/// A minimal reusable one-shot gate: while armed, `wait()` suspends the caller until
+/// `release()` is called. Used by the re-entrancy tests below to get a deterministic window in
+/// which a second, overlapping call can be issued — instead of racing on `Task` scheduling
+/// order, which this codebase's own concurrency tests note is unreliable (see
+/// `GatedDDEVService` in `ProjectConcurrencyTests.swift`).
+private final class Gate: @unchecked Sendable {
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    var isArmed = false
+    var waiterCount: Int { waiters.count }
+
+    func wait() async {
+        guard isArmed else { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    /// Busy-waits, bounded, until at least `count` callers are parked in `wait()`. Bounded
+    /// rather than unconditional so a scenario where the expected count is never reached (e.g.
+    /// a re-entrancy guard correctly stopping a second caller before it reaches the gate) cannot
+    /// hang the test — it simply falls through after `maxAttempts` yields.
+    func waitForWaiters(atLeast count: Int, maxAttempts: Int = 1000) async {
+        for _ in 0..<maxAttempts where waiterCount < count {
+            await Task.yield()
+        }
+    }
+
+    func release() {
+        isArmed = false
+        let toResume = waiters
+        waiters = []
+        toResume.forEach { $0.resume() }
+    }
+}
+
 private final class FakeDockerSystemService: DockerSystemServicing, @unchecked Sendable {
     var headroomResult: Result<DockerHeadroom, Error> = .success(
         DockerHeadroom(totalBytes: 100_000, usedBytes: 50_000, availableBytes: 50_000)
     )
     var usageResult: Result<DockerUsage, Error>
     var volumesResult: Result<[DockerVolume], Error> = .success([])
+    var pruneBuildCacheResult: Result<CommandResult, Error> = .success(.success())
+    var pruneUnusedImagesResult: Result<CommandResult, Error> = .success(.success())
+    /// Volume names that should report a failed removal; every other name succeeds.
+    var volumeNamesToFail: Set<String> = []
+
+    /// Gates entry to `pruneBuildCache()` / `removeVolumes(_:)` respectively, for the
+    /// re-entrancy tests. Left un-armed (a no-op) for every other test.
+    let pruneBuildCacheGate = Gate()
+    let removeVolumesGate = Gate()
+
     private(set) var prunedBuildCache = false
     private(set) var prunedImages = false
     private(set) var removedVolumes: [String] = []
+    private(set) var pruneBuildCacheCallCount = 0
+    private(set) var removeVolumesCallCount = 0
 
     init() {
         let zero = DockerUsageCategory(totalCount: 0, active: 0, sizeBytes: 0, reclaimableBytes: 0)
@@ -22,27 +67,129 @@ private final class FakeDockerSystemService: DockerSystemServicing, @unchecked S
 
     func pruneBuildCache() async throws -> CommandResult {
         prunedBuildCache = true
-        return CommandResult.success()
+        pruneBuildCacheCallCount += 1
+        await pruneBuildCacheGate.wait()
+        return try pruneBuildCacheResult.get()
     }
 
     func pruneUnusedImages() async throws -> CommandResult {
         prunedImages = true
-        return CommandResult.success()
+        return try pruneUnusedImagesResult.get()
     }
 
     func removeVolumes(_ names: [String]) async -> [VolumeRemovalResult] {
+        removeVolumesCallCount += 1
+        await removeVolumesGate.wait()
         removedVolumes.append(contentsOf: names)
-        return names.map { VolumeRemovalResult(name: $0, succeeded: true, message: nil) }
+        return names.map { name in
+            let succeeded = !volumeNamesToFail.contains(name)
+            return VolumeRemovalResult(
+                name: name,
+                succeeded: succeeded,
+                message: succeeded ? nil : "Simulated failure removing \(name)."
+            )
+        }
     }
+}
+
+/// Minimal `DDEVServicing` conformer. `DockerDiskViewModel` only ever calls `downloadImages()`
+/// (via `prefetchImages()`) and `mutagen(_:in:)` (only for a `.mutagenReset` plan item, which
+/// none of these tests produce) — every other requirement is a `fatalError` tripwire so an
+/// unexpected call surfaces immediately instead of silently returning a placeholder.
+private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
+    var downloadImagesResult: Result<CommandResult, Error> = .success(.success())
+    private(set) var downloadImagesCallCount = 0
+
+    func downloadImages() async throws -> CommandResult {
+        downloadImagesCallCount += 1
+        return try downloadImagesResult.get()
+    }
+
+    private func unused(_ function: String = #function) -> Never {
+        fatalError("\(function) is not used by DockerDiskViewModelTests")
+    }
+
+    func listProjects() async throws -> [DDEVProject] { unused() }
+    func describe(projectName: String) async throws -> DDEVProjectDetails { unused() }
+    func start(projectName: String) async throws -> CommandResult { unused() }
+    func stop(projectName: String) async throws -> CommandResult { unused() }
+    func restart(projectName: String) async throws -> CommandResult { unused() }
+    func unlink(projectName: String) async throws -> CommandResult { unused() }
+    func deleteDDEVData(projectName: String) async throws -> CommandResult { unused() }
+    func startProject(in appRoot: String) async throws -> CommandResult { unused() }
+    func configureProject(in appRoot: String, name: String, type: DDEVProjectType, docroot: String) async throws -> CommandResult { unused() }
+    func setPHPVersion(_ version: String, in appRoot: String) async throws -> CommandResult { unused() }
+    func launchDatabaseTool(_ tool: DDEVDatabaseTool, in appRoot: String) async throws -> CommandResult { unused() }
+    func importDatabase(_ options: DDEVDatabaseImportOptions, in appRoot: String) async throws -> CommandResult { unused() }
+    func importFiles(_ options: DDEVImportFilesOptions, in appRoot: String) async throws -> CommandResult { unused() }
+    func exportDatabase(_ options: DDEVDatabaseExportOptions, in appRoot: String) async throws -> CommandResult { unused() }
+    func createSnapshot(name: String?, in appRoot: String) async throws -> CommandResult { unused() }
+    func listSnapshots(in appRoot: String) async throws -> CommandResult { unused() }
+    func restoreSnapshot(named snapshotName: String, in appRoot: String) async throws -> CommandResult { unused() }
+    func restoreLatestSnapshot(in appRoot: String) async throws -> CommandResult { unused() }
+    func cleanupSnapshots(in appRoot: String) async throws -> CommandResult { unused() }
+    func cleanupSnapshot(named snapshotName: String, in appRoot: String) async throws -> CommandResult { unused() }
+    func logs(projectName: String, service: String, tail: Int, includeTimestamps: Bool, in appRoot: String) async throws -> CommandResult { unused() }
+    func listInstalledAddOns(projectName: String, in appRoot: String) async throws -> CommandResult { unused() }
+    func searchAddOns(query: String, in appRoot: String) async throws -> CommandResult { unused() }
+    func listAllAddOns() async throws -> [DDEVAddon] { unused() }
+    func getAddOn(_ repository: String, projectName: String, in appRoot: String) async throws -> CommandResult { unused() }
+    func removeAddOn(named name: String, projectName: String, in appRoot: String) async throws -> CommandResult { unused() }
+    func applyConfigChange(_ change: DDEVConfigChange, in appRoot: String) async throws -> CommandResult { unused() }
+    func runProjectCommand(arguments: [String], in appRoot: String) async throws -> CommandResult { unused() }
+    func exec(command: String, service: DDEVExecService, in appRoot: String) async throws -> CommandResult { unused() }
+    func version() async throws -> CommandResult { unused() }
+    func versionInfo() async throws -> DDEVVersionInfo { unused() }
+    func poweroff() async throws -> CommandResult { unused() }
+    func deleteImages() async throws -> CommandResult { unused() }
+    func globalConfig() async throws -> DDEVGlobalConfig { unused() }
+    func applyGlobalConfig(_ changes: [DDEVGlobalConfigChange]) async throws -> CommandResult { unused() }
+    func utilityDiagnose(in appRoot: String?) async throws -> CommandResult { unused() }
+    func utilityConfigYAML(omitKeys: [String], in appRoot: String) async throws -> CommandResult { unused() }
+    func utilityCheckCustomConfig(in appRoot: String) async throws -> CommandResult { unused() }
+    func utilityCheckDBMatch(in appRoot: String) async throws -> CommandResult { unused() }
+    func migrateDatabase(to type: DDEVDatabaseType, version: String, in appRoot: String) async throws -> CommandResult { unused() }
+    func mutagen(_ command: DDEVMutagenCommand, in appRoot: String) async throws -> CommandResult { unused() }
+    func xhgui(_ command: DDEVXHGuiCommand, in appRoot: String) async throws -> CommandResult { unused() }
+    func xdebug(_ command: DDEVXdebugCommand, in appRoot: String) async throws -> CommandResult { unused() }
+    func updateWordPressCore(in appRoot: String) async throws -> CommandResult { unused() }
+    func updateWordPressPlugins(in appRoot: String) async throws -> CommandResult { unused() }
+    func updateWordPressThemes(in appRoot: String) async throws -> CommandResult { unused() }
+    func configureWordPressMultisite(_ options: WordPressMultisiteOptions, in appRoot: String) async throws -> CommandResult { unused() }
+    func share(in appRoot: String, onOutputLine: (@Sendable (String) -> Void)?) async throws -> CommandResult { unused() }
 }
 
 @MainActor
 final class DockerDiskViewModelTests: XCTestCase {
 
     private func makeViewModel(
-        docker: FakeDockerSystemService = FakeDockerSystemService()
+        docker: FakeDockerSystemService = FakeDockerSystemService(),
+        ddevService: DDEVServicing? = nil,
+        scheduler: CommandScheduler? = nil
     ) -> DockerDiskViewModel {
-        DockerDiskViewModel(dockerService: docker, warnThreshold: 0.85, criticalThreshold: 0.93)
+        DockerDiskViewModel(
+            dockerService: docker,
+            ddevService: ddevService,
+            scheduler: scheduler,
+            warnThreshold: 0.85,
+            criticalThreshold: 0.93
+        )
+    }
+
+    /// Configures `docker` so `refreshFullInventory` + `executeReclaim` produce a plan with all
+    /// three usage-derived/volume actions this suite exercises: build cache, unused images, and
+    /// one orphaned volume ripe for removal. Mirrors `testExecuteReclaimRunsPlannedActions`'s
+    /// setup so the re-entrancy and failure-path tests below drive a realistic, non-trivial plan.
+    private func configureReclaimablePlan(on docker: FakeDockerSystemService, volumeName: String = "westlife_project_mutagen") {
+        docker.usageResult = .success(DockerUsage(
+            images: DockerUsageCategory(totalCount: 5, active: 1, sizeBytes: 10_000, reclaimableBytes: 5_000),
+            containers: DockerUsageCategory(totalCount: 0, active: 0, sizeBytes: 0, reclaimableBytes: 0),
+            volumes: DockerUsageCategory(totalCount: 0, active: 0, sizeBytes: 0, reclaimableBytes: 0),
+            buildCache: DockerUsageCategory(totalCount: 3, active: 0, sizeBytes: 2_000, reclaimableBytes: 2_000)
+        ))
+        docker.volumesResult = .success([
+            DockerVolume(name: volumeName, sizeBytes: 1_000, links: 0)
+        ])
     }
 
     /// A minimal registered, running project — used to give `ReclaimPlanner` a trustworthy,
@@ -182,6 +329,166 @@ final class DockerDiskViewModelTests: XCTestCase {
         XCTAssertNotNil(viewModel.errorMessage)
     }
 
+    // MARK: - Re-entrancy (finding 1)
+
+    func testExecuteReclaimIsNotReentrant() async {
+        let docker = FakeDockerSystemService()
+        configureReclaimablePlan(on: docker)
+        let viewModel = makeViewModel(docker: docker)
+        await viewModel.refreshFullInventory(projects: [makeProject(named: "aqua-pura")])
+
+        docker.pruneBuildCacheGate.isArmed = true
+        async let first: Void = viewModel.executeReclaim()
+        // Wait until the first call is genuinely mid-flight (parked inside `pruneBuildCache`)
+        // before issuing the second, so the overlap is real rather than assumed.
+        await docker.pruneBuildCacheGate.waitForWaiters(atLeast: 1)
+
+        async let second: Void = viewModel.executeReclaim()
+        // Give the second call a bounded window to either bail out at the re-entrancy guard
+        // (expected) or, if the guard were missing, to reach the gate itself.
+        await docker.pruneBuildCacheGate.waitForWaiters(atLeast: 2, maxAttempts: 50)
+
+        docker.pruneBuildCacheGate.release()
+        _ = await (first, second)
+
+        XCTAssertEqual(docker.pruneBuildCacheCallCount, 1, "a concurrent call must not re-run the batch")
+        XCTAssertEqual(docker.removeVolumesCallCount, 1, "a concurrent call must not re-issue volume removal")
+        XCTAssertEqual(docker.removedVolumes, ["westlife_project_mutagen"])
+        XCTAssertFalse(viewModel.isReclaiming)
+    }
+
+    func testRemoveVolumeIsNotReentrant() async {
+        let docker = FakeDockerSystemService()
+        let viewModel = makeViewModel(docker: docker)
+
+        docker.removeVolumesGate.isArmed = true
+        async let first: Void = viewModel.removeVolume(named: "orphan_volume")
+        await docker.removeVolumesGate.waitForWaiters(atLeast: 1)
+
+        async let second: Void = viewModel.removeVolume(named: "orphan_volume")
+        await docker.removeVolumesGate.waitForWaiters(atLeast: 2, maxAttempts: 50)
+
+        docker.removeVolumesGate.release()
+        _ = await (first, second)
+
+        XCTAssertEqual(docker.removeVolumesCallCount, 1, "a concurrent call must not re-run the removal")
+        XCTAssertEqual(docker.removedVolumes, ["orphan_volume"])
+        XCTAssertFalse(viewModel.isReclaiming)
+    }
+
+    // MARK: - Failure paths (finding 2)
+
+    func testPruneFailureDoesNotAbortBatch() async {
+        struct Boom: Error {}
+        let docker = FakeDockerSystemService()
+        configureReclaimablePlan(on: docker)
+        docker.pruneBuildCacheResult = .failure(Boom())
+        let viewModel = makeViewModel(docker: docker)
+        await viewModel.refreshFullInventory(projects: [makeProject(named: "aqua-pura")])
+
+        await viewModel.executeReclaim()
+
+        XCTAssertTrue(docker.prunedImages, "a build-cache failure must not stop the rest of the batch")
+        XCTAssertEqual(docker.removedVolumes, ["westlife_project_mutagen"], "volumes must still be removed")
+        XCTAssertEqual(
+            viewModel.lastReclaimSummary, "Reclaimed with 1 failure(s): Build cache.",
+            "the one failure must be named, not silently dropped"
+        )
+    }
+
+    func testVolumeRemovalFailureReflectedInSummary() async {
+        let docker = FakeDockerSystemService()
+        configureReclaimablePlan(on: docker)
+        docker.volumeNamesToFail = ["westlife_project_mutagen"]
+        let viewModel = makeViewModel(docker: docker)
+        await viewModel.refreshFullInventory(projects: [makeProject(named: "aqua-pura")])
+
+        await viewModel.executeReclaim()
+
+        XCTAssertTrue(docker.prunedBuildCache)
+        XCTAssertTrue(docker.prunedImages)
+        let summary = try? XCTUnwrap(viewModel.lastReclaimSummary)
+        XCTAssertTrue(
+            summary?.contains("westlife_project_mutagen") ?? false,
+            "the failed volume must be named in the summary"
+        )
+        XCTAssertFalse(
+            summary?.hasPrefix("Reclaimed an estimated") ?? true,
+            "a partial failure must not be reported as a clean success"
+        )
+    }
+
+    func testRemoveVolumeSucceedsAndClearsStaleError() async {
+        let docker = FakeDockerSystemService()
+        docker.usageResult = .failure(NSError(domain: "test", code: 1))
+        let viewModel = makeViewModel(docker: docker)
+        // Seed a stale error from an earlier, unrelated failure.
+        await viewModel.refreshFullInventory(projects: [])
+        XCTAssertNotNil(viewModel.errorMessage, "precondition: an error is already showing")
+
+        docker.volumeNamesToFail = []
+        await viewModel.removeVolume(named: "orphan_volume")
+
+        XCTAssertEqual(docker.removedVolumes, ["orphan_volume"])
+        XCTAssertNil(viewModel.errorMessage, "a successful removal must clear a stale error from a prior operation")
+    }
+
+    func testRemoveVolumeFailureSetsErrorMessage() async {
+        let docker = FakeDockerSystemService()
+        docker.volumeNamesToFail = ["orphan_volume"]
+        let viewModel = makeViewModel(docker: docker)
+
+        await viewModel.removeVolume(named: "orphan_volume")
+
+        XCTAssertEqual(docker.removedVolumes, ["orphan_volume"])
+        XCTAssertNotNil(viewModel.errorMessage)
+    }
+
+    func testPrefetchImagesSucceeds() async {
+        let docker = FakeDockerSystemService()
+        let ddevService = FakeDDEVService()
+        let viewModel = makeViewModel(docker: docker, ddevService: ddevService)
+
+        await viewModel.prefetchImages()
+
+        XCTAssertEqual(ddevService.downloadImagesCallCount, 1)
+        XCTAssertNil(viewModel.errorMessage)
+        XCTAssertFalse(viewModel.isReclaiming)
+    }
+
+    func testPrefetchImagesFailureSetsErrorMessage() async {
+        struct Boom: Error {}
+        let docker = FakeDockerSystemService()
+        let ddevService = FakeDDEVService()
+        ddevService.downloadImagesResult = .failure(Boom())
+        let viewModel = makeViewModel(docker: docker, ddevService: ddevService)
+
+        await viewModel.prefetchImages()
+
+        XCTAssertEqual(ddevService.downloadImagesCallCount, 1)
+        XCTAssertNotNil(viewModel.errorMessage)
+        XCTAssertFalse(viewModel.isReclaiming)
+    }
+
+    func testExecuteReclaimUsesSchedulerWhenProvided() async {
+        let docker = FakeDockerSystemService()
+        configureReclaimablePlan(on: docker)
+        let scheduler = CommandScheduler(maxConcurrent: 1)
+        let viewModel = makeViewModel(docker: docker, scheduler: scheduler)
+        await viewModel.refreshFullInventory(projects: [makeProject(named: "aqua-pura")])
+        let expectedBytes = viewModel.plan.totalBytes
+
+        await viewModel.executeReclaim()
+
+        // Exercises the `scheduler.run(operation)` branch inside `record` end-to-end (rather
+        // than merely compiling it): the batch must still complete correctly when funnelled
+        // through a real `CommandScheduler`.
+        XCTAssertTrue(docker.prunedBuildCache)
+        XCTAssertTrue(docker.prunedImages)
+        XCTAssertEqual(docker.removedVolumes, ["westlife_project_mutagen"])
+        XCTAssertEqual(viewModel.lastReclaimSummary, "Reclaimed an estimated \(expectedBytes.formattedBytes).")
+    }
+
     // MARK: - Threshold clamping
 
     // Preferences impose no range or ordering validation on these values before they reach
@@ -205,15 +512,32 @@ final class DockerDiskViewModelTests: XCTestCase {
     func testThresholdAboveOneIsClamped() async {
         // `usedFraction` never exceeds 1.0, so a threshold above 1.0 would unclamped mean
         // "never warn". Confirm a near-full disk still raises `.critical` once clamped.
-        let docker = FakeDockerSystemService()
-        docker.headroomResult = .success(
+        let criticalDocker = FakeDockerSystemService()
+        criticalDocker.headroomResult = .success(
             DockerHeadroom(totalBytes: 1000, usedBytes: 990, availableBytes: 10)  // 99%
         )
-        let viewModel = DockerDiskViewModel(dockerService: docker, warnThreshold: 1.4, criticalThreshold: 2.0)
+        let criticalViewModel = DockerDiskViewModel(dockerService: criticalDocker, warnThreshold: 1.4, criticalThreshold: 2.0)
 
-        await viewModel.refreshHeadroom()
+        await criticalViewModel.refreshHeadroom()
 
-        XCTAssertEqual(viewModel.alertLevel, .critical)
+        XCTAssertEqual(criticalViewModel.alertLevel, .critical)
+
+        // Both inputs clamp to the same ceiling (`maxThreshold`), so a naive clamp-then-swap
+        // would collapse warn == critical and make `.warning` permanently unreachable — the
+        // regression this test previously missed (see finding 3). Confirm a slightly lower
+        // usage, still above the clamped warn threshold but below critical, reads as `.warning`.
+        let warningDocker = FakeDockerSystemService()
+        warningDocker.headroomResult = .success(
+            DockerHeadroom(totalBytes: 1000, usedBytes: 985, availableBytes: 15)  // 98.5%
+        )
+        let warningViewModel = DockerDiskViewModel(dockerService: warningDocker, warnThreshold: 1.4, criticalThreshold: 2.0)
+
+        await warningViewModel.refreshHeadroom()
+
+        XCTAssertEqual(
+            warningViewModel.alertLevel, .warning,
+            "clamping two out-of-range thresholds must still leave a reachable warning band"
+        )
     }
 
     func testWarnGreaterThanCriticalIsCorrected() async {
