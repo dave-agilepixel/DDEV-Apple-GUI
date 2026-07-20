@@ -45,7 +45,15 @@ public final class DockerDiskViewModel {
     public private(set) var lastReclaimSummary: String?
 
     @ObservationIgnored private let dockerService: DockerSystemServicing
-    @ObservationIgnored private let ddevService: DDEVServicing?
+    /// Non-optional deliberately. It was `DDEVServicing?`, and the `guard let ddevService else
+    /// { return }` that implied returned *without throwing* — so `record` counted the skipped
+    /// `ddev mutagen reset` as a success, and `lastReclaimSummary` then reported every sync-cache
+    /// byte in the plan as reclaimed while nothing had been touched. Every real construction site
+    /// can supply a service, so the unrepresentable state is removed rather than guarded.
+    @ObservationIgnored private let ddevService: DDEVServicing
+    /// The scheduler that serialises reclaim against project start/stop. Optional only so tests
+    /// can exercise the un-scheduled path; every production site injects the *same* instance the
+    /// `ProjectDashboardViewModel` uses — a second instance would serialise nothing.
     @ObservationIgnored private let scheduler: CommandScheduler?
     @ObservationIgnored private let warnThreshold: Double
     @ObservationIgnored private let criticalThreshold: Double
@@ -60,7 +68,7 @@ public final class DockerDiskViewModel {
 
     public init(
         dockerService: DockerSystemServicing = DockerSystemService(),
-        ddevService: DDEVServicing? = nil,
+        ddevService: DDEVServicing = DDEVCommandService(),
         scheduler: CommandScheduler? = nil,
         warnThreshold: Double = 0.85,
         criticalThreshold: Double = 0.93
@@ -203,7 +211,6 @@ public final class DockerDiskViewModel {
                 }
             case let .mutagenReset(_, appRoot):
                 await record(&failures, item.label) { [ddevService] in
-                    guard let ddevService else { return }
                     _ = try await ddevService.mutagen(.reset, in: appRoot)
                 }
             case let .removeVolume(name):
@@ -212,7 +219,7 @@ public final class DockerDiskViewModel {
         }
 
         if !volumeNames.isEmpty {
-            let results = await dockerService.removeVolumes(volumeNames)
+            let results = await scheduledRemoveVolumes(volumeNames)
             failures.append(contentsOf: results.filter { !$0.succeeded }.map(\.name))
         }
 
@@ -231,7 +238,7 @@ public final class DockerDiskViewModel {
         isReclaiming = true
         defer { isReclaiming = false }
 
-        let results = await dockerService.removeVolumes([name])
+        let results = await scheduledRemoveVolumes([name])
         if let failure = results.first(where: { !$0.succeeded }) {
             errorMessage = failure.message ?? "Could not remove \(name)."
         }
@@ -241,7 +248,6 @@ public final class DockerDiskViewModel {
     /// Maintenance action — this *consumes* disk rather than reclaiming it.
     public func prefetchImages() async {
         guard !isReclaiming else { return }
-        guard let ddevService else { return }
         isReclaiming = true
         errorMessage = nil
         defer { isReclaiming = false }
@@ -261,6 +267,29 @@ public final class DockerDiskViewModel {
     /// (`dockerService`, `ddevService`, `appRoot`), so marking the closures `@Sendable` costs
     /// nothing. `@escaping` is not required — `CommandScheduler.run`'s parameter is
     /// non-escaping, and `record` only ever calls `operation` directly within its own scope.
+    /// Removes volumes through the scheduler when one is injected.
+    ///
+    /// Volume removal cannot go through `record` — `removeVolumes` never throws, it returns a
+    /// per-volume result — but it mutates Docker state exactly as much as a prune does, so it
+    /// must not interleave with a project start/stop either. Without this, the spec's claim that
+    /// "all reclaim runs through `CommandScheduler`" was false for precisely the destructive half.
+    private func scheduledRemoveVolumes(_ names: [String]) async -> [VolumeRemovalResult] {
+        guard let scheduler else { return await dockerService.removeVolumes(names) }
+        do {
+            return try await scheduler.run { [dockerService] in
+                await dockerService.removeVolumes(names)
+            }
+        } catch {
+            // `removeVolumes` itself never throws, so the only error reachable here is a
+            // cancelled `acquire()`. Nothing was removed in that case, and reporting each name
+            // as failed is both accurate and the fail-safe direction — it can only over-report
+            // what still remains on disk, never claim a removal that did not happen.
+            return names.map {
+                VolumeRemovalResult(name: $0, succeeded: false, message: error.presentableMessage)
+            }
+        }
+    }
+
     private func record(
         _ failures: inout [String],
         _ label: String,

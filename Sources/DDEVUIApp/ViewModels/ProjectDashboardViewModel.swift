@@ -243,7 +243,10 @@ public final class ProjectDashboardViewModel {
     private let projectCache: ProjectCacheStoring
     private let groupStore: ProjectGroupStoring
     private let customCommandDiscovery: CustomCommandDiscovering
-    private let scheduler: CommandScheduler
+    /// Internal rather than private so `DDEVUIApp`/`ContentView` can hand the *same* instance to
+    /// `DockerDiskViewModel`. Reclaim must serialise against project start/stop, and a separate
+    /// `CommandScheduler` would serialise nothing — the two would hold independent permit pools.
+    let scheduler: CommandScheduler
     private let notifier: NotificationScheduling
     private let thumbnailer: WebsiteThumbnailing
     private let thumbnailStore: ThumbnailStoring

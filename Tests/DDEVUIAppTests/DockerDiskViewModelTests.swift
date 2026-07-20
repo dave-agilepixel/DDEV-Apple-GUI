@@ -108,16 +108,25 @@ private final class FakeDockerSystemService: DockerSystemServicing, @unchecked S
 }
 
 /// Minimal `DDEVServicing` conformer. `DockerDiskViewModel` only ever calls `downloadImages()`
-/// (via `prefetchImages()`) and `mutagen(_:in:)` (only for a `.mutagenReset` plan item, which
-/// none of these tests produce) — every other requirement is a `fatalError` tripwire so an
+/// (via `prefetchImages()`) and `mutagen(_:in:)` (for a `.mutagenReset` plan item) — both are
+/// implemented and configurable here. Every other requirement is a `fatalError` tripwire so an
 /// unexpected call surfaces immediately instead of silently returning a placeholder.
 private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
     var downloadImagesResult: Result<CommandResult, Error> = .success(.success())
+    var mutagenResult: Result<CommandResult, Error> = .success(.success())
     private(set) var downloadImagesCallCount = 0
+    private(set) var mutagenCallCount = 0
 
     func downloadImages() async throws -> CommandResult {
         downloadImagesCallCount += 1
         return try downloadImagesResult.get()
+    }
+
+    /// Overridable rather than a `fatalError` tripwire, unlike the rest: `executeReclaim`
+    /// genuinely routes `.mutagenReset` plan items here, and the F3 tests need to make it fail.
+    func mutagen(_ command: DDEVMutagenCommand, in appRoot: String) async throws -> CommandResult {
+        mutagenCallCount += 1
+        return try mutagenResult.get()
     }
 
     private func unused(_ function: String = #function) -> Never {
@@ -164,7 +173,6 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
     func utilityCheckCustomConfig(in appRoot: String) async throws -> CommandResult { unused() }
     func utilityCheckDBMatch(in appRoot: String) async throws -> CommandResult { unused() }
     func migrateDatabase(to type: DDEVDatabaseType, version: String, in appRoot: String) async throws -> CommandResult { unused() }
-    func mutagen(_ command: DDEVMutagenCommand, in appRoot: String) async throws -> CommandResult { unused() }
     func xhgui(_ command: DDEVXHGuiCommand, in appRoot: String) async throws -> CommandResult { unused() }
     func xdebug(_ command: DDEVXdebugCommand, in appRoot: String) async throws -> CommandResult { unused() }
     func updateWordPressCore(in appRoot: String) async throws -> CommandResult { unused() }
@@ -179,7 +187,9 @@ final class DockerDiskViewModelTests: XCTestCase {
 
     private func makeViewModel(
         docker: FakeDockerSystemService = FakeDockerSystemService(),
-        ddevService: DDEVServicing? = nil,
+        // A fake, never `nil` and never the real `DDEVCommandService` the view model now
+        // defaults to — these tests must not spawn `ddev` subprocesses.
+        ddevService: DDEVServicing = FakeDDEVService(),
         scheduler: CommandScheduler? = nil
     ) -> DockerDiskViewModel {
         DockerDiskViewModel(
@@ -504,6 +514,141 @@ final class DockerDiskViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.lastReclaimSummary, "Reclaimed an estimated \(expectedBytes.formattedBytes).")
     }
 
+    // MARK: - F2: volume removal is scheduled too
+
+    /// `executeReclaim`'s prunes went through `record` (and so through the scheduler), but its
+    /// volume removals called `dockerService.removeVolumes` directly, bypassing it entirely — so
+    /// the destructive half of reclaim could still interleave with a project start/stop. Prove
+    /// the scheduler is now genuinely in the path by holding its only permit: the removal must
+    /// not reach Docker until the permit is released.
+    func testRemoveVolumeGoesThroughTheSchedulerWhenProvided() async throws {
+        let docker = FakeDockerSystemService()
+        let scheduler = CommandScheduler(maxConcurrent: 1)
+        let viewModel = makeViewModel(docker: docker, scheduler: scheduler)
+
+        try await scheduler.acquire()  // hold the only permit, as a project start would
+
+        let removal = Task { await viewModel.removeVolume(named: "westlife-mariadb") }
+        for _ in 0..<200 where docker.removeVolumesCallCount == 0 {
+            await Task.yield()
+        }
+        XCTAssertEqual(
+            docker.removeVolumesCallCount, 0,
+            "removal must wait for a scheduler permit rather than bypassing it"
+        )
+
+        await scheduler.release()
+        await removal.value
+
+        XCTAssertEqual(docker.removedVolumes, ["westlife-mariadb"], "and must still run once the permit frees")
+        XCTAssertNil(viewModel.errorMessage)
+    }
+
+    /// The same for the bulk path's volume removals.
+    func testExecuteReclaimVolumeRemovalGoesThroughTheScheduler() async throws {
+        let docker = FakeDockerSystemService()
+        configureReclaimablePlan(on: docker)
+        let scheduler = CommandScheduler(maxConcurrent: 1)
+        let viewModel = makeViewModel(docker: docker, scheduler: scheduler)
+        await viewModel.refreshFullInventory(projects: [makeProject(named: "aqua-pura")])
+
+        try await scheduler.acquire()
+
+        let reclaim = Task { await viewModel.executeReclaim() }
+        for _ in 0..<200 where docker.removeVolumesCallCount == 0 {
+            await Task.yield()
+        }
+        XCTAssertEqual(docker.removeVolumesCallCount, 0, "bulk removal must also wait on the scheduler")
+        XCTAssertFalse(docker.prunedBuildCache, "and so must the prunes")
+
+        await scheduler.release()
+        await reclaim.value
+
+        XCTAssertEqual(docker.removedVolumes, ["westlife_project_mutagen"])
+    }
+
+    /// Without a scheduler the un-scheduled branch must still work — tests rely on it, and it
+    /// is the only path that does not require an injected actor.
+    func testRemoveVolumeWorksWithoutAScheduler() async {
+        let docker = FakeDockerSystemService()
+        let viewModel = makeViewModel(docker: docker)
+
+        await viewModel.removeVolume(named: "westlife-mariadb")
+
+        XCTAssertEqual(docker.removedVolumes, ["westlife-mariadb"])
+    }
+
+    // MARK: - F3: a failing DDEV service must not report a clean success
+
+    /// Configures a plan containing exactly one `.mutagenReset` item: a registered, *stopped*
+    /// project whose sync-cache volume exists.
+    private func configureMutagenResetPlan(on docker: FakeDockerSystemService) {
+        let zero = DockerUsageCategory(totalCount: 0, active: 0, sizeBytes: 0, reclaimableBytes: 0)
+        docker.usageResult = .success(DockerUsage(images: zero, containers: zero, volumes: zero, buildCache: zero))
+        docker.volumesResult = .success([
+            DockerVolume(name: "aqua-pura_project_mutagen", sizeBytes: 24_000_000_000, links: 0)
+        ])
+    }
+
+    private func stoppedProject(named name: String) -> DDEVProject {
+        DDEVProject(
+            name: name, appRoot: "/tmp/\(name)", shortRoot: "~/\(name)",
+            status: .stopped, statusDescription: "stopped", projectType: .php, docroot: "",
+            primaryURL: nil, httpURL: nil, httpsURL: nil, mailpitURL: nil, mailpitHTTPSURL: nil,
+            xhguiURL: nil, xhguiHTTPSURL: nil, mutagenEnabled: true, mutagenStatus: nil
+        )
+    }
+
+    /// The bug: `ddevService` was optional and the `.mutagenReset` branch did `guard let
+    /// ddevService else { return }` — returning *without throwing*, so `record` counted the
+    /// untouched reset as a success. `lastReclaimSummary` then claimed every sync-cache byte in
+    /// the plan had been reclaimed. On the machine this was found on that was 24 GB reported as
+    /// freed while nothing had happened. Whatever the reason the reset does not run, the summary
+    /// must not claim a clean success.
+    func testFailingDDEVServiceIsCountedAsAFailureNotAReclaim() async {
+        struct Boom: Error {}
+        let docker = FakeDockerSystemService()
+        configureMutagenResetPlan(on: docker)
+        let ddevService = FakeDDEVService()
+        ddevService.mutagenResult = .failure(Boom())
+        let viewModel = makeViewModel(docker: docker, ddevService: ddevService)
+        await viewModel.refreshFullInventory(projects: [stoppedProject(named: "aqua-pura")])
+
+        XCTAssertEqual(viewModel.plan.items.count, 1, "expected exactly one mutagen-reset item")
+        let claimedBytes = viewModel.plan.totalBytes.formattedBytes
+
+        await viewModel.executeReclaim()
+
+        let summary = viewModel.lastReclaimSummary
+        XCTAssertNotEqual(
+            viewModel.lastReclaimSummary, "Reclaimed an estimated \(claimedBytes).",
+            "a reset that did not happen must never be summarised as a clean reclaim"
+        )
+        XCTAssertEqual(
+            viewModel.lastReclaimSummary,
+            "Reclaimed with 1 failure(s): aqua-pura sync cache.",
+            "unexpected summary: \(String(describing: summary))"
+        )
+    }
+
+    /// The complement: when the reset genuinely succeeds, the clean summary is correct.
+    func testSucceedingMutagenResetIsSummarisedAsAReclaim() async {
+        let docker = FakeDockerSystemService()
+        configureMutagenResetPlan(on: docker)
+        let ddevService = FakeDDEVService()
+        let viewModel = makeViewModel(docker: docker, ddevService: ddevService)
+        await viewModel.refreshFullInventory(projects: [stoppedProject(named: "aqua-pura")])
+        let expectedBytes = viewModel.plan.totalBytes
+
+        await viewModel.executeReclaim()
+
+        XCTAssertEqual(ddevService.mutagenCallCount, 1, "the reset must actually be attempted")
+        XCTAssertEqual(
+            viewModel.lastReclaimSummary,
+            "Reclaimed an estimated \(expectedBytes.formattedBytes)."
+        )
+    }
+
     // MARK: - Threshold clamping
 
     // Preferences impose no range or ordering validation on these values before they reach
@@ -517,7 +662,7 @@ final class DockerDiskViewModelTests: XCTestCase {
         docker.headroomResult = .success(
             DockerHeadroom(totalBytes: 1000, usedBytes: 300, availableBytes: 700)  // 30%
         )
-        let viewModel = DockerDiskViewModel(dockerService: docker, warnThreshold: -1.0, criticalThreshold: 0.93)
+        let viewModel = DockerDiskViewModel(dockerService: docker, ddevService: FakeDDEVService(), warnThreshold: -1.0, criticalThreshold: 0.93)
 
         await viewModel.refreshHeadroom()
 
@@ -531,7 +676,7 @@ final class DockerDiskViewModelTests: XCTestCase {
         criticalDocker.headroomResult = .success(
             DockerHeadroom(totalBytes: 1000, usedBytes: 990, availableBytes: 10)  // 99%
         )
-        let criticalViewModel = DockerDiskViewModel(dockerService: criticalDocker, warnThreshold: 1.4, criticalThreshold: 2.0)
+        let criticalViewModel = DockerDiskViewModel(dockerService: criticalDocker, ddevService: FakeDDEVService(), warnThreshold: 1.4, criticalThreshold: 2.0)
 
         await criticalViewModel.refreshHeadroom()
 
@@ -545,7 +690,7 @@ final class DockerDiskViewModelTests: XCTestCase {
         warningDocker.headroomResult = .success(
             DockerHeadroom(totalBytes: 1000, usedBytes: 985, availableBytes: 15)  // 98.5%
         )
-        let warningViewModel = DockerDiskViewModel(dockerService: warningDocker, warnThreshold: 1.4, criticalThreshold: 2.0)
+        let warningViewModel = DockerDiskViewModel(dockerService: warningDocker, ddevService: FakeDDEVService(), warnThreshold: 1.4, criticalThreshold: 2.0)
 
         await warningViewModel.refreshHeadroom()
 
@@ -656,7 +801,7 @@ final class DockerDiskViewModelTests: XCTestCase {
         docker.headroomResult = .success(
             DockerHeadroom(totalBytes: 1000, usedBytes: 800, availableBytes: 200)  // 80%
         )
-        let viewModel = DockerDiskViewModel(dockerService: docker, warnThreshold: 0.95, criticalThreshold: 0.7)
+        let viewModel = DockerDiskViewModel(dockerService: docker, ddevService: FakeDDEVService(), warnThreshold: 0.95, criticalThreshold: 0.7)
 
         await viewModel.refreshHeadroom()
 

@@ -14,9 +14,13 @@ struct DDEVUIApp: App {
         // Read the real Task 9 preferences rather than hardcoding the defaults — `viewModel` is
         // already constructed above, so its `PreferencesModel`-backed `preferences` is available
         // here before `ContentView` (and its own preferences plumbing) ever comes into play.
+        // Shares `projectViewModel`'s scheduler instance, not a new one: reclaim must not
+        // interleave with project start/stop mutations, and two schedulers would each hand out
+        // their own permits and serialise nothing.
         _dockerDiskViewModel = State(initialValue: DockerDiskViewModel(
             dockerService: DockerSystemService(),
             ddevService: DDEVCommandService(),
+            scheduler: projectViewModel.scheduler,
             warnThreshold: projectViewModel.preferences.diskWarnThreshold,
             criticalThreshold: projectViewModel.preferences.diskCriticalThreshold
         ))

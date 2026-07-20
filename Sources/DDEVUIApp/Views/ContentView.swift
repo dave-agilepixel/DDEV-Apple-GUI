@@ -13,9 +13,10 @@ struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
-        _viewModel = State(initialValue: ProjectDashboardViewModel(notifier: ContentView.makeNotifier()))
+        let dashboard = ProjectDashboardViewModel(notifier: ContentView.makeNotifier())
+        _viewModel = State(initialValue: dashboard)
         _prerequisites = State(initialValue: PrerequisiteMonitor())
-        dockerDiskViewModel = DockerDiskViewModel()
+        dockerDiskViewModel = ContentView.makeDockerDiskViewModel(sharing: dashboard)
     }
 
     /// Injecting initializer for previews/tests, so they can pass stub services instead of the
@@ -23,11 +24,30 @@ struct ContentView: View {
     init(
         viewModel: ProjectDashboardViewModel,
         prerequisites: PrerequisiteMonitor,
-        dockerDiskViewModel: DockerDiskViewModel = DockerDiskViewModel()
+        dockerDiskViewModel: DockerDiskViewModel? = nil
     ) {
         _viewModel = State(initialValue: viewModel)
         _prerequisites = State(initialValue: prerequisites)
+        // `nil` rather than a defaulted `DockerDiskViewModel()`: the default has to share
+        // `viewModel`'s scheduler, and a default argument expression cannot refer to another
+        // parameter. Building it in the body is the only way to keep the two wired together.
         self.dockerDiskViewModel = dockerDiskViewModel
+            ?? ContentView.makeDockerDiskViewModel(sharing: viewModel)
+    }
+
+    /// Builds a `DockerDiskViewModel` that shares `dashboard`'s `CommandScheduler`, so reclaim
+    /// serialises against project start/stop rather than racing it. A fresh scheduler here would
+    /// hand out its own permits and serialise nothing.
+    private static func makeDockerDiskViewModel(
+        sharing dashboard: ProjectDashboardViewModel
+    ) -> DockerDiskViewModel {
+        DockerDiskViewModel(
+            dockerService: DockerSystemService(),
+            ddevService: DDEVCommandService(),
+            scheduler: dashboard.scheduler,
+            warnThreshold: dashboard.preferences.diskWarnThreshold,
+            criticalThreshold: dashboard.preferences.diskCriticalThreshold
+        )
     }
 
     private static func makeNotifier() -> NotificationScheduling {
