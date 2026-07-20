@@ -44,7 +44,8 @@ final class DockerSystemServiceTests: XCTestCase {
             CommandSpec(
                 executable: "/usr/local/bin/docker",
                 arguments: ["system", "df", "--format", "json"],
-                workingDirectory: nil
+                workingDirectory: nil,
+                timeout: .seconds(10)
             )
         ])
         XCTAssertEqual(usage.images.totalCount, 32)
@@ -76,7 +77,7 @@ final class DockerSystemServiceTests: XCTestCase {
         let headroom = try await service.headroom()
 
         XCTAssertEqual(runner.commands.count, 2)
-        XCTAssertEqual(runner.commands[0].arguments, ["ps", "--format", "{{.Names}}"])
+        XCTAssertEqual(runner.commands[0].arguments, ["ps", "--filter", "name=ddev-", "--format", "{{.Names}}"])
         XCTAssertEqual(runner.commands[1].arguments, ["exec", "ddev-router", "df", "-Pk", "/"])
         XCTAssertEqual(headroom.percentUsed, 71)
     }
@@ -96,16 +97,45 @@ final class DockerSystemServiceTests: XCTestCase {
 
         let headroom = try await service.headroom()
 
-        XCTAssertEqual(runner.commands[1].arguments, ["volume", "create", "ddevui-diskprobe"])
+        // The probe volume name is generated per invocation (finding 4), so assert its shape
+        // and that create/mount/remove all reference the SAME name, rather than a literal.
+        let createArguments = runner.commands[1].arguments
+        XCTAssertEqual(createArguments.first, "volume")
+        XCTAssertEqual(createArguments[1], "create")
+        let volumeName = try XCTUnwrap(createArguments.last)
+        XCTAssertTrue(volumeName.hasPrefix("ddevui-diskprobe-"), "unexpected probe volume name: \(volumeName)")
+
         XCTAssertEqual(runner.commands[2].arguments, [
-            "run", "--rm", "-v", "ddevui-diskprobe:/probe", "alpine", "df", "-Pk", "/probe"
+            "run", "--rm", "-v", "\(volumeName):/probe", "alpine", "df", "-Pk", "/probe"
         ])
-        // The probe volume must always be cleaned up.
-        XCTAssertEqual(runner.commands[3].arguments, ["volume", "rm", "ddevui-diskprobe"])
+        // The probe volume must always be cleaned up, using the exact name that was created.
+        XCTAssertEqual(runner.commands[3].arguments, ["volume", "rm", volumeName])
         XCTAssertEqual(headroom.availableBytes, 27_111_892 * 1024)
     }
 
-    func testHeadroomRemovesProbeVolumeEvenWhenDFFails() async {
+    func testAlpineProbeCommandCarriesATimeout() async throws {
+        let dfOutput = """
+        Filesystem           1024-blocks    Used Available Capacity Mounted on
+        /dev/vda1             98759140  66597752  27111892  71% /probe
+        """
+        let runner = RecordingCommandRunner(results: [
+            .success(CommandResult.success(stdout: "\n")),
+            .success(CommandResult.success()),
+            .success(CommandResult.success(stdout: dfOutput)),
+            .success(CommandResult.success())
+        ])
+        let service = DockerSystemService(commandRunner: runner, dockerExecutable: "docker")
+
+        _ = try await service.headroom()
+
+        let probeCommand = try XCTUnwrap(
+            runner.commands.first { $0.arguments.first == "run" },
+            "expected the alpine df probe command to have been recorded"
+        )
+        XCTAssertNotNil(probeCommand.timeout, "the alpine probe may pull an image over the network and must not hang forever")
+    }
+
+    func testHeadroomRemovesProbeVolumeEvenWhenDFFails() async throws {
         struct Boom: Error {}
         let runner = RecordingCommandRunner(results: [
             .success(CommandResult.success(stdout: "")),
@@ -117,10 +147,35 @@ final class DockerSystemServiceTests: XCTestCase {
 
         _ = try? await service.headroom()
 
+        let createArguments = runner.commands[1].arguments
+        let volumeName = try XCTUnwrap(createArguments.last)
         XCTAssertTrue(
-            runner.commands.contains { $0.arguments == ["volume", "rm", "ddevui-diskprobe"] },
-            "probe volume must be cleaned up even on failure"
+            runner.commands.contains { $0.arguments == ["volume", "rm", volumeName] },
+            "probe volume must be cleaned up even on failure, using the name that was created"
         )
+    }
+
+    func testHeadroomFallsBackToProbeWhenExecFailsAfterContainerIsFound() async throws {
+        struct Boom: Error {}
+        let dfOutput = """
+        Filesystem           1024-blocks    Used Available Capacity Mounted on
+        /dev/vda1             98759140  66597752  27111892  71% /probe
+        """
+        let runner = RecordingCommandRunner(results: [
+            .success(CommandResult.success(stdout: "ddev-router\n")), // docker ps — a container is running
+            .failure(Boom()),                                        // exec into it fails (exited/no df)
+            .success(CommandResult.success()),                       // volume create
+            .success(CommandResult.success(stdout: dfOutput)),       // run … df
+            .success(CommandResult.success())                        // volume rm
+        ])
+        let service = DockerSystemService(commandRunner: runner, dockerExecutable: "docker")
+
+        let headroom = try await service.headroom()
+
+        XCTAssertEqual(runner.commands[0].arguments, ["ps", "--filter", "name=ddev-", "--format", "{{.Names}}"])
+        XCTAssertEqual(runner.commands[1].arguments, ["exec", "ddev-router", "df", "-Pk", "/"])
+        XCTAssertEqual(runner.commands[2].arguments.first, "volume")
+        XCTAssertEqual(headroom.availableBytes, 27_111_892 * 1024)
     }
 
     func testPruneCommands() async throws {
