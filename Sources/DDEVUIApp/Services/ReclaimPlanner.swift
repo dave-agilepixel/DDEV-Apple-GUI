@@ -16,15 +16,30 @@ public enum ReclaimPlanner {
     /// Prefix matching would be wrong: `thethreeswords` is a strict prefix of
     /// `thethreeswordsguiseley`, and both are real projects.
     public static func classify(volumes: [DockerVolume], projects: [DDEVProject]) -> [ClassifiedVolume] {
-        let projectsByName = Dictionary(uniqueKeysWithValues: projects.map { ($0.name, $0) })
+        classify(volumes: volumes, projectsByName: index(projects))
+    }
 
-        return volumes.map { volume in
+    /// Indexes projects by name. `ddev list -j` offers no uniqueness guarantee, so duplicate
+    /// names must not trap at runtime — the first occurrence wins.
+    private static func index(_ projects: [DDEVProject]) -> [String: DDEVProject] {
+        Dictionary(projects.map { ($0.name, $0) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    private static func classify(
+        volumes: [DockerVolume],
+        projectsByName: [String: DDEVProject]
+    ) -> [ClassifiedVolume] {
+        volumes.map { volume in
             let (kind, projectName): (VolumeKind, String?) = {
                 if volume.name.hasSuffix(mutagenSuffix) {
-                    return (.mutagen, String(volume.name.dropLast(mutagenSuffix.count)))
+                    let stripped = String(volume.name.dropLast(mutagenSuffix.count))
+                    // A volume named exactly `_project_mutagen` strips to an empty name. That is
+                    // not an attribution to any project, so it must not reach the orphan branch.
+                    return stripped.isEmpty ? (.other, nil) : (.mutagen, stripped)
                 }
                 if volume.name.hasSuffix(databaseSuffix) {
-                    return (.database, String(volume.name.dropLast(databaseSuffix.count)))
+                    let stripped = String(volume.name.dropLast(databaseSuffix.count))
+                    return stripped.isEmpty ? (.other, nil) : (.database, stripped)
                 }
                 return (.other, nil)
             }()
@@ -36,7 +51,10 @@ public enum ReclaimPlanner {
                 guard let projectName, let project = projectsByName[projectName] else {
                     return projectName == nil ? .stopped : .orphaned
                 }
-                return project.status == .running ? .running : .stopped
+                // Fail narrow: only an explicitly stopped project yields `.stopped`. `.paused`
+                // and `.unknown` (what a failed status parse produces) are treated as running,
+                // so a parse failure can never widen eligibility.
+                return project.status == .stopped ? .stopped : .running
             }()
 
             return ClassifiedVolume(volume: volume, kind: kind, projectName: projectName, state: state)
@@ -50,7 +68,7 @@ public enum ReclaimPlanner {
         usage: DockerUsage
     ) -> ReclaimPlan {
         var items: [ReclaimItem] = []
-        let projectsByName = Dictionary(uniqueKeysWithValues: projects.map { ($0.name, $0) })
+        let projectsByName = index(projects)
 
         if usage.buildCache.reclaimableBytes > 0 {
             items.append(ReclaimItem(
@@ -72,7 +90,13 @@ public enum ReclaimPlanner {
             ))
         }
 
-        for classified in classify(volumes: volumes, projects: projects) {
+        // An empty project list is indistinguishable from a failed `ddev list` that returned
+        // nothing. Orphan detection is meaningless without a trustworthy project list — every
+        // volume would look orphaned, including every registered project's database — so we fail
+        // narrow and offer only the usage-derived items, never a volume.
+        guard !projects.isEmpty else { return ReclaimPlan(items: items) }
+
+        for classified in classify(volumes: volumes, projectsByName: projectsByName) {
             // An in-use volume can never be removed, whatever it holds.
             guard classified.state != .running else { continue }
 

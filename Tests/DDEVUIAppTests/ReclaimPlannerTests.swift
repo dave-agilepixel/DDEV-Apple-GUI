@@ -153,7 +153,7 @@ final class ReclaimPlannerTests: XCTestCase {
         // There is no DDEV project left to run `ddev mutagen reset` against.
         let plan = ReclaimPlanner.plan(
             volumes: [volume("westlife_project_mutagen")],
-            projects: [],
+            projects: [project("aqua-pura", status: .running)],
             usage: emptyUsage()
         )
         XCTAssertTrue(plan.items.contains { $0.action == .removeVolume(name: "westlife_project_mutagen") })
@@ -166,7 +166,7 @@ final class ReclaimPlannerTests: XCTestCase {
     func testUnrecognisedVolumesAreNeverBulkEligible() {
         let plan = ReclaimPlanner.plan(
             volumes: [volume("some-random-volume", gigabytes: 10)],
-            projects: [],
+            projects: [project("aqua-pura", status: .running)],
             usage: emptyUsage()
         )
         XCTAssertTrue(plan.isEmpty)
@@ -176,7 +176,103 @@ final class ReclaimPlannerTests: XCTestCase {
         // Orphaned but currently mounted — removal would fail, so don't offer it.
         let plan = ReclaimPlanner.plan(
             volumes: [volume("westlife_project_mutagen", links: 1)],
+            projects: [project("aqua-pura", status: .running)],
+            usage: emptyUsage()
+        )
+        XCTAssertTrue(plan.isEmpty)
+    }
+
+    // MARK: - Untrustworthy inputs
+
+    func testEmptyProjectListYieldsNoVolumeItems() {
+        // An empty list is indistinguishable from a failed `ddev list`. Without a trustworthy
+        // project list every database would look orphaned, so no volume may be offered at all.
+        let usage = DockerUsage(
+            images: DockerUsageCategory(totalCount: 30, active: 10, sizeBytes: 15_000_000_000, reclaimableBytes: 2_400_000_000),
+            containers: DockerUsageCategory(totalCount: 0, active: 0, sizeBytes: 0, reclaimableBytes: 0),
+            volumes: DockerUsageCategory(totalCount: 0, active: 0, sizeBytes: 0, reclaimableBytes: 0),
+            buildCache: DockerUsageCategory(totalCount: 49, active: 0, sizeBytes: 1_807_000_000, reclaimableBytes: 1_216_000_000)
+        )
+        let plan = ReclaimPlanner.plan(
+            volumes: [
+                volume("aqua-pura-mariadb", gigabytes: 5),
+                volume("thethreeswords-mariadb", gigabytes: 5),
+                volume("westlife_project_mutagen", gigabytes: 2)
+            ],
             projects: [],
+            usage: usage
+        )
+
+        XCTAssertFalse(plan.items.contains {
+            if case .removeVolume = $0.action { return true }
+            if case .mutagenReset = $0.action { return true }
+            return false
+        }, "no volume may be bulk-eligible when the project list cannot be trusted")
+        // The usage-derived items are unaffected — they do not depend on the project list.
+        XCTAssertTrue(plan.items.contains { $0.action == .buildCache })
+        XCTAssertTrue(plan.items.contains { $0.action == .unusedImages })
+        XCTAssertEqual(plan.totalBytes, 2_400_000_000 + 1_216_000_000)
+    }
+
+    func testDuplicateProjectNamesDoNotCrash() {
+        // `ddev list -j` offers no uniqueness guarantee for project names.
+        let projects = [
+            project("aqua-pura", status: .stopped),
+            project("aqua-pura", status: .running)
+        ]
+        let classified = ReclaimPlanner.classify(
+            volumes: [volume("aqua-pura_project_mutagen")],
+            projects: projects
+        )
+        XCTAssertEqual(classified.first?.projectName, "aqua-pura")
+        XCTAssertNotEqual(classified.first?.state, .orphaned, "a registered project is never orphaned")
+
+        let plan = ReclaimPlanner.plan(
+            volumes: [volume("aqua-pura-mariadb", gigabytes: 5)],
+            projects: projects,
+            usage: emptyUsage()
+        )
+        XCTAssertTrue(plan.isEmpty, "a registered project's database must never be bulk-eligible")
+    }
+
+    func testDegenerateVolumeNamesAreNeverBulkEligible() {
+        // Stripping the suffix leaves an empty name, which attributes to no project at all.
+        let classified = ReclaimPlanner.classify(
+            volumes: [volume("_project_mutagen"), volume("-mariadb")],
+            projects: [project("aqua-pura", status: .running)]
+        )
+        for entry in classified {
+            XCTAssertEqual(entry.kind, .other)
+            XCTAssertNil(entry.projectName)
+            XCTAssertNotEqual(entry.state, .orphaned)
+        }
+
+        let plan = ReclaimPlanner.plan(
+            volumes: [volume("_project_mutagen", gigabytes: 3), volume("-mariadb", gigabytes: 3)],
+            projects: [project("aqua-pura", status: .running)],
+            usage: emptyUsage()
+        )
+        XCTAssertTrue(plan.isEmpty)
+    }
+
+    func testPausedAndUnknownStatusAreTreatedAsRunning() {
+        // `.unknown` is what a failed status parse produces — it must not widen eligibility.
+        let classified = ReclaimPlanner.classify(
+            volumes: [volume("aqua-pura_project_mutagen"), volume("westlife_project_mutagen")],
+            projects: [
+                project("aqua-pura", status: .paused),
+                project("westlife", status: .unknown)
+            ]
+        )
+        XCTAssertEqual(classified.first { $0.projectName == "aqua-pura" }?.state, .running)
+        XCTAssertEqual(classified.first { $0.projectName == "westlife" }?.state, .running)
+
+        let plan = ReclaimPlanner.plan(
+            volumes: [volume("aqua-pura_project_mutagen"), volume("westlife_project_mutagen")],
+            projects: [
+                project("aqua-pura", status: .paused),
+                project("westlife", status: .unknown)
+            ],
             usage: emptyUsage()
         )
         XCTAssertTrue(plan.isEmpty)
