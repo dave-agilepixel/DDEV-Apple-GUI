@@ -372,4 +372,147 @@ final class ReclaimPlannerTests: XCTestCase {
         )
         XCTAssertEqual(plan.totalBytes, 3_000_000_000)
     }
+
+    // MARK: - Database suffixes (every type DDEV supports)
+
+    /// DDEV v1.25.3 names the database volume `<project>-postgres` for PostgreSQL and
+    /// `<project>-mariadb` for everything else, MySQL included. All of them must classify
+    /// `.database` so the delete confirmation renders the "take a snapshot first" copy rather
+    /// than the generic "This permanently deletes <name>." — a Postgres user must not be able to
+    /// one-click delete their database from a row that merely reads `other · stopped`.
+    func testClassifiesEveryDDEVDatabaseVolumeSuffixAsDatabase() {
+        for suffix in ["-mariadb", "-postgres"] {
+            let classified = ReclaimPlanner.classify(
+                volumes: [volume("aqua-pura\(suffix)")],
+                projects: [project("aqua-pura", status: .stopped)]
+            )
+
+            XCTAssertEqual(classified.first?.kind, .database, "\(suffix) should classify as a database")
+            XCTAssertEqual(classified.first?.projectName, "aqua-pura", "\(suffix) should attribute to its project")
+            XCTAssertEqual(classified.first?.state, .stopped)
+        }
+    }
+
+    /// MySQL projects share the MariaDB volume name — there is no `-mysql` volume — so a
+    /// literal `-mysql` suffix must stay `.other` rather than being invented as a database.
+    func testMySQLProjectsUseTheMariaDBVolumeName() {
+        let classified = ReclaimPlanner.classify(
+            volumes: [volume("aqua-pura-mysql")],
+            projects: [project("aqua-pura", status: .stopped)]
+        )
+
+        XCTAssertEqual(classified.first?.kind, .other)
+        XCTAssertNil(classified.first?.projectName)
+    }
+
+    /// The governing safety property, extended over every database suffix: a registered
+    /// project's database is never bulk-eligible, whatever database engine it runs.
+    func testNoDatabaseSuffixIsBulkEligibleForARegisteredProject() {
+        for suffix in ["-mariadb", "-postgres"] {
+            for status in [DDEVProjectStatus.stopped, .running] {
+                let plan = ReclaimPlanner.plan(
+                    volumes: [volume("aqua-pura\(suffix)", gigabytes: 5)],
+                    projects: [project("aqua-pura", status: status)],
+                    usage: emptyUsage()
+                )
+
+                XCTAssertTrue(
+                    plan.isEmpty,
+                    "\(suffix) for a registered (\(status)) project must never be bulk-eligible"
+                )
+            }
+        }
+    }
+
+    /// A volume named exactly `-postgres` strips to an empty project name, which is not an
+    /// attribution to anything and must not reach the orphan branch.
+    func testBareDatabaseSuffixIsNotAttributedToAProject() {
+        let classified = ReclaimPlanner.classify(
+            volumes: [volume("-postgres")],
+            projects: [project("aqua-pura", status: .stopped)]
+        )
+
+        XCTAssertEqual(classified.first?.kind, .other)
+        XCTAssertNil(classified.first?.projectName)
+        XCTAssertEqual(classified.first?.state, .stopped)
+    }
+
+    /// An orphaned PostgreSQL database is deliberately bulk-eligible, and must be flagged as a
+    /// database so the confirmation dialog warns about the data loss.
+    func testOrphanedPostgresDatabaseIsOfferedAndFlagged() {
+        let plan = ReclaimPlanner.plan(
+            volumes: [volume("westlife-postgres", gigabytes: 2)],
+            projects: [project("aqua-pura", status: .stopped)],
+            usage: emptyUsage()
+        )
+
+        XCTAssertEqual(plan.items.count, 1)
+        XCTAssertEqual(plan.items.first?.action, .removeVolume(name: "westlife-postgres"))
+        XCTAssertTrue(plan.hasOrphanedDatabase)
+        XCTAssertEqual(plan.orphanedDatabaseItems.map(\.label), ["westlife-postgres"])
+    }
+
+    // MARK: - Real captured fixture
+
+    /// Round-trips the real captured `docker system df -v` output through the decoder and the
+    /// classifier. The unit tests above all build their volumes by hand, so nothing otherwise
+    /// proves the two halves agree on real Docker output — in particular that
+    /// `thethreeswords` / `thethreeswordsguiseley` (a genuine prefix collision) are attributed
+    /// to the right projects.
+    func testClassifiesRealCapturedFixture() throws {
+        let url = try XCTUnwrap(Bundle.module.url(forResource: "docker-system-df-v", withExtension: "json"))
+        let volumes = try DockerVolume.decodeList(try String(contentsOf: url, encoding: .utf8))
+
+        // `westlife` is deliberately absent — it is the orphan in this capture.
+        let projects = [
+            project("thethreeswords", status: .stopped),
+            project("thethreeswordsguiseley", status: .stopped),
+            project("aqua-pura", status: .running),
+            project("admin-manabouttown", status: .stopped)
+        ]
+        let classified = ReclaimPlanner.classify(volumes: volumes, projects: projects)
+        let byName = Dictionary(uniqueKeysWithValues: classified.map { ($0.volume.name, $0) })
+
+        XCTAssertEqual(classified.count, 7, "the fixture contains seven volumes")
+
+        // Prefix collision: each mutagen volume attributes to its own project, not the shorter one.
+        XCTAssertEqual(byName["thethreeswords_project_mutagen"]?.projectName, "thethreeswords")
+        XCTAssertEqual(byName["thethreeswords_project_mutagen"]?.kind, .mutagen)
+        XCTAssertEqual(byName["thethreeswordsguiseley_project_mutagen"]?.projectName, "thethreeswordsguiseley")
+        XCTAssertEqual(byName["thethreeswordsguiseley_project_mutagen"]?.kind, .mutagen)
+
+        // Databases attribute and classify correctly.
+        XCTAssertEqual(byName["aqua-pura-mariadb"]?.kind, .database)
+        XCTAssertEqual(byName["aqua-pura-mariadb"]?.projectName, "aqua-pura")
+        XCTAssertEqual(byName["admin-manabouttown-mariadb"]?.kind, .database)
+
+        // `aqua-pura` is running, so both its volumes follow the project's state.
+        XCTAssertEqual(byName["aqua-pura-mariadb"]?.state, .running)
+        XCTAssertEqual(byName["aqua-pura_project_mutagen"]?.state, .running)
+
+        // `westlife` has no registered project — both its volumes are orphaned.
+        XCTAssertEqual(byName["westlife-mariadb"]?.state, .orphaned)
+        XCTAssertEqual(byName["westlife_project_mutagen"]?.state, .orphaned)
+
+        // And the plan derived from the same capture: the orphan's volumes are offered, every
+        // registered project's database is not.
+        let plan = ReclaimPlanner.plan(volumes: volumes, projects: projects, usage: emptyUsage())
+        let removed: [String] = plan.items.compactMap {
+            if case let .removeVolume(name) = $0.action { return name }
+            return nil
+        }
+        XCTAssertEqual(Set(removed), ["westlife-mariadb", "westlife_project_mutagen"])
+        XCTAssertEqual(plan.orphanedDatabaseItems.map(\.label), ["westlife-mariadb"])
+        XCTAssertFalse(
+            removed.contains("aqua-pura-mariadb") || removed.contains("admin-manabouttown-mariadb"),
+            "a registered project's database must never be bulk-eligible"
+        )
+
+        // The two stopped, registered projects' sync caches go through DDEV, not a raw removal.
+        let resets: [String] = plan.items.compactMap {
+            if case let .mutagenReset(project, _) = $0.action { return project }
+            return nil
+        }
+        XCTAssertEqual(Set(resets), ["thethreeswords", "thethreeswordsguiseley"])
+    }
 }

@@ -8,7 +8,21 @@ import Foundation
 /// project is never in a bulk plan. This rule exists in this file and nowhere else.
 public enum ReclaimPlanner {
     private static let mutagenSuffix = "_project_mutagen"
-    private static let databaseSuffix = "-mariadb"
+
+    /// Every suffix DDEV gives a project's database volume.
+    ///
+    /// Verified against DDEV v1.25.3 rather than guessed. Its compose template picks the volume
+    /// name with `{{ if eq .DBType "postgres" }}{{ .PostgresVolumeName }}{{ else }}{{
+    /// .MariaDBVolumeName }}{{ end }}` — so PostgreSQL projects get `<project>-postgres` and
+    /// *every other* database type, MySQL included, gets `<project>-mariadb`. There is
+    /// deliberately no `-mysql` suffix: MySQL projects share the MariaDB volume name, so adding
+    /// one would match nothing.
+    ///
+    /// Getting this list wrong is a safety bug in both directions. Too narrow and a real database
+    /// classifies `.other`, which renders the generic "This permanently deletes <name>."
+    /// confirmation with no snapshot warning. Too wide and a non-database volume gets alarming
+    /// copy it does not warrant.
+    private static let databaseSuffixes = ["-mariadb", "-postgres"]
 
     /// Attributes each volume to a project and works out what it holds.
     ///
@@ -43,8 +57,10 @@ public enum ReclaimPlanner {
                     // not an attribution to any project, so it must not reach the orphan branch.
                     return stripped.isEmpty ? (.other, nil) : (.mutagen, stripped)
                 }
-                if volume.name.hasSuffix(databaseSuffix) {
+                for databaseSuffix in databaseSuffixes where volume.name.hasSuffix(databaseSuffix) {
                     let stripped = String(volume.name.dropLast(databaseSuffix.count))
+                    // As with the mutagen suffix above, a volume named exactly `-mariadb` strips
+                    // to an empty name and is not an attribution to any project.
                     return stripped.isEmpty ? (.other, nil) : (.database, stripped)
                 }
                 return (.other, nil)
@@ -133,6 +149,13 @@ public enum ReclaimPlanner {
 
             case (.mutagen, .orphaned), (.database, .orphaned), (.other, .orphaned):
                 // No DDEV project remains, so remove the volume directly.
+                //
+                // `(.other, .orphaned)` is unreachable today: `.other` is exactly the branch in
+                // `classify` that returns a `nil` project name, and the `state` closure maps a
+                // `nil` project name to `.stopped`, never `.orphaned`. It is kept deliberately as
+                // a statement of policy — *if* an unrecognised volume ever became attributable to
+                // a deleted project, removing it is the right call — so that a future change to
+                // the classifier does not silently fall through to `default` and quietly drop it.
                 items.append(ReclaimItem(
                     action: .removeVolume(name: classified.volume.name),
                     label: classified.volume.name,
