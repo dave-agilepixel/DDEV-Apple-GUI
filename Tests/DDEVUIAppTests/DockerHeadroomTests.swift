@@ -26,14 +26,18 @@ final class DockerHeadroomTests: XCTestCase {
     }
 
     func testUsedFractionIsRelativeToUsedPlusAvailable() throws {
-        // df's Capacity column excludes reserved blocks, so total != used + available.
+        // df's Capacity column excludes reserved blocks, so total != used + available:
+        // here used + available (900) leaves 100 blocks reserved out of a total of 1000.
+        // used / (used + available) = 750 / 900 = 0.8333... (83%), whereas the wrong
+        // used / total formula would give 750 / 1000 = 0.75 (75%) — the two disagree,
+        // so this fixture actually pins the intended formula.
         let text = """
         Filesystem 1024-blocks Used Available Capacity Mounted on
-        overlay 1000 750 250 75% /
+        overlay 1000 750 150 83% /
         """
         let headroom = try DockerHeadroom.parse(text)
-        XCTAssertEqual(headroom.usedFraction, 0.75, accuracy: 0.0001)
-        XCTAssertEqual(headroom.percentUsed, 75)
+        XCTAssertEqual(headroom.usedFraction, 750.0 / 900.0, accuracy: 0.0001)
+        XCTAssertEqual(headroom.percentUsed, 83)
     }
 
     func testThrowsWhenNoDataRow() {
