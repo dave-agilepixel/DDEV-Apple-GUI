@@ -2440,6 +2440,18 @@ private final class InMemoryAppPreferencesStore: AppPreferencesStoring, @uncheck
             storedPreferences.projectSort = sort
         }
     }
+
+    func saveDiskWarnThreshold(_ value: Double) {
+        lock.withLock {
+            storedPreferences.diskWarnThreshold = value
+        }
+    }
+
+    func saveDiskCriticalThreshold(_ value: Double) {
+        lock.withLock {
+            storedPreferences.diskCriticalThreshold = value
+        }
+    }
 }
 
 extension DDEVProject {

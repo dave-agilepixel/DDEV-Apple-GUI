@@ -59,6 +59,16 @@ public final class PreferencesModel {
         preferencesStore.saveProjectSort(sort)
     }
 
+    public func setDiskWarnThreshold(_ value: Double) {
+        preferences.diskWarnThreshold = value
+        preferencesStore.saveDiskWarnThreshold(value)
+    }
+
+    public func setDiskCriticalThreshold(_ value: Double) {
+        preferences.diskCriticalThreshold = value
+        preferencesStore.saveDiskCriticalThreshold(value)
+    }
+
     public func refreshInstalledApps() {
         installedEditors = appAvailability.installedEditors()
         installedDatabaseTools = appAvailability.installedDatabaseTools()
