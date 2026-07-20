@@ -48,6 +48,12 @@ public struct DockerVolume: Equatable, Sendable {
             } else {
                 links = 1
             }
+            // `Size` keeps its `?? 0` where `DockerUsage.decode` deliberately throws. Docker
+            // reports `"N/A"` here as a matter of course for volumes it declines to size, so an
+            // unparseable value is an expected, routine input rather than evidence of schema
+            // drift — and throwing would make one such volume fail the entire inventory read.
+            // Zero is also the safe direction: it only ever *understates* what a removal would
+            // reclaim, and it feeds no eligibility decision (that is `links` alone, above).
             return DockerVolume(
                 name: volume.Name,
                 sizeBytes: DockerSize.parse(volume.Size) ?? 0,

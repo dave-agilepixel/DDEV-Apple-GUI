@@ -86,8 +86,21 @@ public struct ReclaimPlan: Equatable, Sendable {
     /// Orphaned-project databases in this plan — the one category the bulk Reclaim button can
     /// destroy that a user might reasonably assume is safe. Empty for every plan that doesn't
     /// contain one.
+    ///
+    /// The predicate checks the action as well as `isDatabase`, rather than filtering on
+    /// `isDatabase` alone. `isDatabase` is currently only ever set on the orphaned
+    /// `.removeVolume` branch of `ReclaimPlanner.plan`, which makes the shorter filter *happen*
+    /// to be correct — but this property's name promises "a database that is removed outright
+    /// because its project is gone", and the confirmation dialog's "cannot be undone, take a
+    /// snapshot" copy depends on that being literally true. Requiring `.removeVolume` enforces
+    /// the invariant here rather than relying on a distant call site never setting the flag on,
+    /// say, a recoverable `.mutagenReset` item.
     public var orphanedDatabaseItems: [ReclaimItem] {
-        items.filter(\.isDatabase)
+        items.filter { item in
+            guard item.isDatabase else { return false }
+            if case .removeVolume = item.action { return true }
+            return false
+        }
     }
 
     public var hasOrphanedDatabase: Bool { !orphanedDatabaseItems.isEmpty }

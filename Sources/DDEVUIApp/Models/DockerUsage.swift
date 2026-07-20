@@ -69,11 +69,34 @@ public struct DockerUsage: Equatable, Sendable {
             guard let row = try? decoder.decode(Row.self, from: Data(trimmed.utf8)) else {
                 throw DockerSystemError.malformedOutput("unreadable `docker system df` row: \(trimmed)")
             }
+            // Sizes must throw rather than default, unlike `DockerVolume.decodeList`'s `?? 0`.
+            // The difference is what an unparseable value means in each place. There, `"N/A"` is
+            // a routine, expected value for a volume Docker declines to size, and treating it as
+            // zero is honest. Here, every row always carries a real size, so an unparseable one
+            // can only mean schema drift — e.g. a Docker build emitting IEC suffixes (`GiB`,
+            // `MiB`) that `DockerSize.parse` does not recognise. Defaulting would set every
+            // category to 0, which makes the breakdown read as an empty Docker and makes `plan`
+            // emit no build-cache or unused-images items at all: a silently empty reclaim offered
+            // on a full disk. That is precisely the "silently wrong disk numbers" this type's
+            // error is documented to prevent, so fail visibly instead.
+            //
+            // `TotalCount` and `Active` keep their `?? 0` — they are cosmetic counts that drive
+            // no reclaim decision, so a bad one is not worth failing the whole read over.
+            guard let sizeBytes = DockerSize.parse(row.Size) else {
+                throw DockerSystemError.malformedOutput(
+                    "unreadable size \"\(row.Size)\" for `docker system df` type \(row.Type)"
+                )
+            }
+            guard let reclaimableBytes = DockerSize.parse(row.Reclaimable) else {
+                throw DockerSystemError.malformedOutput(
+                    "unreadable reclaimable size \"\(row.Reclaimable)\" for `docker system df` type \(row.Type)"
+                )
+            }
             byType[row.Type] = DockerUsageCategory(
                 totalCount: Int(row.TotalCount) ?? 0,
                 active: Int(row.Active) ?? 0,
-                sizeBytes: DockerSize.parse(row.Size) ?? 0,
-                reclaimableBytes: DockerSize.parse(row.Reclaimable) ?? 0
+                sizeBytes: sizeBytes,
+                reclaimableBytes: reclaimableBytes
             )
         }
 
