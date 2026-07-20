@@ -31,6 +31,28 @@ final class DockerVolumeTests: XCTestCase {
         XCTAssertEqual(volumes.first?.sizeBytes, 0)
     }
 
+    func testTreatsNonNumericLinksAsInUse() throws {
+        // `Links` is the sole signal guarding deletion, so an unparseable value must fail
+        // towards "in use", never towards "safe to delete".
+        let text = #"{"Volumes":[{"Name":"odd","Size":"1GB","Links":"unknown"}]}"#
+        let volumes = try DockerVolume.decodeList(text)
+        XCTAssertTrue(try XCTUnwrap(volumes.first { $0.name == "odd" }).isInUse)
+    }
+
+    func testTreatsMissingLinksAsInUse() throws {
+        let text = #"{"Volumes":[{"Name":"odd","Size":"1GB","Links":""}]}"#
+        let volumes = try DockerVolume.decodeList(text)
+        XCTAssertTrue(try XCTUnwrap(volumes.first { $0.name == "odd" }).isInUse)
+    }
+
+    func testTreatsNegativeLinksAsInUse() throws {
+        // A negative link count is nonsense input, not a legitimate "0"; it must not be
+        // read as "not in use".
+        let text = #"{"Volumes":[{"Name":"odd","Size":"1GB","Links":"-1"}]}"#
+        let volumes = try DockerVolume.decodeList(text)
+        XCTAssertTrue(try XCTUnwrap(volumes.first { $0.name == "odd" }).isInUse)
+    }
+
     func testReturnsEmptyWhenNoVolumes() throws {
         XCTAssertEqual(try DockerVolume.decodeList(#"{"Volumes":[]}"#).count, 0)
     }

@@ -6,6 +6,10 @@ public struct DockerVolume: Equatable, Sendable {
     public let sizeBytes: Int64
     /// Number of containers currently using this volume. Docker reports it directly, so no
     /// cross-reference against `docker ps` is needed.
+    ///
+    /// This is the sole signal guarding deletion (`isInUse`), so decoding is fail-safe: an
+    /// unparseable or negative value is coerced to a positive count rather than zero, so an
+    /// unknown link count always reads as "in use" and never as "safe to delete".
     public let links: Int
 
     public init(name: String, sizeBytes: Int64, links: Int) {
@@ -32,10 +36,22 @@ public struct DockerVolume: Equatable, Sendable {
             throw DockerSystemError.malformedOutput("unreadable `docker system df -v` payload")
         }
         return payload.Volumes.map { volume in
-            DockerVolume(
+            // `links` is the only signal guarding volume deletion (see `isInUse`), so this must
+            // fail towards "in use" rather than "not in use". A genuinely parsed non-negative
+            // count is trusted as-is (including a real `0`); an unparseable value, or a negative
+            // (nonsense) parsed value, is coerced to 1 rather than 0. Unlike the `Size` fallback
+            // below, getting this wrong risks deleting a volume that is actually still attached
+            // to a container.
+            let links: Int
+            if let parsedLinks = Int(volume.Links), parsedLinks >= 0 {
+                links = parsedLinks
+            } else {
+                links = 1
+            }
+            return DockerVolume(
                 name: volume.Name,
                 sizeBytes: DockerSize.parse(volume.Size) ?? 0,
-                links: Int(volume.Links) ?? 0
+                links: links
             )
         }
     }
