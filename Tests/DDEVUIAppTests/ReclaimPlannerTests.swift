@@ -149,6 +149,29 @@ final class ReclaimPlannerTests: XCTestCase {
         XCTAssertTrue(plan.items.contains { $0.action == .removeVolume(name: "westlife-mariadb") })
     }
 
+    func testPlanReportsOrphanedDatabasePresence() {
+        // The confirmation dialog and the itemised row both need to know a plan contains a real
+        // database, not just a disposable volume, without guessing from the volume name.
+        let plan = ReclaimPlanner.plan(
+            volumes: [volume("westlife-mariadb", gigabytes: 0.141)],
+            projects: [project("aqua-pura", status: .running)],
+            usage: emptyUsage()
+        )
+        XCTAssertTrue(plan.hasOrphanedDatabase)
+        XCTAssertEqual(plan.orphanedDatabaseItems.map(\.label), ["westlife-mariadb"])
+        XCTAssertTrue(plan.orphanedDatabaseItems.allSatisfy(\.isDatabase))
+    }
+
+    func testPlanWithoutDatabaseReportsNone() {
+        let plan = ReclaimPlanner.plan(
+            volumes: [volume("aqua-pura_project_mutagen", gigabytes: 0.5)],
+            projects: [project("aqua-pura", status: .stopped)],
+            usage: emptyUsage()
+        )
+        XCTAssertFalse(plan.hasOrphanedDatabase)
+        XCTAssertTrue(plan.orphanedDatabaseItems.isEmpty)
+    }
+
     func testOrphanMutagenUsesRemoveVolumeNotMutagenReset() {
         // There is no DDEV project left to run `ddev mutagen reset` against.
         let plan = ReclaimPlanner.plan(

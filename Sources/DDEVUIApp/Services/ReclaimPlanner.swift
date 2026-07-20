@@ -137,7 +137,8 @@ public enum ReclaimPlanner {
                     action: .removeVolume(name: classified.volume.name),
                     label: classified.volume.name,
                     detail: "Orphaned — no such DDEV project",
-                    estimatedBytes: classified.volume.sizeBytes
+                    estimatedBytes: classified.volume.sizeBytes,
+                    isDatabase: classified.kind == .database
                 ))
 
             default:

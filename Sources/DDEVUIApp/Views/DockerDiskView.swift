@@ -44,10 +44,7 @@ struct DockerDiskView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text(
-                "Removes build cache, unused images, and sync caches for stopped projects. "
-                + "Sync caches rebuild automatically on the next start. No project database is touched."
-            )
+            reclaimConfirmationMessage
         }
         .confirmationDialog(
             "Delete this volume?",
@@ -154,9 +151,15 @@ struct DockerDiskView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(viewModel.plan.items) { item in
                         HStack {
-                            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                            if item.isDatabase {
+                                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                            } else {
+                                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                            }
                             Text(item.label)
-                            Text(item.detail).foregroundStyle(.secondary).font(.caption)
+                            Text(item.isDatabase ? "Database — orphaned, permanently deleted" : item.detail)
+                                .foregroundStyle(item.isDatabase ? .orange : .secondary)
+                                .font(.caption)
                             Spacer()
                             Text(item.estimatedBytes.formattedBytes).foregroundStyle(.secondary)
                         }
@@ -172,9 +175,12 @@ struct DockerDiskView: View {
                 .buttonStyle(.borderedProminent)
                 .disabled(viewModel.isReclaiming)
 
-                Text("Project databases are never included here.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Text(
+                    "Registered projects' databases are never included here. Orphaned ones "
+                    + "are — no DDEV project uses them any more."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
 
             if viewModel.isReclaiming {
@@ -184,6 +190,26 @@ struct DockerDiskView: View {
                 }
             }
         }
+    }
+
+    /// Truthful confirmation copy for the bulk Reclaim dialog. Orphaned-project databases are
+    /// deliberately bulk-eligible (see `ReclaimPlanner`), so this must say so prominently rather
+    /// than reassure the user nothing database-related is at stake.
+    private var reclaimConfirmationMessage: Text {
+        let plan = viewModel.plan
+        guard plan.hasOrphanedDatabase else {
+            return Text(
+                "Removes build cache, unused images, and sync caches for stopped projects. "
+                + "Sync caches rebuild automatically on the next start. No project database is included."
+            )
+        }
+        let names = plan.orphanedDatabaseItems.map(\.label).joined(separator: ", ")
+        return Text(
+            "This also permanently deletes the database for \(names) — the DDEV project no "
+            + "longer exists, so this cannot be undone. Take a snapshot first if you might need "
+            + "this data. It also removes build cache, unused images, and sync caches for "
+            + "stopped projects, which rebuild automatically."
+        )
     }
 
     private var volumesSection: some View {

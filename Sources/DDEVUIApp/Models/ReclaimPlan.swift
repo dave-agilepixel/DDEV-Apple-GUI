@@ -53,14 +53,20 @@ public struct ReclaimItem: Equatable, Sendable, Identifiable {
     public let label: String
     public let detail: String
     public let estimatedBytes: Int64
+    /// Whether this item removes an orphaned project's database. `ReclaimAction.removeVolume`
+    /// alone doesn't carry that — it's just a volume name — so callers that need to warn about
+    /// data loss (the reclaim confirmation dialog, the itemised plan row) must be able to ask
+    /// without re-deriving it from the volume name's suffix.
+    public let isDatabase: Bool
 
     public var id: String { label }
 
-    public init(action: ReclaimAction, label: String, detail: String, estimatedBytes: Int64) {
+    public init(action: ReclaimAction, label: String, detail: String, estimatedBytes: Int64, isDatabase: Bool = false) {
         self.action = action
         self.label = label
         self.detail = detail
         self.estimatedBytes = estimatedBytes
+        self.isDatabase = isDatabase
     }
 }
 
@@ -76,4 +82,13 @@ public struct ReclaimPlan: Equatable, Sendable {
     }
 
     public var isEmpty: Bool { items.isEmpty }
+
+    /// Orphaned-project databases in this plan — the one category the bulk Reclaim button can
+    /// destroy that a user might reasonably assume is safe. Empty for every plan that doesn't
+    /// contain one.
+    public var orphanedDatabaseItems: [ReclaimItem] {
+        items.filter(\.isDatabase)
+    }
+
+    public var hasOrphanedDatabase: Bool { !orphanedDatabaseItems.isEmpty }
 }
