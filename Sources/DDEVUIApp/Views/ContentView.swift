@@ -301,7 +301,6 @@ private struct PreviewCommandRunner: CommandRunning {
 private struct SettingsView: View {
     var viewModel: ProjectDashboardViewModel
     @State private var confirmPowerOff = false
-    @State private var confirmDeleteImages = false
 
     var body: some View {
         Form {
@@ -354,13 +353,6 @@ private struct SettingsView: View {
             // A15 — global housekeeping that isn't tied to a single project.
             Section("Maintenance") {
                 Button {
-                    Task { await viewModel.downloadDDEVImages() }
-                } label: {
-                    Label("Download Images", systemImage: "arrow.down.circle")
-                }
-                .help("Pre-pull every image DDEV needs (ddev utility download-images)")
-
-                Button {
                     confirmPowerOff = true
                 } label: {
                     Label("Power Off All Projects", systemImage: "power")
@@ -378,13 +370,6 @@ private struct SettingsView: View {
                 .disabled(viewModel.projects.allSatisfy { $0.status != .paused })
                 .help("Remove paused project containers and Docker networks without deleting databases")
 
-                Button(role: .destructive) {
-                    confirmDeleteImages = true
-                } label: {
-                    Label("Delete DDEV Images", systemImage: "trash")
-                }
-                .help("Remove DDEV Docker images to reclaim disk (ddev delete images)")
-
                 if viewModel.isRunningGlobalCommand {
                     HStack(spacing: 8) {
                         ProgressView().controlSize(.small)
@@ -397,6 +382,10 @@ private struct SettingsView: View {
                         .foregroundStyle(.orange)
                         .font(.callout)
                 }
+
+                Text("Image and disk cleanup has moved to Docker Disk.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             .disabled(viewModel.isRunningGlobalCommand)
 
@@ -414,14 +403,6 @@ private struct SettingsView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Stops every running DDEV project and the shared containers (ddev poweroff).")
-        }
-        .confirmationDialog("Delete DDEV images?", isPresented: $confirmDeleteImages) {
-            Button("Delete Images", role: .destructive) {
-                Task { await viewModel.deleteDDEVImages() }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Removes DDEV's Docker images to reclaim disk. They're re-downloaded on next start — no project data is lost.")
         }
     }
 }
