@@ -203,12 +203,18 @@ struct DockerDiskView: View {
                 + "Sync caches rebuild automatically on the next start. No project database is included."
             )
         }
-        let names = plan.orphanedDatabaseItems.map(\.label).joined(separator: ", ")
+        // Pluralise the noun with the list, and join with `ListFormatter` so two or more names
+        // read "a and b" / "a, b, and c" rather than the bare comma-join that produced the
+        // ungrammatical "the database for a, b".
+        let items = plan.orphanedDatabaseItems
+        let names = ListFormatter.localizedString(byJoining: items.map(\.label))
+        let noun = items.count == 1 ? "the database" : "the databases"
+        let projectClause = items.count == 1 ? "the DDEV project no longer exists" : "their DDEV projects no longer exist"
         return Text(
-            "This also permanently deletes the database for \(names) — the DDEV project no "
-            + "longer exists, so this cannot be undone. Take a snapshot first if you might need "
-            + "this data. It also removes build cache, unused images, and sync caches for "
-            + "stopped projects, which rebuild automatically."
+            "This also permanently deletes \(noun) for \(names) — \(projectClause), so this "
+            + "cannot be undone. Take a snapshot first if you might need this data. It also "
+            + "removes build cache, unused images, and sync caches for stopped projects, which "
+            + "rebuild automatically."
         )
     }
 
