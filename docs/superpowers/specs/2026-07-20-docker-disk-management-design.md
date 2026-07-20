@@ -51,18 +51,26 @@ registered DDEV project — orphaned leftovers, including their databases.
 1. **Two surfaces, warning-first.** A menu bar badge is the proactive signal; a dedicated
    sidebar screen is the destination. The menu bar never executes reclaim directly — it
    opens the screen with the plan pre-computed.
-2. **Safe-by-default bulk reclaim.** One button covering build cache, unused images, stale
-   DDEV images, and Mutagen volumes for stopped projects. Databases for registered
-   projects are structurally excluded.
+2. **Safe-by-default bulk reclaim.** One button covering build cache, unused images, and
+   Mutagen volumes for stopped projects. Databases for registered projects are structurally
+   excluded.
+
+   There is deliberately **no separate "stale DDEV images" step**: `docker image prune -af`
+   already removes every image not used by a container, which includes stale `ddev/ddev-*`
+   images from earlier DDEV versions. `unusedImages` therefore subsumes what the old
+   **Delete DDEV Images** button did, and does strictly more.
 3. **Single confirmation showing the itemised plan** before executing. Not per-category.
 4. **Headroom via `df` inside a container**, not by stat-ing `Docker.raw`.
 5. **`ddev mutagen reset <project>` preferred** over raw `docker volume rm` for registered
    projects, so DDEV's own state stays consistent. Raw removal only for orphans.
 6. **Thresholds 85% (warn) / 93% (critical)**, both overridable in `PreferencesModel`.
-7. **Absorb both existing global buttons.** `Delete DDEV Images` becomes a line item in the
-   reclaim plan; `Download Images` moves to the screen as a separate "Prefetch images"
-   maintenance action. The `ContentView` toolbar entries and their confirmation dialog are
-   removed; the underlying service methods are unchanged.
+7. **Absorb both existing global buttons.** `Delete DDEV Images` is superseded by the plan's
+   `unusedImages` item (see decision 2); `Download Images` moves to the screen as a separate
+   "Prefetch images" maintenance action. Both currently live in the `Maintenance` section of the private
+   `SettingsView` inside `ContentView.swift` (~lines 331–377), with the
+   `confirmDeleteImages` dialog attached at `Form` level (~lines 396–404) — those are the
+   entries removed. `Power Off All Projects` and `Stop Paused Projects` stay in Settings;
+   they are lifecycle, not disk. The underlying service and view-model methods are unchanged.
 
 ## Architecture
 
@@ -90,13 +98,28 @@ public protocol DockerSystemServicing: Sendable {
 | `usage()` | `docker system df --format json` | fast |
 | `headroom()` | `docker exec <running container> df -Pk /` | ~free |
 | `headroom()` fallback | throwaway volume + `df -Pk` in a local image | seconds |
-| `volumes()` | `docker system df -v` | **seconds — on-demand only** |
+| `volumes()` | `docker system df -v --format json` | **seconds — on-demand only** |
 | `pruneBuildCache()` | `docker builder prune -af` | slow |
 | `pruneUnusedImages()` | `docker image prune -af` | slow |
 
-`docker system df --format json` emits one JSON object per line for Images, Containers,
-Local Volumes, Build Cache. Sizes arrive as human strings (`"42.37GB"`), so parsing needs
-a unit-suffix decoder, not `Int64(...)`.
+**The two `df` forms have different JSON shapes** — a trap worth stating explicitly:
+
+- `docker system df --format json` emits **JSON-lines**: one object per line for Images,
+  Containers, Local Volumes, Build Cache.
+- `docker system df -v --format json` emits **a single JSON object** with `Images`,
+  `Containers`, `Volumes`, `BuildCache` arrays.
+
+Sizes arrive as human strings (`"42.37GB"`, `"28.67kB"`), so both need a unit-suffix
+decoder, not `Int64(...)`. Docker uses SI multipliers (1000-based, `kB`/`MB`/`GB`/`TB`).
+`Reclaimable` additionally carries a percentage suffix — `"2.4GB (15%)"` — except on
+`BuildCache`, where it is bare (`"1.216GB"`).
+
+Each volume record carries **`Links`** — the number of containers currently using it. This
+is the in-use signal, so no cross-reference against `docker ps` is needed:
+
+```json
+{ "Name": "aqua-pura_project_mutagen", "Size": "546MB", "Links": "0", "Driver": "local", … }
+```
 
 The headroom probe reads the *VM's* overlay filesystem, which is the number that actually
 governs failure. Both probe paths were verified to agree exactly:
@@ -111,22 +134,25 @@ methods, not reimplemented here:
 
 | Plan item | Executed by |
 | --- | --- |
-| Stale DDEV images | `DDEVServicing.deleteImages()` — existing, unchanged |
 | Prefetch images | `DDEVServicing.downloadImages()` — existing, unchanged |
-| Mutagen volume, registered project | `ddev mutagen reset <project>` — **new** `DDEVServicing.mutagenReset(project:)` |
+| Mutagen volume, registered project | `DDEVServicing.mutagen(.reset, in: appRoot)` — **existing**, unchanged |
 | Mutagen volume, orphaned project | `DockerSystemService.removeVolumes()` |
 | Database volume (per-item only) | `DockerSystemService.removeVolumes()` |
 | Build cache, unused images | `DockerSystemService` |
 
 So `removeVolumes()` is the raw-Docker escape hatch used **only** where no DDEV project
-exists to reset, or for a deliberate per-item database removal. `mutagenReset(project:)`
-is the one addition to `DDEVCommandService`; it requires the project to be stopped, which
-the planner already guarantees.
+exists to reset, or for a deliberate per-item database removal.
+
+**No changes to existing service code are required.** `ddev mutagen reset` is already
+exposed as `DDEVServicing.mutagen(.reset, in: appRoot)` (`DDEVMutagenCommand.reset`), and
+`deleteImages()` / `downloadImages()` already exist. Note that it is keyed by *appRoot*,
+not project name, so `ReclaimPlan` items for registered projects must carry the project's
+`appRoot`. It requires the project to be stopped, which the planner already guarantees.
 
 ### `Services/ReclaimPlanner.swift` — pure, no I/O
 
-The safety brain. Input: volumes, the DDEV project list, running container names. Output:
-a classified inventory and a `ReclaimPlan`.
+The safety brain. Input: volumes (each carrying its own `Links` count) and the DDEV project
+list. Output: a classified inventory and a `ReclaimPlan`.
 
 ```swift
 enum VolumeKind { case mutagen, database, other }

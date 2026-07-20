@@ -1,0 +1,88 @@
+{
+  "Volumes": [
+    {
+      "Availability": "N/A",
+      "Driver": "local",
+      "Group": "N/A",
+      "Labels": "com.ddev.volume-signature=b0777405cd8a686f03c8bb854444dc2750bb892d-1781859833,com.docker.compose.project=ddev-thethreeswordsguiseley",
+      "Links": "0",
+      "Mountpoint": "/var/lib/docker/volumes/thethreeswordsguiseley_project_mutagen/_data",
+      "Name": "thethreeswordsguiseley_project_mutagen",
+      "Scope": "local",
+      "Size": "1.111GB",
+      "Status": "N/A"
+    },
+    {
+      "Availability": "N/A",
+      "Driver": "local",
+      "Group": "N/A",
+      "Labels": "com.docker.compose.project=ddev-aqua-pura",
+      "Links": "0",
+      "Mountpoint": "/var/lib/docker/volumes/aqua-pura-mariadb/_data",
+      "Name": "aqua-pura-mariadb",
+      "Scope": "local",
+      "Size": "140.8MB",
+      "Status": "N/A"
+    },
+    {
+      "Availability": "N/A",
+      "Driver": "local",
+      "Group": "N/A",
+      "Labels": "com.docker.compose.project=ddev-westlife",
+      "Links": "0",
+      "Mountpoint": "/var/lib/docker/volumes/westlife-mariadb/_data",
+      "Name": "westlife-mariadb",
+      "Scope": "local",
+      "Size": "141MB",
+      "Status": "N/A"
+    },
+    {
+      "Availability": "N/A",
+      "Driver": "local",
+      "Group": "N/A",
+      "Labels": "com.ddev.volume-signature=b0777405cd8a686f03c8bb854444dc2750bb892d-1779885063,com.docker.compose.project=ddev-aqua-pura",
+      "Links": "0",
+      "Mountpoint": "/var/lib/docker/volumes/aqua-pura_project_mutagen/_data",
+      "Name": "aqua-pura_project_mutagen",
+      "Scope": "local",
+      "Size": "546MB",
+      "Status": "N/A"
+    },
+    {
+      "Availability": "N/A",
+      "Driver": "local",
+      "Group": "N/A",
+      "Labels": "com.docker.compose.project=ddev-admin-manabouttown",
+      "Links": "0",
+      "Mountpoint": "/var/lib/docker/volumes/admin-manabouttown-mariadb/_data",
+      "Name": "admin-manabouttown-mariadb",
+      "Scope": "local",
+      "Size": "215.7MB",
+      "Status": "N/A"
+    },
+    {
+      "Availability": "N/A",
+      "Driver": "local",
+      "Group": "N/A",
+      "Labels": "com.ddev.volume-signature=b0777405cd8a686f03c8bb854444dc2750bb892d-1781781387,com.docker.compose.project=ddev-thethreeswords",
+      "Links": "0",
+      "Mountpoint": "/var/lib/docker/volumes/thethreeswords_project_mutagen/_data",
+      "Name": "thethreeswords_project_mutagen",
+      "Scope": "local",
+      "Size": "746.3MB",
+      "Status": "N/A"
+    },
+    {
+      "Availability": "N/A",
+      "Driver": "local",
+      "Group": "N/A",
+      "Labels": "com.ddev.volume-signature=b0777405cd8a686f03c8bb854444dc2750bb892d-1778757735,com.docker.compose.project=ddev-westlife",
+      "Links": "0",
+      "Mountpoint": "/var/lib/docker/volumes/westlife_project_mutagen/_data",
+      "Name": "westlife_project_mutagen",
+      "Scope": "local",
+      "Size": "479.6MB",
+      "Status": "N/A"
+    }
+  ]
+}
