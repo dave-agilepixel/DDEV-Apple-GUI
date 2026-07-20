@@ -1122,16 +1122,6 @@ public final class ProjectDashboardViewModel {
         }
     }
 
-    /// Removes DDEV Docker images to reclaim disk (`ddev delete images -y`).
-    public func deleteDDEVImages() async {
-        await runGlobalHousekeeping { try await self.ddevService.deleteImages() }
-    }
-
-    /// Pre-pulls DDEV's images (`ddev utility download-images`).
-    public func downloadDDEVImages() async {
-        await runGlobalHousekeeping { try await self.ddevService.downloadImages() }
-    }
-
     // MARK: - Global configuration (A14)
 
     /// Loads the current global DDEV config for the Settings global-config section.

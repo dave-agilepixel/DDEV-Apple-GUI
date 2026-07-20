@@ -130,17 +130,6 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertNil(viewModel.globalErrorMessage)
     }
 
-    func testDeleteAndDownloadImagesRunGlobalCommands() async {
-        let service = FakeDDEVService(projects: [])
-        let viewModel = ProjectDashboardViewModel(ddevService: service)
-
-        await viewModel.deleteDDEVImages()
-        await viewModel.downloadDDEVImages()
-
-        XCTAssertEqual(service.commands, ["delete-images", "download-images"])
-        XCTAssertFalse(viewModel.isRunningGlobalCommand)
-    }
-
     func testProjectsMatchingFiltersByNameCaseInsensitively() {
         let viewModel = ProjectDashboardViewModel(ddevService: FakeDDEVService(projects: []))
         viewModel.projects = [.sampleWordPress, .sampleLaravel]
