@@ -49,6 +49,13 @@ private final class FakeDockerSystemService: DockerSystemServicing, @unchecked S
     /// re-entrancy tests. Left un-armed (a no-op) for every other test.
     let pruneBuildCacheGate = Gate()
     let removeVolumesGate = Gate()
+    /// Gates entry to `headroom(allowingProbeVolume:)`, so the periodic-loop tests can park a
+    /// tick and count how many loops are actually running. Left un-armed for every other test.
+    let headroomGate = Gate()
+
+    /// Every `allowingProbeVolume` argument seen, in call order. The expensive probe fallback
+    /// only runs when this is `true`, so a periodic caller must never appear here as `true`.
+    private(set) var headroomProbeAllowed: [Bool] = []
 
     private(set) var prunedBuildCache = false
     private(set) var prunedImages = false
@@ -64,8 +71,10 @@ private final class FakeDockerSystemService: DockerSystemServicing, @unchecked S
 
     func usage() async throws -> DockerUsage { try usageResult.get() }
 
-    func headroom() async throws -> DockerHeadroom {
+    func headroom(allowingProbeVolume: Bool) async throws -> DockerHeadroom {
         headroomCallCount += 1
+        headroomProbeAllowed.append(allowingProbeVolume)
+        await headroomGate.wait()
         return try headroomResult.get()
     }
 
@@ -556,21 +565,72 @@ final class DockerDiskViewModelTests: XCTestCase {
     /// `ProjectDashboardViewModelTests.testStatusPollingRefreshesWhileActiveAndStopsOnStop`'s
     /// magnitude-based approach: a short interval, a bounded wait, then a call-count check wide
     /// enough to absorb scheduling jitter but tight enough to catch an outright doubling.
+    /// Deterministic rather than wall-clock: arm the headroom gate, let the loop tick into it,
+    /// and count how many callers are parked. Exactly one loop parks exactly one caller; the
+    /// regression this targets — a second `start()` spawning a concurrent second loop — would
+    /// park two. `waitForWaiters(atLeast: 2)` is bounded, so the correct case falls through
+    /// after its attempts rather than hanging.
     func testStartPeriodicHeadroomRefreshIsNotReentrant() async throws {
+        let docker = FakeDockerSystemService()
+        docker.headroomGate.isArmed = true
+        let viewModel = makeViewModel(docker: docker)
+
+        viewModel.startPeriodicHeadroomRefresh(interval: .zero)
+        viewModel.startPeriodicHeadroomRefresh(interval: .zero) // must not start a second loop
+
+        await docker.headroomGate.waitForWaiters(atLeast: 2)
+
+        XCTAssertEqual(
+            docker.headroomGate.waiterCount, 1,
+            "a second start() call must not run a concurrent second loop"
+        )
+
+        viewModel.stopPeriodicHeadroomRefresh()
+        docker.headroomGate.release()
+    }
+
+    /// F1 — the periodic loop must never be able to drive `headroomViaProbeVolume()`, which
+    /// does `docker volume create` + `docker run --rm alpine df` + `docker volume rm`. On an
+    /// idle machine the cheap `docker exec` path always fails (no container to exec into), so
+    /// an unguarded loop falls through to that probe on *every* tick — launching a container
+    /// every interval, forever. Passing `allowingProbeVolume: false` is what stops it, so
+    /// assert on the argument rather than on a call count.
+    func testPeriodicHeadroomRefreshNeverAllowsTheProbeVolume() async throws {
+        let docker = FakeDockerSystemService()
+        docker.headroomGate.isArmed = true
+        let viewModel = makeViewModel(docker: docker)
+
+        viewModel.startPeriodicHeadroomRefresh(interval: .zero)
+
+        // Park the first tick deterministically, then let several more run through.
+        await docker.headroomGate.waitForWaiters(atLeast: 1)
+        docker.headroomGate.release()
+        for _ in 0..<200 where docker.headroomCallCount < 5 {
+            await Task.yield()
+        }
+        viewModel.stopPeriodicHeadroomRefresh()
+
+        XCTAssertGreaterThan(docker.headroomCallCount, 0, "the loop must actually run")
+        XCTAssertFalse(
+            docker.headroomProbeAllowed.contains(true),
+            "no periodic tick may permit the container-launching probe fallback"
+        )
+    }
+
+    /// The other half of F1: an explicit, user-initiated refresh still gets a real measurement,
+    /// probe fallback included. Restricting the periodic path must not quietly restrict this one.
+    func testExplicitRefreshStillAllowsTheProbeVolume() async {
         let docker = FakeDockerSystemService()
         let viewModel = makeViewModel(docker: docker)
 
-        viewModel.startPeriodicHeadroomRefresh(interval: .milliseconds(10))
-        viewModel.startPeriodicHeadroomRefresh(interval: .milliseconds(10)) // must not start a second loop
+        await viewModel.refreshHeadroom()
+        XCTAssertEqual(docker.headroomProbeAllowed, [true])
 
-        try await Task.sleep(for: .milliseconds(300))
-        viewModel.stopPeriodicHeadroomRefresh()
-
-        // A single loop ticking every 10ms for ~300ms fires roughly 30 times; a doubled loop (the
-        // regression this test targets) would fire roughly twice that. 45 sits clearly between
-        // the two, with margin either side for scheduling jitter.
-        XCTAssertGreaterThan(docker.headroomCallCount, 0, "the loop must actually run")
-        XCTAssertLessThan(docker.headroomCallCount, 45, "a second start() call must not run a concurrent second loop")
+        await viewModel.refreshFullInventory(projects: [])
+        XCTAssertEqual(
+            docker.headroomProbeAllowed, [true, true],
+            "opening the screen is an explicit refresh and must measure properly"
+        )
     }
 
     func testStopPeriodicHeadroomRefreshHaltsPolling() async throws {

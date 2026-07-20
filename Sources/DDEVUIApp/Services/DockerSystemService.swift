@@ -34,6 +34,14 @@ public final class DockerSystemService: Sendable {
     /// in `DDEVCommandService`, which hits the network for the same reason.
     private static let probeTimeout: Duration = .seconds(45)
 
+    /// Wall-clock cap for `docker system df -v`, deliberately longer than `quickTimeout`.
+    /// Unlike the other local reads, this one stats every volume individually: on a machine with
+    /// 100+ volumes (the development machine this was built against has ~110) it takes seconds
+    /// rather than milliseconds, so the 10s quick cap is close enough to the real runtime to time
+    /// out a read that would have succeeded. This is a user-visible inventory read, not a
+    /// background poll, so a longer wait is cheaper than a spurious failure.
+    private static let inventoryTimeout: Duration = .seconds(60)
+
     private let commandRunner: CommandRunning
     private let dockerExecutable: String
 
@@ -56,7 +64,7 @@ public final class DockerSystemService: Sendable {
     /// Per-volume inventory. Walks every volume, so this takes seconds on a machine with
     /// many projects — call it on demand, never on a background refresh cycle.
     public func volumes() async throws -> [DockerVolume] {
-        let result = try await runDocker(["system", "df", "-v", "--format", "json"], timeout: Self.quickTimeout)
+        let result = try await runDocker(["system", "df", "-v", "--format", "json"], timeout: Self.inventoryTimeout)
         return try DockerVolume.decodeList(result.stdout)
     }
 
@@ -64,13 +72,31 @@ public final class DockerSystemService: Sendable {
     ///
     /// Prefers `docker exec` into an already-running container — effectively free. Falls back
     /// to mounting a throwaway volume, which is slower and may pull `alpine`.
-    public func headroom() async throws -> DockerHeadroom {
+    ///
+    /// `allowingProbeVolume` gates that fallback, and exists because the two paths differ in
+    /// cost by orders of magnitude. The exec path is a `docker ps` and a `df` inside a container
+    /// that is already running. The probe path is a `docker volume create` + `docker run --rm
+    /// alpine df` + `docker volume rm` — it *launches a container*. On an idle machine with no
+    /// DDEV project running, the exec path always throws (there is no container to exec into),
+    /// so an unguarded call falls through to the probe every single time. Driven from a periodic
+    /// refresh that means launching a container on a short loop, forever.
+    ///
+    /// So the periodic caller passes `false` and simply reports "headroom unavailable" when
+    /// nothing is running, while explicit, user-initiated refreshes pass `true` and pay for the
+    /// real measurement. That keeps the expensive path bounded by user actions rather than by a
+    /// timer, without needing a cache or a second cadence to reason about.
+    public func headroom(allowingProbeVolume: Bool) async throws -> DockerHeadroom {
         // Any failure of the exec path — container selection, the exec itself, or a container
         // whose image has no `df` — falls through to the probe volume (finding 2). Only a
         // successful measurement short-circuits the fallback.
         if let container = try? await firstRunningContainer(),
            let headroom = try? await headroomViaExec(in: container) {
             return headroom
+        }
+        guard allowingProbeVolume else {
+            throw DockerSystemError.malformedOutput(
+                "no running DDEV container to measure headroom from"
+            )
         }
         return try await headroomViaProbeVolume()
     }

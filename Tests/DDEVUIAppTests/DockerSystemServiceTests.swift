@@ -63,6 +63,66 @@ final class DockerSystemServiceTests: XCTestCase {
         XCTAssertEqual(volumes.count, 7)
     }
 
+    /// F5 — `docker system df -v` stats every volume individually and takes seconds, not
+    /// milliseconds, on a machine with 100+ of them. It must not share the 10s quick cap used
+    /// by the genuinely fast local reads, or a read that would have succeeded times out.
+    func testVolumesUsesALongerTimeoutThanTheQuickReads() async throws {
+        let url = try XCTUnwrap(Bundle.module.url(forResource: "docker-system-df-v", withExtension: "json"))
+        let stdout = try String(contentsOf: url, encoding: .utf8)
+        let runner = RecordingCommandRunner(result: .success(CommandResult.success(stdout: stdout)))
+        let service = DockerSystemService(commandRunner: runner, dockerExecutable: "docker")
+
+        _ = try await service.volumes()
+
+        let timeout = try XCTUnwrap(runner.commands.first?.timeout, "the inventory read must still be capped")
+        XCTAssertGreaterThan(timeout, .seconds(10), "must not reuse the quick-read timeout")
+    }
+
+    /// F1 — with the probe fallback disallowed, a machine with nothing running must fail
+    /// outright rather than falling through to `docker volume create` + `docker run alpine`.
+    /// Only `docker ps` may be issued.
+    func testHeadroomWithoutProbeNeverLaunchesAContainer() async throws {
+        let runner = RecordingCommandRunner(results: [
+            .success(CommandResult.success(stdout: "\n"))  // docker ps — nothing running
+        ])
+        let service = DockerSystemService(commandRunner: runner, dockerExecutable: "docker")
+
+        do {
+            _ = try await service.headroom(allowingProbeVolume: false)
+            XCTFail("expected headroom to throw when no container is available and probing is off")
+        } catch {
+            guard case DockerSystemError.malformedOutput = error else {
+                return XCTFail("expected malformedOutput, got \(error)")
+            }
+        }
+
+        XCTAssertEqual(runner.commands.count, 1, "only `docker ps` may run")
+        XCTAssertEqual(runner.commands[0].arguments.first, "ps")
+        XCTAssertFalse(
+            runner.commands.contains { $0.arguments.first == "run" || $0.arguments.first == "volume" },
+            "the probe fallback must not run: it creates a volume and launches a container"
+        )
+    }
+
+    /// The cheap exec path still works with probing disabled — the restriction removes only the
+    /// expensive fallback, not the measurement itself.
+    func testHeadroomWithoutProbeStillUsesTheExecPath() async throws {
+        let dfOutput = """
+        Filesystem           1024-blocks    Used Available Capacity Mounted on
+        overlay               98759140  66888912  26820732  71% /
+        """
+        let runner = RecordingCommandRunner(results: [
+            .success(CommandResult.success(stdout: "ddev-router\n")),
+            .success(CommandResult.success(stdout: dfOutput))
+        ])
+        let service = DockerSystemService(commandRunner: runner, dockerExecutable: "docker")
+
+        let headroom = try await service.headroom(allowingProbeVolume: false)
+
+        XCTAssertEqual(headroom.percentUsed, 71)
+        XCTAssertEqual(runner.commands.count, 2)
+    }
+
     func testHeadroomExecsIntoFirstRunningContainer() async throws {
         let dfOutput = """
         Filesystem           1024-blocks    Used Available Capacity Mounted on
@@ -74,7 +134,7 @@ final class DockerSystemServiceTests: XCTestCase {
         ])
         let service = DockerSystemService(commandRunner: runner, dockerExecutable: "docker")
 
-        let headroom = try await service.headroom()
+        let headroom = try await service.headroom(allowingProbeVolume: true)
 
         XCTAssertEqual(runner.commands.count, 2)
         XCTAssertEqual(runner.commands[0].arguments, ["ps", "--filter", "name=ddev-", "--format", "{{.Names}}"])
@@ -95,7 +155,7 @@ final class DockerSystemServiceTests: XCTestCase {
         ])
         let service = DockerSystemService(commandRunner: runner, dockerExecutable: "docker")
 
-        let headroom = try await service.headroom()
+        let headroom = try await service.headroom(allowingProbeVolume: true)
 
         // The probe volume name is generated per invocation (finding 4), so assert its shape
         // and that create/mount/remove all reference the SAME name, rather than a literal.
@@ -126,7 +186,7 @@ final class DockerSystemServiceTests: XCTestCase {
         ])
         let service = DockerSystemService(commandRunner: runner, dockerExecutable: "docker")
 
-        _ = try await service.headroom()
+        _ = try await service.headroom(allowingProbeVolume: true)
 
         let probeCommand = try XCTUnwrap(
             runner.commands.first { $0.arguments.first == "run" },
@@ -145,7 +205,7 @@ final class DockerSystemServiceTests: XCTestCase {
         ])
         let service = DockerSystemService(commandRunner: runner, dockerExecutable: "docker")
 
-        _ = try? await service.headroom()
+        _ = try? await service.headroom(allowingProbeVolume: true)
 
         let createArguments = runner.commands[1].arguments
         let volumeName = try XCTUnwrap(createArguments.last)
@@ -170,7 +230,7 @@ final class DockerSystemServiceTests: XCTestCase {
         ])
         let service = DockerSystemService(commandRunner: runner, dockerExecutable: "docker")
 
-        let headroom = try await service.headroom()
+        let headroom = try await service.headroom(allowingProbeVolume: true)
 
         XCTAssertEqual(runner.commands[0].arguments, ["ps", "--filter", "name=ddev-", "--format", "{{.Names}}"])
         XCTAssertEqual(runner.commands[1].arguments, ["exec", "ddev-router", "df", "-Pk", "/"])

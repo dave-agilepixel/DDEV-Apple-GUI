@@ -5,7 +5,10 @@ import Observation
 /// fake. Mirrors how `DDEVServicing` is declared alongside `ProjectDashboardViewModel`.
 public protocol DockerSystemServicing: Sendable {
     func usage() async throws -> DockerUsage
-    func headroom() async throws -> DockerHeadroom
+    /// See `DockerSystemService.headroom(allowingProbeVolume:)` — `false` restricts the
+    /// measurement to the effectively-free `docker exec` path, so a periodic caller can never
+    /// drive the container-launching probe fallback.
+    func headroom(allowingProbeVolume: Bool) async throws -> DockerHeadroom
     func volumes() async throws -> [DockerVolume]
     func pruneBuildCache() async throws -> CommandResult
     func pruneUnusedImages() async throws -> CommandResult
@@ -107,13 +110,20 @@ public final class DockerDiskViewModel {
         return .normal
     }
 
-    /// Cheap enough for the background refresh cycle.
-    public func refreshHeadroom() async {
+    /// Reads free space on the Docker VM.
+    ///
+    /// `allowingProbeVolume` decides whether the expensive fallback may run. The periodic loop
+    /// passes `false` — see `startPeriodicHeadroomRefresh(interval:)` — so an idle machine can
+    /// never be made to launch a container on a timer. Every explicit, user-initiated refresh
+    /// passes `true` and gets a real measurement even with nothing running.
+    public func refreshHeadroom(allowingProbeVolume: Bool = true) async {
         do {
-            headroom = try await dockerService.headroom()
+            headroom = try await dockerService.headroom(allowingProbeVolume: allowingProbeVolume)
         } catch {
-            // Deliberately silent: Docker may simply not be running. Clearing the value keeps
-            // `alertLevel` at `.normal` rather than reporting a false emergency.
+            // Deliberately silent: Docker may simply not be running, and with
+            // `allowingProbeVolume: false` this is also the ordinary outcome whenever no DDEV
+            // project is up. Clearing the value keeps `alertLevel` at `.normal` rather than
+            // reporting a false emergency.
             headroom = nil
         }
     }
@@ -125,13 +135,21 @@ public final class DockerDiskViewModel {
     /// per-window `@State`. Deliberately calls only `refreshHeadroom()` — the cheap call —
     /// never `refreshFullInventory`, which walks every volume and stays confined to
     /// `DockerDiskView`'s `.task` and its explicit Refresh button.
+    ///
+    /// Passes `allowingProbeVolume: false` so each tick is restricted to the effectively-free
+    /// `docker exec` measurement. Without that, an idle machine — no DDEV project running, so
+    /// the exec path always throws — would fall through to `headroomViaProbeVolume()` on every
+    /// single tick, launching a throwaway container every `interval` forever. The cost of the
+    /// restriction is that the menu-bar warning simply goes quiet while nothing is running,
+    /// which is the right trade: there is no DDEV workload to protect at that moment, and
+    /// opening the Docker Disk screen or hitting Refresh still takes a full measurement.
     public func startPeriodicHeadroomRefresh(interval: Duration) {
         guard headroomPollTask == nil else { return }
         headroomPollTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: interval)
                 guard !Task.isCancelled, let self else { return }
-                await self.refreshHeadroom()
+                await self.refreshHeadroom(allowingProbeVolume: false)
             }
         }
     }
