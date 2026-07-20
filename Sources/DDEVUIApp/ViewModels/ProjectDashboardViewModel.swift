@@ -72,6 +72,7 @@ public enum ProjectSidebarItem: String, CaseIterable, Identifiable, Sendable {
     case paused
     case wordpress
     case diagnostics
+    case dockerDisk
     case settings
 
     public var id: String { rawValue }
@@ -88,6 +89,8 @@ public enum ProjectSidebarItem: String, CaseIterable, Identifiable, Sendable {
             "WordPress"
         case .diagnostics:
             "Diagnostics"
+        case .dockerDisk:
+            "Docker Disk"
         case .settings:
             "Settings"
         }
@@ -105,6 +108,8 @@ public enum ProjectSidebarItem: String, CaseIterable, Identifiable, Sendable {
             "w.circle"
         case .diagnostics:
             "stethoscope"
+        case .dockerDisk:
+            "internaldrive"
         case .settings:
             "gearshape"
         }
@@ -399,6 +404,7 @@ public final class ProjectDashboardViewModel {
                 case .paused: project.status == .paused
                 case .wordpress: project.isWordPress
                 case .diagnostics: false
+                case .dockerDisk: false
                 case .settings: false
                 }
             }

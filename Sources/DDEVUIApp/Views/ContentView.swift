@@ -3,6 +3,7 @@ import SwiftUI
 struct ContentView: View {
     @State private var viewModel: ProjectDashboardViewModel
     @State private var prerequisites: PrerequisiteMonitor
+    var dockerDiskViewModel: DockerDiskViewModel
     @State private var folderToConfigure: FolderToConfigure?
     @State private var showNewGroupEditor = false
     @State private var groupToEdit: ProjectGroup?
@@ -14,13 +15,19 @@ struct ContentView: View {
     init() {
         _viewModel = State(initialValue: ProjectDashboardViewModel(notifier: ContentView.makeNotifier()))
         _prerequisites = State(initialValue: PrerequisiteMonitor())
+        dockerDiskViewModel = DockerDiskViewModel()
     }
 
     /// Injecting initializer for previews/tests, so they can pass stub services instead of the
     /// real ones that spawn ddev/docker subprocesses and start the poll loop (audit L12).
-    init(viewModel: ProjectDashboardViewModel, prerequisites: PrerequisiteMonitor) {
+    init(
+        viewModel: ProjectDashboardViewModel,
+        prerequisites: PrerequisiteMonitor,
+        dockerDiskViewModel: DockerDiskViewModel = DockerDiskViewModel()
+    ) {
         _viewModel = State(initialValue: viewModel)
         _prerequisites = State(initialValue: prerequisites)
+        self.dockerDiskViewModel = dockerDiskViewModel
     }
 
     private static func makeNotifier() -> NotificationScheduling {
@@ -86,6 +93,9 @@ struct ContentView: View {
             case .library(.diagnostics):
                 DiagnosticsView(viewModel: viewModel)
                     .navigationSplitViewColumnWidth(min: 480, ideal: 680)
+            case .library(.dockerDisk):
+                DockerDiskView(viewModel: dockerDiskViewModel, dashboard: viewModel)
+                    .navigationSplitViewColumnWidth(min: 520, ideal: 720)
             default:
                 ProjectListView(viewModel: viewModel)
                     .navigationSplitViewColumnWidth(min: 280, ideal: 320, max: 420)
@@ -96,6 +106,13 @@ struct ContentView: View {
                     "Diagnostics",
                     systemImage: "stethoscope",
                     description: Text("Run global checks or select a project before opening Diagnostics for project-specific checks.")
+                )
+                .navigationSplitViewColumnWidth(min: 360, ideal: 420)
+            } else if case .library(.dockerDisk) = viewModel.selection {
+                ContentUnavailableView(
+                    "Docker Disk",
+                    systemImage: "internaldrive",
+                    description: Text("Disk usage and reclaim actions are shown in the middle column.")
                 )
                 .navigationSplitViewColumnWidth(min: 360, ideal: 420)
             } else if viewModel.isMultiSelecting {
@@ -181,6 +198,7 @@ struct ContentView: View {
         case .paused: viewModel.projects.filter { $0.status == .paused }.count
         case .wordpress: viewModel.projects.filter { $0.isWordPress }.count
         case .diagnostics: nil
+        case .dockerDisk: nil
         case .settings: nil
         }
     }
