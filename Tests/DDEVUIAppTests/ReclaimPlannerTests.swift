@@ -235,6 +235,45 @@ final class ReclaimPlannerTests: XCTestCase {
         XCTAssertTrue(plan.isEmpty, "a registered project's database must never be bulk-eligible")
     }
 
+    func testClassifyWithEmptyProjectListNeverOrphans() {
+        // `classify` is exposed directly to render an "all volumes" list with a delete button on
+        // every orphaned row, so it must refuse orphan status on its own — the `plan` guard does
+        // not protect this path.
+        let classified = ReclaimPlanner.classify(
+            volumes: [
+                volume("westlife_project_mutagen"),
+                volume("westlife-mariadb"),
+                volume("some-random-volume")
+            ],
+            projects: []
+        )
+
+        for entry in classified {
+            XCTAssertNotEqual(entry.state, .orphaned, "\(entry.volume.name) must not be orphaned when the project list is empty")
+        }
+
+        let mutagen = classified.first { $0.volume.name == "westlife_project_mutagen" }
+        XCTAssertEqual(mutagen?.kind, .mutagen)
+        XCTAssertEqual(mutagen?.projectName, "westlife")
+
+        let database = classified.first { $0.volume.name == "westlife-mariadb" }
+        XCTAssertEqual(database?.kind, .database)
+        XCTAssertEqual(database?.projectName, "westlife")
+
+        let unrecognised = classified.first { $0.volume.name == "some-random-volume" }
+        XCTAssertEqual(unrecognised?.kind, .other)
+        XCTAssertNil(unrecognised?.projectName)
+    }
+
+    func testClassifyWithEmptyProjectListStillReportsInUseAsRunning() {
+        // Docker's link count must keep winning even when the project list can't be trusted.
+        let classified = ReclaimPlanner.classify(
+            volumes: [volume("westlife_project_mutagen", links: 1)],
+            projects: []
+        )
+        XCTAssertEqual(classified.first?.state, .running)
+    }
+
     func testDegenerateVolumeNamesAreNeverBulkEligible() {
         // Stripping the suffix leaves an empty name, which attributes to no project at all.
         let classified = ReclaimPlanner.classify(

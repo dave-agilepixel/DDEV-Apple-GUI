@@ -15,6 +15,12 @@ public enum ReclaimPlanner {
     /// Matching strips the exact suffix and then requires exact membership of the project set.
     /// Prefix matching would be wrong: `thethreeswords` is a strict prefix of
     /// `thethreeswordsguiseley`, and both are real projects.
+    ///
+    /// An empty `projects` list never yields `.orphaned` — see the guard inside the `state`
+    /// closure below for why. This matters beyond `plan(volumes:projects:usage:)`: this public
+    /// entry point is also used to render an "all volumes" list with a delete button on every
+    /// orphaned row, so it must refuse to attribute orphan status on its own, independent of
+    /// the `plan` guard.
     public static func classify(volumes: [DockerVolume], projects: [DDEVProject]) -> [ClassifiedVolume] {
         classify(volumes: volumes, projectsByName: index(projects))
     }
@@ -46,8 +52,20 @@ public enum ReclaimPlanner {
 
             let state: ProjectState = {
                 // Docker's own link count is the authority on whether the volume is mounted,
-                // regardless of what DDEV believes the project's status to be.
+                // regardless of what DDEV believes the project's status to be. This check must
+                // keep winning even when the project list is empty: an in-use volume is
+                // observably running, whatever we can or can't say about its owning project.
                 if volume.isInUse { return .running }
+                // An empty project list is indistinguishable from a failed `ddev list` that
+                // returned nothing, rather than genuine proof no DDEV projects exist. Attributing
+                // `.orphaned` here would be untrustworthy: every database volume for a real,
+                // registered project would be classified "no such DDEV project" and rendered
+                // with a delete button beside it. So refuse orphan status outright until the
+                // project list is non-empty and therefore trustworthy. `.stopped` is the
+                // narrowest available state — it already means "not known to be in use, not
+                // orphaned" for unattributed volumes above, and every existing switch over
+                // `ProjectState` treats it as non-deletable without a project to act against.
+                guard !projectsByName.isEmpty else { return .stopped }
                 guard let projectName, let project = projectsByName[projectName] else {
                     return projectName == nil ? .stopped : .orphaned
                 }
