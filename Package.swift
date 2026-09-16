@@ -18,7 +18,12 @@ let package = Package(
             name: "DDEVUIAppTests",
             dependencies: ["DDEVUIApp"],
             path: "Tests/DDEVUIAppTests",
-            resources: [.copy("Fixtures/ddev-start-output.txt")]
+            resources: [
+                .copy("Fixtures/ddev-start-output.txt"),
+                .copy("Fixtures/docker-system-df.json"),
+                .copy("Fixtures/docker-system-df-v.json"),
+                .copy("Fixtures/docker-df-pk.txt")
+            ]
         )
     ]
 )

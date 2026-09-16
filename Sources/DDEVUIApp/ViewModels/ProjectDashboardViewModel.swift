@@ -72,6 +72,7 @@ public enum ProjectSidebarItem: String, CaseIterable, Identifiable, Sendable {
     case paused
     case wordpress
     case diagnostics
+    case dockerDisk
     case settings
 
     public var id: String { rawValue }
@@ -88,6 +89,8 @@ public enum ProjectSidebarItem: String, CaseIterable, Identifiable, Sendable {
             "WordPress"
         case .diagnostics:
             "Diagnostics"
+        case .dockerDisk:
+            "Docker Disk"
         case .settings:
             "Settings"
         }
@@ -105,6 +108,8 @@ public enum ProjectSidebarItem: String, CaseIterable, Identifiable, Sendable {
             "w.circle"
         case .diagnostics:
             "stethoscope"
+        case .dockerDisk:
+            "internaldrive"
         case .settings:
             "gearshape"
         }
@@ -238,7 +243,10 @@ public final class ProjectDashboardViewModel {
     private let projectCache: ProjectCacheStoring
     private let groupStore: ProjectGroupStoring
     private let customCommandDiscovery: CustomCommandDiscovering
-    private let scheduler: CommandScheduler
+    /// Internal rather than private so `DDEVUIApp`/`ContentView` can hand the *same* instance to
+    /// `DockerDiskViewModel`. Reclaim must serialise against project start/stop, and a separate
+    /// `CommandScheduler` would serialise nothing — the two would hold independent permit pools.
+    let scheduler: CommandScheduler
     private let notifier: NotificationScheduling
     private let thumbnailer: WebsiteThumbnailing
     private let thumbnailStore: ThumbnailStoring
@@ -399,6 +407,7 @@ public final class ProjectDashboardViewModel {
                 case .paused: project.status == .paused
                 case .wordpress: project.isWordPress
                 case .diagnostics: false
+                case .dockerDisk: false
                 case .settings: false
                 }
             }
@@ -460,7 +469,11 @@ public final class ProjectDashboardViewModel {
                 guard let interval = self?.statusPollInterval else { return }
                 try? await Task.sleep(for: interval)
                 guard !Task.isCancelled, let self else { return }
-                await self.refreshProjectsFromDDEVInBackground()
+                // Poll ticks are list-only for unchanged projects: `ddev describe` is the
+                // expensive call (it walks the project's containers via the Docker API), and
+                // fanning it out to every project every tick kept Docker pegged on large
+                // workspaces. Anything that changed status or appeared still gets described.
+                await self.refreshProjectsFromDDEVInBackground(describing: .changed)
             }
         }
     }
@@ -1113,16 +1126,6 @@ public final class ProjectDashboardViewModel {
         }
     }
 
-    /// Removes DDEV Docker images to reclaim disk (`ddev delete images -y`).
-    public func deleteDDEVImages() async {
-        await runGlobalHousekeeping { try await self.ddevService.deleteImages() }
-    }
-
-    /// Pre-pulls DDEV's images (`ddev utility download-images`).
-    public func downloadDDEVImages() async {
-        await runGlobalHousekeeping { try await self.ddevService.downloadImages() }
-    }
-
     // MARK: - Global configuration (A14)
 
     /// Loads the current global DDEV config for the Settings global-config section.
@@ -1653,7 +1656,16 @@ public final class ProjectDashboardViewModel {
         }
     }
 
-    private func refreshProjectsFromDDEV() async throws {
+    /// Which projects a list refresh follows up with `ddev describe`.
+    enum DescribeScope {
+        /// Every project. Explicit refreshes and mutation-triggered refreshes use this.
+        case all
+        /// Only projects that are new to the list or whose status changed since the last
+        /// snapshot; the rest inherit their describe-only fields from that snapshot.
+        case changed
+    }
+
+    private func refreshProjectsFromDDEV(describing scope: DescribeScope = .all) async throws {
         // Single in-flight guard so overlapping refreshes (e.g. the cache-warm background
         // refresh racing a mutation-triggered full refresh) don't stack two listProjects +
         // N-project describe fan-outs at once (audit M4).
@@ -1670,8 +1682,8 @@ public final class ProjectDashboardViewModel {
         // data" and keep what we have rather than destroy it — the next non-empty refresh
         // reconciles normally. A failed list throws instead and is handled by the caller.
         guard !loadedProjects.isEmpty else { return }
-        let enrichedProjects = await enrichProjectsWithDetails(loadedProjects)
         let previous = projects
+        let enrichedProjects = await enrichProjectsWithDetails(loadedProjects, previous: previous, scope: scope)
         applyProjects(enrichedProjects)
         try? await projectCache.saveProjects(enrichedProjects)
         await thumbnailStore.prune(keeping: Set(enrichedProjects.map(\.id)))
@@ -1682,9 +1694,9 @@ public final class ProjectDashboardViewModel {
         ))
     }
 
-    private func refreshProjectsFromDDEVInBackground() async {
+    private func refreshProjectsFromDDEVInBackground(describing scope: DescribeScope = .all) async {
         do {
-            try await refreshProjectsFromDDEV()
+            try await refreshProjectsFromDDEV(describing: scope)
         } catch {
             return
         }
@@ -1786,13 +1798,23 @@ public final class ProjectDashboardViewModel {
         }
     }
 
-    private func enrichProjectsWithDetails(_ projects: [DDEVProject]) async -> [DDEVProject] {
+    private func enrichProjectsWithDetails(
+        _ projects: [DDEVProject],
+        previous: [DDEVProject],
+        scope: DescribeScope
+    ) async -> [DDEVProject] {
         // Each describe is an independent subprocess; running them in parallel turns an
         // O(N × describe-latency) freeze into roughly O(slowest-describe). Bounded to
         // maxConcurrentDescribes so a large workspace can't put N blocking describes in
         // flight at once and pressure the global dispatch pool (audit M1).
         let ddevService = self.ddevService
+        let previousByID = Dictionary(previous.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         return await concurrentMap(projects, limit: Self.maxConcurrentDescribes) { project in
+            if scope == .changed,
+               let earlier = previousByID[project.id],
+               earlier.status == project.status {
+                return project.inheritingDetails(from: earlier)
+            }
             do {
                 let details = try await ddevService.describe(projectName: project.name)
                 return project.applying(details: details)

@@ -299,6 +299,32 @@ extension DDEVProject {
             phpVersion: details.phpVersion
         )
     }
+
+    /// Carries the describe-only fields (PHP version, XHGui status) forward from an earlier
+    /// snapshot of the same project. Used by the status poll so a `ddev list` row that hasn't
+    /// changed status keeps its detail without spawning another `ddev describe`.
+    public func inheritingDetails(from previous: DDEVProject) -> DDEVProject {
+        DDEVProject(
+            name: name,
+            appRoot: appRoot,
+            shortRoot: shortRoot,
+            status: status,
+            statusDescription: statusDescription,
+            projectType: projectType,
+            docroot: docroot,
+            primaryURL: primaryURL,
+            httpURL: httpURL,
+            httpsURL: httpsURL,
+            mailpitURL: mailpitURL,
+            mailpitHTTPSURL: mailpitHTTPSURL,
+            xhguiURL: xhguiURL,
+            xhguiHTTPSURL: xhguiHTTPSURL,
+            xhguiStatus: previous.xhguiStatus,
+            mutagenEnabled: mutagenEnabled,
+            mutagenStatus: mutagenStatus,
+            phpVersion: previous.phpVersion
+        )
+    }
 }
 
 private struct DDEVListPayload: Decodable {

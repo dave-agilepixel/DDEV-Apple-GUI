@@ -68,4 +68,33 @@ final class AppPreferencesTests: XCTestCase {
         XCTAssertNil(userDefaults.string(forKey: "defaultDatabaseTool"))
         XCTAssertEqual(store.loadPreferences(), AppPreferences())
     }
+
+    func testDiskThresholdDefaults() {
+        // A fresh suite has never had the disk-threshold keys set. Reading them must yield the
+        // documented defaults (0.85 / 0.93), not the `0.0` that `UserDefaults.double(forKey:)`
+        // returns for an absent key — a threshold of `0.0` would mean "warn always".
+        let suiteName = "DDEVUI-AppPreferencesTests-\(UUID().uuidString)"
+        let userDefaults = UserDefaults(suiteName: suiteName)!
+        defer { userDefaults.removePersistentDomain(forName: suiteName) }
+        let store = UserDefaultsAppPreferencesStore(userDefaults: userDefaults)
+
+        let preferences = store.loadPreferences()
+
+        XCTAssertEqual(preferences.diskWarnThreshold, 0.85, accuracy: 0.0001)
+        XCTAssertEqual(preferences.diskCriticalThreshold, 0.93, accuracy: 0.0001)
+    }
+
+    func testDiskThresholdsRoundTrip() {
+        let suiteName = "DDEVUI-AppPreferencesTests-\(UUID().uuidString)"
+        let userDefaults = UserDefaults(suiteName: suiteName)!
+        defer { userDefaults.removePersistentDomain(forName: suiteName) }
+        let store = UserDefaultsAppPreferencesStore(userDefaults: userDefaults)
+
+        store.saveDiskWarnThreshold(0.7)
+        store.saveDiskCriticalThreshold(0.9)
+
+        let reloaded = store.loadPreferences()
+        XCTAssertEqual(reloaded.diskWarnThreshold, 0.7, accuracy: 0.0001)
+        XCTAssertEqual(reloaded.diskCriticalThreshold, 0.9, accuracy: 0.0001)
+    }
 }

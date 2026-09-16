@@ -3,6 +3,7 @@ import SwiftUI
 struct ContentView: View {
     @State private var viewModel: ProjectDashboardViewModel
     @State private var prerequisites: PrerequisiteMonitor
+    var dockerDiskViewModel: DockerDiskViewModel
     @State private var folderToConfigure: FolderToConfigure?
     @State private var showNewGroupEditor = false
     @State private var groupToEdit: ProjectGroup?
@@ -12,15 +13,41 @@ struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
-        _viewModel = State(initialValue: ProjectDashboardViewModel(notifier: ContentView.makeNotifier()))
+        let dashboard = ProjectDashboardViewModel(notifier: ContentView.makeNotifier())
+        _viewModel = State(initialValue: dashboard)
         _prerequisites = State(initialValue: PrerequisiteMonitor())
+        dockerDiskViewModel = ContentView.makeDockerDiskViewModel(sharing: dashboard)
     }
 
     /// Injecting initializer for previews/tests, so they can pass stub services instead of the
     /// real ones that spawn ddev/docker subprocesses and start the poll loop (audit L12).
-    init(viewModel: ProjectDashboardViewModel, prerequisites: PrerequisiteMonitor) {
+    init(
+        viewModel: ProjectDashboardViewModel,
+        prerequisites: PrerequisiteMonitor,
+        dockerDiskViewModel: DockerDiskViewModel? = nil
+    ) {
         _viewModel = State(initialValue: viewModel)
         _prerequisites = State(initialValue: prerequisites)
+        // `nil` rather than a defaulted `DockerDiskViewModel()`: the default has to share
+        // `viewModel`'s scheduler, and a default argument expression cannot refer to another
+        // parameter. Building it in the body is the only way to keep the two wired together.
+        self.dockerDiskViewModel = dockerDiskViewModel
+            ?? ContentView.makeDockerDiskViewModel(sharing: viewModel)
+    }
+
+    /// Builds a `DockerDiskViewModel` that shares `dashboard`'s `CommandScheduler`, so reclaim
+    /// serialises against project start/stop rather than racing it. A fresh scheduler here would
+    /// hand out its own permits and serialise nothing.
+    private static func makeDockerDiskViewModel(
+        sharing dashboard: ProjectDashboardViewModel
+    ) -> DockerDiskViewModel {
+        DockerDiskViewModel(
+            dockerService: DockerSystemService(),
+            ddevService: DDEVCommandService(),
+            scheduler: dashboard.scheduler,
+            warnThreshold: dashboard.preferences.diskWarnThreshold,
+            criticalThreshold: dashboard.preferences.diskCriticalThreshold
+        )
     }
 
     private static func makeNotifier() -> NotificationScheduling {
@@ -86,6 +113,9 @@ struct ContentView: View {
             case .library(.diagnostics):
                 DiagnosticsView(viewModel: viewModel)
                     .navigationSplitViewColumnWidth(min: 480, ideal: 680)
+            case .library(.dockerDisk):
+                DockerDiskView(viewModel: dockerDiskViewModel, dashboard: viewModel)
+                    .navigationSplitViewColumnWidth(min: 520, ideal: 720)
             default:
                 ProjectListView(viewModel: viewModel)
                     .navigationSplitViewColumnWidth(min: 280, ideal: 320, max: 420)
@@ -96,6 +126,13 @@ struct ContentView: View {
                     "Diagnostics",
                     systemImage: "stethoscope",
                     description: Text("Run global checks or select a project before opening Diagnostics for project-specific checks.")
+                )
+                .navigationSplitViewColumnWidth(min: 360, ideal: 420)
+            } else if case .library(.dockerDisk) = viewModel.selection {
+                ContentUnavailableView(
+                    "Docker Disk",
+                    systemImage: "internaldrive",
+                    description: Text("Disk usage and reclaim actions are shown in the middle column.")
                 )
                 .navigationSplitViewColumnWidth(min: 360, ideal: 420)
             } else if viewModel.isMultiSelecting {
@@ -109,6 +146,7 @@ struct ContentView: View {
         .task {
             await viewModel.requestNotificationAuthorization()
             await viewModel.loadCachedProjectsThenRefresh()
+            await dockerDiskViewModel.refreshHeadroom()
         }
         .toolbar {
             ToolbarItemGroup {
@@ -181,6 +219,7 @@ struct ContentView: View {
         case .paused: viewModel.projects.filter { $0.status == .paused }.count
         case .wordpress: viewModel.projects.filter { $0.isWordPress }.count
         case .diagnostics: nil
+        case .dockerDisk: nil
         case .settings: nil
         }
     }
@@ -279,7 +318,6 @@ private struct PreviewCommandRunner: CommandRunning {
 private struct SettingsView: View {
     var viewModel: ProjectDashboardViewModel
     @State private var confirmPowerOff = false
-    @State private var confirmDeleteImages = false
 
     var body: some View {
         Form {
@@ -332,13 +370,6 @@ private struct SettingsView: View {
             // A15 — global housekeeping that isn't tied to a single project.
             Section("Maintenance") {
                 Button {
-                    Task { await viewModel.downloadDDEVImages() }
-                } label: {
-                    Label("Download Images", systemImage: "arrow.down.circle")
-                }
-                .help("Pre-pull every image DDEV needs (ddev utility download-images)")
-
-                Button {
                     confirmPowerOff = true
                 } label: {
                     Label("Power Off All Projects", systemImage: "power")
@@ -356,13 +387,6 @@ private struct SettingsView: View {
                 .disabled(viewModel.projects.allSatisfy { $0.status != .paused })
                 .help("Remove paused project containers and Docker networks without deleting databases")
 
-                Button(role: .destructive) {
-                    confirmDeleteImages = true
-                } label: {
-                    Label("Delete DDEV Images", systemImage: "trash")
-                }
-                .help("Remove DDEV Docker images to reclaim disk (ddev delete images)")
-
                 if viewModel.isRunningGlobalCommand {
                     HStack(spacing: 8) {
                         ProgressView().controlSize(.small)
@@ -375,6 +399,10 @@ private struct SettingsView: View {
                         .foregroundStyle(.orange)
                         .font(.callout)
                 }
+
+                Text("Image and disk cleanup has moved to Docker Disk.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             .disabled(viewModel.isRunningGlobalCommand)
 
@@ -392,14 +420,6 @@ private struct SettingsView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Stops every running DDEV project and the shared containers (ddev poweroff).")
-        }
-        .confirmationDialog("Delete DDEV images?", isPresented: $confirmDeleteImages) {
-            Button("Delete Images", role: .destructive) {
-                Task { await viewModel.deleteDDEVImages() }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Removes DDEV's Docker images to reclaim disk. They're re-downloaded on next start — no project data is lost.")
         }
     }
 }
