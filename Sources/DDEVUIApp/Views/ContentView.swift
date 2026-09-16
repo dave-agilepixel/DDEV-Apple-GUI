@@ -198,7 +198,6 @@ struct ContentView: View {
         .task {
             prerequisites.start()
             viewModel.startStatusPolling()
-            dockerDiskViewModel.startPeriodicHeadroomRefresh(interval: viewModel.statusPollInterval)
         }
         .onChange(of: scenePhase) { _, phase in
             // Pause the prerequisite + status polls while backgrounded; re-arm on return (B2 — the
@@ -206,11 +205,9 @@ struct ContentView: View {
             if phase == .active {
                 prerequisites.start()
                 viewModel.startStatusPolling()
-                dockerDiskViewModel.startPeriodicHeadroomRefresh(interval: viewModel.statusPollInterval)
             } else {
                 prerequisites.stop()
                 viewModel.stopStatusPolling()
-                dockerDiskViewModel.stopPeriodicHeadroomRefresh()
             }
         }
     }

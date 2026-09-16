@@ -58,14 +58,6 @@ public final class DockerDiskViewModel {
     @ObservationIgnored private let warnThreshold: Double
     @ObservationIgnored private let criticalThreshold: Double
 
-    /// Task 12 — owns the periodic headroom-only refresh loop for the menu-bar low-disk warning.
-    /// Held on the class (not a view's `@State`) because this view model is a single shared
-    /// instance owned by `DDEVUIApp` and handed to every `ContentView`; a per-window task handle
-    /// would let a second window ("New Window", Cmd+N) start a second concurrent loop against the
-    /// same shared instance, doubling the rate of `docker` invocations. Mirrors
-    /// `ProjectDashboardViewModel.statusPollTask`'s shape and guard.
-    @ObservationIgnored private var headroomPollTask: Task<Void, Never>?
-
     public init(
         dockerService: DockerSystemServicing = DockerSystemService(),
         ddevService: DDEVServicing = DDEVCommandService(),
@@ -101,10 +93,6 @@ public final class DockerDiskViewModel {
         self.criticalThreshold = clampedCritical
     }
 
-    deinit {
-        headroomPollTask?.cancel()
-    }
-
     private static func clampToRange(_ value: Double) -> Double {
         min(max(value, minThreshold), maxThreshold)
     }
@@ -118,53 +106,20 @@ public final class DockerDiskViewModel {
         return .normal
     }
 
-    /// Reads free space on the Docker VM.
-    ///
-    /// `allowingProbeVolume` decides whether the expensive fallback may run. The periodic loop
-    /// passes `false` — see `startPeriodicHeadroomRefresh(interval:)` — so an idle machine can
-    /// never be made to launch a container on a timer. Every explicit, user-initiated refresh
-    /// passes `true` and gets a real measurement even with nothing running.
-    public func refreshHeadroom(allowingProbeVolume: Bool = true) async {
+    /// Reads free space on the Docker VM. Only ever user-initiated — opening the Docker Disk
+    /// screen or pressing Refresh — so it is allowed the probe-volume fallback and gets a real
+    /// measurement even with nothing running. There is deliberately no timer behind this: a
+    /// periodic poll adds `docker` subprocesses to the status poll's load for a warning that
+    /// only matters when the user is looking at disk usage anyway. The menu-bar icon reflects
+    /// the last measurement taken.
+    public func refreshHeadroom() async {
         do {
-            headroom = try await dockerService.headroom(allowingProbeVolume: allowingProbeVolume)
+            headroom = try await dockerService.headroom(allowingProbeVolume: true)
         } catch {
-            // Deliberately silent: Docker may simply not be running, and with
-            // `allowingProbeVolume: false` this is also the ordinary outcome whenever no DDEV
-            // project is up. Clearing the value keeps `alertLevel` at `.normal` rather than
-            // reporting a false emergency.
+            // Deliberately silent: Docker may simply not be running. Clearing the value keeps
+            // `alertLevel` at `.normal` rather than reporting a false emergency.
             headroom = nil
         }
-    }
-
-    /// Starts the periodic headroom-only refresh (Task 12): a cancellable, idempotent
-    /// sleep-then-refresh loop, mirroring `ProjectDashboardViewModel.startStatusPolling()`. A
-    /// second call while already running (e.g. from a second window's `ContentView`) is a
-    /// no-op, since the task handle lives here on the shared view model rather than on a
-    /// per-window `@State`. Deliberately calls only `refreshHeadroom()` — the cheap call —
-    /// never `refreshFullInventory`, which walks every volume and stays confined to
-    /// `DockerDiskView`'s `.task` and its explicit Refresh button.
-    ///
-    /// Passes `allowingProbeVolume: false` so each tick is restricted to the effectively-free
-    /// `docker exec` measurement. Without that, an idle machine — no DDEV project running, so
-    /// the exec path always throws — would fall through to `headroomViaProbeVolume()` on every
-    /// single tick, launching a throwaway container every `interval` forever. The cost of the
-    /// restriction is that the menu-bar warning simply goes quiet while nothing is running,
-    /// which is the right trade: there is no DDEV workload to protect at that moment, and
-    /// opening the Docker Disk screen or hitting Refresh still takes a full measurement.
-    public func startPeriodicHeadroomRefresh(interval: Duration) {
-        guard headroomPollTask == nil else { return }
-        headroomPollTask = Task { [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(for: interval)
-                guard !Task.isCancelled, let self else { return }
-                await self.refreshHeadroom(allowingProbeVolume: false)
-            }
-        }
-    }
-
-    public func stopPeriodicHeadroomRefresh() {
-        headroomPollTask?.cancel()
-        headroomPollTask = nil
     }
 
     /// Expensive — walks every volume. Call only when the screen is open or on explicit refresh.

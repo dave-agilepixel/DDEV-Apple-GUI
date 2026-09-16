@@ -22,6 +22,44 @@ final class ProjectDashboardViewModelTests: XCTestCase {
         XCTAssertEqual(service.commands.filter { $0 == "list" }.count, settled, "No polling after stop")
     }
 
+    /// The status poll must not re-describe projects whose status hasn't changed. `ddev describe`
+    /// walks the project's containers through the Docker API, and fanning it out to every
+    /// project every tick kept Docker pegged on large workspaces. Unchanged rows keep their
+    /// describe-only fields from the previous snapshot; changed rows are described again.
+    func testStatusPollOnlyDescribesProjectsWhoseStatusChanged() async throws {
+        let service = FakeDDEVService(
+            projects: [.sampleWordPress, .sampleLaravel],
+            phpVersions: ["aqua-pura": "8.4", "agilebugs": "8.2"]
+        )
+        let viewModel = ProjectDashboardViewModel(ddevService: service, statusPollInterval: .milliseconds(20))
+
+        await viewModel.refresh()
+        XCTAssertEqual(service.commands, ["list", "describe:aqua-pura", "describe:agilebugs"])
+        service.clearCommands()
+
+        // Unchanged list: the poll is list-only and the details carry forward.
+        viewModel.startStatusPolling()
+        try await Task.sleep(for: .milliseconds(120))
+        viewModel.stopStatusPolling()
+        try await Task.sleep(for: .milliseconds(60))
+
+        XCTAssertGreaterThan(service.commands.filter { $0 == "list" }.count, 0)
+        XCTAssertFalse(service.commands.contains { $0.hasPrefix("describe:") }, "unchanged projects are not re-described")
+        XCTAssertEqual(viewModel.projects.map(\.phpVersion), ["8.4", "8.2"], "details survive a list-only poll")
+        service.clearCommands()
+
+        // One project changes status: only that one is described again.
+        service.setProjects([.sampleWordPress, DDEVProject.sampleLaravel.withStatus(.stopped)])
+        viewModel.startStatusPolling()
+        try await Task.sleep(for: .milliseconds(120))
+        viewModel.stopStatusPolling()
+        try await Task.sleep(for: .milliseconds(60))
+
+        let described = Set(service.commands.filter { $0.hasPrefix("describe:") })
+        XCTAssertEqual(described, ["describe:agilebugs"])
+        XCTAssertEqual(viewModel.projects.map(\.phpVersion), ["8.4", "8.2"])
+    }
+
     func testStartStatusPollingIsIdempotent() async throws {
         let service = FakeDDEVService(projects: [.sampleWordPress])
         let viewModel = ProjectDashboardViewModel(ddevService: service, statusPollInterval: .seconds(60))
@@ -1951,6 +1989,11 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
 
     var commands: [String] {
         lock.withLock { recordedCommands }
+    }
+
+    /// Test seam: forget everything recorded so far, so a later phase can assert on its own calls.
+    func clearCommands() {
+        lock.withLock { recordedCommands.removeAll() }
     }
 
     var startStreamed: Bool { lock.withLock { startStreamedFlag } }
