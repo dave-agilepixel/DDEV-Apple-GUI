@@ -469,6 +469,27 @@ final class DockerDiskViewModelTests: XCTestCase {
         XCTAssertNotNil(viewModel.errorMessage)
     }
 
+    func testRemoveVolumesRemovesEveryNamedVolumeAndNamesFailures() async {
+        let docker = FakeDockerSystemService()
+        docker.volumeNamesToFail = ["b-mariadb", "c-mariadb"]
+        let viewModel = makeViewModel(docker: docker)
+
+        await viewModel.removeVolumes(named: ["a-mariadb", "b-mariadb", "c-mariadb"])
+
+        XCTAssertEqual(docker.removedVolumes, ["a-mariadb", "b-mariadb", "c-mariadb"])
+        XCTAssertEqual(docker.removeVolumesCallCount, 1, "one scheduled batch, not one per volume")
+        XCTAssertEqual(viewModel.errorMessage, "Could not remove 2 volumes: b-mariadb, c-mariadb.")
+    }
+
+    func testRemoveVolumesWithNoNamesDoesNothing() async {
+        let docker = FakeDockerSystemService()
+        let viewModel = makeViewModel(docker: docker)
+
+        await viewModel.removeVolumes(named: [])
+
+        XCTAssertEqual(docker.removeVolumesCallCount, 0)
+    }
+
     func testPrefetchImagesSucceeds() async {
         let docker = FakeDockerSystemService()
         let ddevService = FakeDDEVService()
@@ -629,6 +650,10 @@ final class DockerDiskViewModelTests: XCTestCase {
             "Reclaimed with 1 failure(s): aqua-pura sync cache.",
             "unexpected summary: \(String(describing: summary))"
         )
+        XCTAssertTrue(
+            docker.removedVolumes.isEmpty,
+            "a failed reset may leave a Mutagen session behind, so its volume must not be removed directly"
+        )
     }
 
     /// The complement: when the reset genuinely succeeds, the clean summary is correct.
@@ -643,6 +668,10 @@ final class DockerDiskViewModelTests: XCTestCase {
         await viewModel.executeReclaim()
 
         XCTAssertEqual(ddevService.mutagenCallCount, 1, "the reset must actually be attempted")
+        // `ddev mutagen reset` exits 0 and leaves the volume when Mutagen is disabled for the
+        // project, so the reset alone reclaimed nothing — 22 GB across 23 projects on the machine
+        // this was found on. The volume must be removed directly afterwards.
+        XCTAssertEqual(docker.removedVolumes, ["aqua-pura_project_mutagen"])
         XCTAssertEqual(
             viewModel.lastReclaimSummary,
             "Reclaimed an estimated \(expectedBytes.formattedBytes)."

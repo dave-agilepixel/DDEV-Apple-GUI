@@ -110,7 +110,29 @@ final class ReclaimPlannerTests: XCTestCase {
             projects: [project("aqua-pura", status: .running)],
             usage: emptyUsage()
         )
-        XCTAssertFalse(plan.items.contains { $0.action == .mutagenReset(project: "aqua-pura", appRoot: "/Users/dave/Development/aqua-pura") })
+        XCTAssertFalse(plan.items.contains { $0.action == .mutagenReset(
+                project: "aqua-pura",
+                appRoot: "/Users/dave/Development/aqua-pura",
+                volume: "aqua-pura_project_mutagen"
+            ) })
+    }
+
+    /// The Docker Disk breakdown shows this instead of Docker's own "reclaimable" figure, which
+    /// counts every stopped project's database.
+    func testVolumeBytesCountsOnlyWhatThePlanRemoves() {
+        let plan = ReclaimPlanner.plan(
+            volumes: [
+                volume("aqua-pura_project_mutagen", gigabytes: 2),
+                volume("aqua-pura-mariadb", gigabytes: 5),
+                volume("westlife-mariadb", gigabytes: 1)
+            ],
+            projects: [project("aqua-pura", status: .stopped)],
+            usage: emptyUsage()
+        )
+        XCTAssertEqual(
+            plan.volumeBytes, 3_000_000_000,
+            "the stopped project's sync cache and the orphaned database, not its own 5 GB database"
+        )
     }
 
     func testStoppedProjectMutagenVolumeIsIncludedAsMutagenReset() {
@@ -120,7 +142,11 @@ final class ReclaimPlannerTests: XCTestCase {
             usage: emptyUsage()
         )
         XCTAssertTrue(plan.items.contains {
-            $0.action == .mutagenReset(project: "aqua-pura", appRoot: "/Users/dave/Development/aqua-pura")
+            $0.action == .mutagenReset(
+                project: "aqua-pura",
+                appRoot: "/Users/dave/Development/aqua-pura",
+                volume: "aqua-pura_project_mutagen"
+            )
         })
     }
 
@@ -510,7 +536,7 @@ final class ReclaimPlannerTests: XCTestCase {
 
         // The two stopped, registered projects' sync caches go through DDEV, not a raw removal.
         let resets: [String] = plan.items.compactMap {
-            if case let .mutagenReset(project, _) = $0.action { return project }
+            if case let .mutagenReset(project, _, _) = $0.action { return project }
             return nil
         }
         XCTAssertEqual(Set(resets), ["thethreeswords", "thethreeswordsguiseley"])

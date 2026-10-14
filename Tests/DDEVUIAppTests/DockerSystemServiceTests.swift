@@ -294,5 +294,9 @@ final class DockerSystemServiceTests: XCTestCase {
         XCTAssertTrue(results[0].succeeded)
         XCTAssertFalse(results[1].succeeded)
         XCTAssertTrue(results[2].succeeded)
+        // `-f` so an already-absent volume counts as removed rather than failing.
+        XCTAssertEqual(runner.commands.map(\.arguments), [
+            ["volume", "rm", "-f", "a"], ["volume", "rm", "-f", "b"], ["volume", "rm", "-f", "c"]
+        ])
     }
 }

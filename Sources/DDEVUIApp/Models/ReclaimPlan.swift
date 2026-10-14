@@ -43,8 +43,9 @@ public struct ClassifiedVolume: Equatable, Sendable, Identifiable {
 public enum ReclaimAction: Equatable, Sendable {
     case buildCache
     case unusedImages
-    /// `ddev mutagen reset` is keyed by working directory, not project name.
-    case mutagenReset(project: String, appRoot: String)
+    /// `ddev mutagen reset` is keyed by working directory, not project name. `volume` is the
+    /// sync-cache volume, removed directly when the reset leaves it behind.
+    case mutagenReset(project: String, appRoot: String, volume: String)
     case removeVolume(name: String)
 }
 
@@ -82,6 +83,18 @@ public struct ReclaimPlan: Equatable, Sendable {
     }
 
     public var isEmpty: Bool { items.isEmpty }
+
+    /// What this plan frees from volumes — sync caches and orphaned volumes. Docker's own
+    /// "reclaimable" figure for volumes is every volume no container has mounted, which counts
+    /// each stopped project's database; this is the part Reclaim will actually remove.
+    public var volumeBytes: Int64 {
+        items.reduce(0) { total, item in
+            switch item.action {
+            case .mutagenReset, .removeVolume: total + item.estimatedBytes
+            case .buildCache, .unusedImages: total
+            }
+        }
+    }
 
     /// Orphaned-project databases in this plan — the one category the bulk Reclaim button can
     /// destroy that a user might reasonably assume is safe. Empty for every plan that doesn't

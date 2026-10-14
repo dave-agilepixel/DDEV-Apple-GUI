@@ -8,6 +8,9 @@ struct DockerDiskView: View {
 
     @State private var confirmReclaim = false
     @State private var volumePendingRemoval: ClassifiedVolume?
+    /// Volume names ticked in the Project databases list.
+    @State private var selectedDatabases: Set<String> = []
+    @State private var confirmDeleteDatabases = false
 
     var body: some View {
         ScrollView {
@@ -40,11 +43,36 @@ struct DockerDiskView: View {
         .task { await viewModel.refreshFullInventory(projects: dashboard.projects) }
         .confirmationDialog("Reclaim disk space?", isPresented: $confirmReclaim) {
             Button("Reclaim \(viewModel.plan.totalBytes.formattedBytes)", role: .destructive) {
-                Task { await viewModel.executeReclaim() }
+                Task {
+                    await viewModel.executeReclaim()
+                    await viewModel.refreshFullInventory(projects: dashboard.projects)
+                }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
             reclaimConfirmationMessage
+        }
+        .confirmationDialog(
+            selectedDatabaseVolumes.count == 1 ? "Delete this database?" : "Delete \(selectedDatabaseVolumes.count) databases?",
+            isPresented: $confirmDeleteDatabases
+        ) {
+            Button("Delete \(selectedDatabaseVolumes.reduce(0) { $0 + $1.volume.sizeBytes }.formattedBytes)", role: .destructive) {
+                let names = selectedDatabaseVolumes.map(\.volume.name)
+                selectedDatabases = []
+                Task {
+                    await viewModel.removeVolumes(named: names)
+                    await viewModel.refreshFullInventory(projects: dashboard.projects)
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(
+                "This permanently deletes the database for "
+                + ListFormatter.localizedString(
+                    byJoining: selectedDatabaseVolumes.map { $0.projectName ?? $0.volume.name }
+                )
+                + ". The projects stay registered and start with an empty database. This cannot be undone."
+            )
         }
         .confirmationDialog(
             "Delete this volume?",
@@ -52,7 +80,10 @@ struct DockerDiskView: View {
             presenting: volumePendingRemoval
         ) { classified in
             Button("Delete \(classified.volume.name)", role: .destructive) {
-                Task { await viewModel.removeVolume(named: classified.volume.name) }
+                Task {
+                    await viewModel.removeVolume(named: classified.volume.name)
+                    await viewModel.refreshFullInventory(projects: dashboard.projects)
+                }
             }
             Button("Cancel", role: .cancel) {}
         } message: { classified in
@@ -113,10 +144,16 @@ struct DockerDiskView: View {
 
             if let usage = viewModel.usage {
                 VStack(spacing: 4) {
-                    breakdownRow("Images", usage.images)
-                    breakdownRow("Containers", usage.containers)
-                    breakdownRow("Volumes", usage.volumes)
-                    breakdownRow("Build cache", usage.buildCache)
+                    // "Reclaimable" here is what the Reclaim button below removes, not Docker's
+                    // figure — Docker counts every stopped project's database as reclaimable.
+                    breakdownRow("Images", usage.images, reclaimable: usage.images.reclaimableBytes)
+                    breakdownRow("Containers", usage.containers, reclaimable: 0)
+                    breakdownRow(
+                        "Volumes", usage.volumes,
+                        reclaimable: viewModel.plan.volumeBytes,
+                        kept: max(0, usage.volumes.reclaimableBytes - viewModel.plan.volumeBytes)
+                    )
+                    breakdownRow("Build cache", usage.buildCache, reclaimable: usage.buildCache.reclaimableBytes)
                 }
             } else if viewModel.isLoadingInventory {
                 HStack(spacing: 8) {
@@ -127,13 +164,24 @@ struct DockerDiskView: View {
         }
     }
 
-    private func breakdownRow(_ title: String, _ category: DockerUsageCategory) -> some View {
+    /// `kept` is data Docker reports as unused that Reclaim deliberately leaves alone — stopped
+    /// projects' databases and unrecognised volumes.
+    private func breakdownRow(
+        _ title: String,
+        _ category: DockerUsageCategory,
+        reclaimable: Int64,
+        kept: Int64 = 0
+    ) -> some View {
         HStack {
             Text(title).frame(width: 140, alignment: .leading)
             Text(category.sizeBytes.formattedBytes)
                 .frame(width: 100, alignment: .trailing)
-            Text("\(category.reclaimableBytes.formattedBytes) reclaimable")
+            Text(reclaimable > 0 ? "\(reclaimable.formattedBytes) reclaimable" : "Nothing to reclaim")
                 .foregroundStyle(.secondary)
+            if kept > 0 {
+                Text("· \(kept.formattedBytes) of project data kept")
+                    .foregroundStyle(.tertiary)
+            }
             Spacer()
         }
         .font(.callout)
@@ -218,11 +266,57 @@ struct DockerDiskView: View {
         )
     }
 
+    /// Databases get their own list, by project and largest first: they are the one thing here
+    /// Reclaim never removes for a registered project, so this is where they are found, ticked
+    /// and deleted.
+    @ViewBuilder
     private var volumesSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("All volumes").sectionHeaderStyle()
+        let sorted = viewModel.inventory.sorted { $0.volume.sizeBytes > $1.volume.sizeBytes }
+        let databases = sorted.filter { $0.kind == .database }
 
-            ForEach(viewModel.inventory) { classified in
+        if !databases.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                volumeListHeader("Project databases", volumes: databases)
+
+                Text(
+                    "Reclaim never deletes a registered project's database. Tick the ones you no "
+                    + "longer need and delete them here — this cannot be undone."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+                ForEach(databases) { classified in
+                    HStack {
+                        Toggle(isOn: selectionBinding(for: classified.volume.name)) {
+                            Text(classified.projectName ?? classified.volume.name)
+                        }
+                        .toggleStyle(.checkbox)
+                        .disabled(classified.state == .running)
+                        .help(classified.state == .running ? "In use — stop the project first" : "")
+                        Text(stateDescription(classified.state))
+                            .font(.caption)
+                            .foregroundStyle(classified.state == .orphaned ? .orange : .secondary)
+                        Spacer()
+                        Text(classified.volume.sizeBytes.formattedBytes)
+                            .foregroundStyle(.secondary)
+                    }
+                    .font(.callout)
+                }
+
+                Button(role: .destructive) {
+                    confirmDeleteDatabases = true
+                } label: {
+                    Label(deleteSelectedTitle, systemImage: "trash")
+                }
+                .disabled(selectedDatabaseVolumes.isEmpty || viewModel.isReclaiming)
+            }
+        }
+
+        let others = sorted.filter { $0.kind != .database }
+        VStack(alignment: .leading, spacing: 10) {
+            volumeListHeader("Other volumes", volumes: others)
+
+            ForEach(others) { classified in
                 HStack {
                     Text(classified.volume.name)
                         .font(.system(.caption, design: .monospaced))
@@ -243,6 +337,42 @@ struct DockerDiskView: View {
                 }
             }
         }
+    }
+
+    private func volumeListHeader(_ title: String, volumes: [ClassifiedVolume]) -> some View {
+        HStack {
+            Text(title).sectionHeaderStyle()
+            Spacer()
+            Text(volumes.reduce(0) { $0 + $1.volume.sizeBytes }.formattedBytes)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    /// The ticked databases that still exist and are not in use. Derived from the live inventory
+    /// so a stale tick — a volume since removed, or a project since started — is never acted on.
+    private var selectedDatabaseVolumes: [ClassifiedVolume] {
+        viewModel.inventory.filter {
+            $0.kind == .database && $0.state != .running && selectedDatabases.contains($0.volume.name)
+        }
+    }
+
+    private var deleteSelectedTitle: String {
+        let selected = selectedDatabaseVolumes
+        guard !selected.isEmpty else { return "Delete Selected…" }
+        let size = selected.reduce(0) { $0 + $1.volume.sizeBytes }.formattedBytes
+        return selected.count == 1
+            ? "Delete 1 Database (\(size))…"
+            : "Delete \(selected.count) Databases (\(size))…"
+    }
+
+    private func selectionBinding(for name: String) -> Binding<Bool> {
+        Binding(
+            get: { selectedDatabases.contains(name) },
+            set: { isOn in
+                if isOn { selectedDatabases.insert(name) } else { selectedDatabases.remove(name) }
+            }
+        )
     }
 
     private var maintenanceSection: some View {
@@ -268,12 +398,15 @@ struct DockerDiskView: View {
         case .database: "database"
         case .other: "other"
         }
-        let state = switch classified.state {
+        return "\(kind) · \(stateDescription(classified.state))"
+    }
+
+    private func stateDescription(_ state: ProjectState) -> String {
+        switch state {
         case .running: "running"
         case .stopped: "stopped"
         case .orphaned: "orphaned — no such DDEV project"
         }
-        return "\(kind) · \(state)"
     }
 
     private func tint(for level: DiskAlertLevel) -> Color {

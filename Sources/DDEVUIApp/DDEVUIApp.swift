@@ -35,6 +35,9 @@ struct DDEVUIApp: App {
             )
             .frame(minWidth: 1040, minHeight: 680)
         }
+        // Without this a new window opens at the minimum size above, which leaves the project
+        // list ~300pt once the sidebar and detail columns take their share.
+        .defaultSize(width: 1600, height: 1000)
 
         // B1 — always-there menu-bar controls: start/stop/launch any project without the window.
         // The icon itself doubles as the proactive low-disk warning (Task 12): it swaps to a

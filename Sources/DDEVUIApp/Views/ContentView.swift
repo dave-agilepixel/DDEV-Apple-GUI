@@ -118,7 +118,7 @@ struct ContentView: View {
                     .navigationSplitViewColumnWidth(min: 520, ideal: 720)
             default:
                 ProjectListView(viewModel: viewModel)
-                    .navigationSplitViewColumnWidth(min: 280, ideal: 320, max: 420)
+                    .navigationSplitViewColumnWidth(min: 280, ideal: 420, max: 420)
             }
         } detail: {
             if case .library(.diagnostics) = viewModel.selection {

@@ -164,10 +164,17 @@ public final class DockerDiskViewModel {
                 await record(&failures, item.label) { [dockerService] in
                     _ = try await dockerService.pruneUnusedImages()
                 }
-            case let .mutagenReset(_, appRoot):
-                await record(&failures, item.label) { [ddevService] in
+            case let .mutagenReset(_, appRoot, volume):
+                let didReset = await record(&failures, item.label) { [ddevService] in
                     _ = try await ddevService.mutagen(.reset, in: appRoot)
                 }
+                // `ddev mutagen reset` exits 0 without touching the volume when Mutagen is
+                // disabled for the project ("Mutagen is not enabled on project …"), which is
+                // exactly the project whose sync cache is dead weight. So a successful reset is
+                // followed by a direct removal, which is a no-op if DDEV already removed it. A
+                // failed reset is left alone: its Mutagen session may still exist, and DDEV would
+                // resume that session against an empty volume on the next start.
+                if didReset { volumeNames.append(volume) }
             case let .removeVolume(name):
                 volumeNames.append(name)
             }
@@ -185,17 +192,24 @@ public final class DockerDiskViewModel {
         await refreshHeadroom()
     }
 
-    /// Explicit per-item removal — the only route by which a registered project's database
-    /// can be deleted.
     public func removeVolume(named name: String) async {
-        guard !isReclaiming else { return }
+        await removeVolumes(named: [name])
+    }
+
+    /// Removal of volumes the user picked out by name — the only route by which a registered
+    /// project's database can be deleted.
+    public func removeVolumes(named names: [String]) async {
+        guard !names.isEmpty, !isReclaiming else { return }
         errorMessage = nil
         isReclaiming = true
         defer { isReclaiming = false }
 
-        let results = await scheduledRemoveVolumes([name])
-        if let failure = results.first(where: { !$0.succeeded }) {
-            errorMessage = failure.message ?? "Could not remove \(name)."
+        let failures = await scheduledRemoveVolumes(names).filter { !$0.succeeded }
+        if failures.count == 1, let failure = failures.first {
+            errorMessage = failure.message ?? "Could not remove \(failure.name)."
+        } else if !failures.isEmpty {
+            errorMessage = "Could not remove \(failures.count) volumes: "
+                + "\(failures.map(\.name).joined(separator: ", "))."
         }
         await refreshHeadroom()
     }
@@ -245,19 +259,22 @@ public final class DockerDiskViewModel {
         }
     }
 
+    @discardableResult
     private func record(
         _ failures: inout [String],
         _ label: String,
         _ operation: @Sendable () async throws -> Void
-    ) async {
+    ) async -> Bool {
         do {
             if let scheduler {
                 try await scheduler.run(operation)
             } else {
                 try await operation()
             }
+            return true
         } catch {
             failures.append(label)
+            return false
         }
     }
 }

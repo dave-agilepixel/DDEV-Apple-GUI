@@ -10,58 +10,31 @@ struct DatabaseOperationsView: View {
     @State private var importFilesDraft: ImportFilesDraft?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Text("Database")
-                        .sectionHeaderStyle()
-                    Spacer()
-                }
+        Section("Database") {
+            LabeledContent {
+                Button("Import…") { chooseImportFile() }
+            } label: {
+                Text("Import database")
+                Text("Load a SQL dump or archive into this project.")
+            }
 
-                HStack(spacing: 8) {
-                    Button {
-                        chooseImportFile()
-                    } label: {
-                        Label("Import", systemImage: "square.and.arrow.down")
-                    }
-
-                    Button {
-                        exportDraft = DatabaseExportDraft()
-                    } label: {
-                        Label("Export", systemImage: "square.and.arrow.up")
-                    }
-
-                    Spacer(minLength: 0)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.regular)
-                .labelStyle(.titleAndIcon)
-                .disabled(viewModel.isSelectedProjectBusy)
+            LabeledContent {
+                Button("Export…") { exportDraft = DatabaseExportDraft() }
+            } label: {
+                Text("Export database")
+                Text("Save a dump of the local database.")
             }
 
             // A19 — file-side companion to the DB import: pull an uploaded-files archive/dir
             // into the project's upload directory via `ddev import-files`.
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Text("Files")
-                        .sectionHeaderStyle()
-                    Spacer()
-                }
-
-                HStack(spacing: 8) {
-                    Button {
-                        chooseImportFilesSource()
-                    } label: {
-                        Label("Import Files", systemImage: "folder.badge.plus")
-                    }
-                    Spacer(minLength: 0)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.regular)
-                .labelStyle(.titleAndIcon)
-                .disabled(viewModel.isSelectedProjectBusy)
+            LabeledContent {
+                Button("Choose…") { chooseImportFilesSource() }
+            } label: {
+                Text("Import files")
+                Text("Replace the uploads directory from a folder or archive.")
             }
         }
+        .disabled(viewModel.isSelectedProjectBusy)
         .sheet(item: $importDraft) { draft in
             DatabaseImportSheet(project: project, draft: draft, viewModel: viewModel)
         }
