@@ -141,7 +141,11 @@ public enum ReclaimPlanner {
                 guard let projectName = classified.projectName,
                       let project = projectsByName[projectName] else { continue }
                 items.append(ReclaimItem(
-                    action: .mutagenReset(project: projectName, appRoot: project.appRoot),
+                    action: .mutagenReset(
+                        project: projectName,
+                        appRoot: project.appRoot,
+                        volume: classified.volume.name
+                    ),
                     label: "\(projectName) sync cache",
                     detail: "Rebuilt on next start",
                     estimatedBytes: classified.volume.sizeBytes

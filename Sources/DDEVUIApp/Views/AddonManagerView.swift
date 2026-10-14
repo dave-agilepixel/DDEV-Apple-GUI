@@ -8,33 +8,14 @@ struct AddonManagerView: View {
     @State private var pendingRemoval: DDEVAddon?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("Add-ons")
-                    .sectionHeaderStyle()
-                Spacer()
-                Button {
-                    Task { await viewModel.loadInstalledAddOnsForSelectedProject() }
-                } label: {
-                    Label("Refresh", systemImage: "arrow.clockwise")
-                }
-                .labelStyle(.iconOnly)
-                .help("Refresh installed add-ons")
-                .disabled(viewModel.isSelectedProjectBusy)
-            }
-
+        Section {
             if viewModel.addOnRestartRecommended {
-                HStack(spacing: 10) {
-                    Label("Restart recommended after add-on changes.", systemImage: "arrow.clockwise.circle")
-                        .foregroundStyle(.orange)
-                    Spacer()
-                    Button {
+                LabeledContent {
+                    Button("Restart") {
                         Task {
                             await viewModel.restartSelectedProject()
                             viewModel.clearAddOnRestartRecommendation()
                         }
-                    } label: {
-                        Label("Restart", systemImage: "arrow.clockwise")
                     }
                     Button {
                         viewModel.clearAddOnRestartRecommendation()
@@ -43,49 +24,51 @@ struct AddonManagerView: View {
                     }
                     .labelStyle(.iconOnly)
                     .help("Dismiss restart recommendation")
-                }
-                .font(.callout)
-                .buttonStyle(.bordered)
-            }
-
-            HStack(spacing: 8) {
-                Button {
-                    showSearchSheet = true
                 } label: {
-                    Label("Browse", systemImage: "shippingbox.and.arrow.backward")
+                    Label("Restart recommended after add-on changes.", systemImage: "arrow.clockwise.circle")
+                        .foregroundStyle(.orange)
                 }
-                .buttonStyle(.borderedProminent)
-
-                if let addonRawOutput = viewModel.addonRawOutput {
-                    Text(addonRawOutput)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                        .textSelection(.enabled)
-                }
-
-                Spacer(minLength: 0)
             }
-            .buttonStyle(.bordered)
-            .disabled(viewModel.isSelectedProjectBusy)
 
             if let addonErrorMessage = viewModel.addonErrorMessage {
                 Label(addonErrorMessage, systemImage: "xmark.octagon.fill")
-                    .font(.callout)
                     .foregroundStyle(.red)
             }
 
             if viewModel.installedAddOns.isEmpty {
-                ContentUnavailableView(
-                    "No Add-ons Installed",
-                    systemImage: "shippingbox",
-                    description: Text("Browse official or community add-ons to extend this DDEV project.")
-                )
-                .frame(maxWidth: .infinity, minHeight: 120)
+                Text("No add-ons installed.")
+                    .foregroundStyle(.secondary)
             } else {
-                installedList
+                ForEach(viewModel.installedAddOns) { addon in
+                    AddonRow(addon: addon) {
+                        pendingRemoval = addon
+                    }
+                }
+            }
+
+            LabeledContent {
+                Button("Browse…") { showSearchSheet = true }
+            } label: {
+                Text("Add an add-on")
+                // The raw `ddev add-on` output for the last install/remove, when there is one.
+                Text(viewModel.addonRawOutput ?? "Official and community services such as Redis or Solr.")
+                    .lineLimit(2)
+            }
+        } header: {
+            HStack {
+                Text("Add-ons")
+                Spacer()
+                Button {
+                    Task { await viewModel.loadInstalledAddOnsForSelectedProject() }
+                } label: {
+                    Label("Refresh", systemImage: "arrow.clockwise")
+                        .labelStyle(.iconOnly)
+                }
+                .buttonStyle(.borderless)
+                .help("Refresh installed add-ons")
             }
         }
+        .disabled(viewModel.isSelectedProjectBusy)
         .task(id: project.id) {
             await viewModel.loadInstalledAddOnsForSelectedProject()
         }
@@ -103,17 +86,6 @@ struct AddonManagerView: View {
             Button("Cancel", role: .cancel) {}
         } message: { addon in
             Text("This removes \(addon.repository) from \(project.name)'s DDEV configuration.")
-        }
-    }
-
-    private var installedList: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(viewModel.installedAddOns) { addon in
-                AddonRow(addon: addon) {
-                    pendingRemoval = addon
-                }
-                .disabled(viewModel.isSelectedProjectBusy)
-            }
         }
     }
 }

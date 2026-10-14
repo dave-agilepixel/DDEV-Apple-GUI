@@ -210,15 +210,12 @@ struct ProjectInspectorView: View {
     private func tabContent(_ project: DDEVProject) -> some View {
         switch selectedTab {
         case .overview:
-            ScrollView {
-                OverviewTabContent(
-                    project: project,
-                    viewModel: viewModel,
-                    workspaceOpener: workspaceOpener,
-                    showConfigEditor: $showConfigEditor
-                )
-            }
-            .scrollContentBackground(.hidden)
+            OverviewTabContent(
+                project: project,
+                viewModel: viewModel,
+                workspaceOpener: workspaceOpener,
+                showConfigEditor: $showConfigEditor
+            )
         case .manage:
             ManageTabContent(project: project, viewModel: viewModel)
         case .logs:
@@ -619,16 +616,12 @@ private struct CopyableRow: View {
     @State private var revealed = false
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(label)
-                .foregroundStyle(.secondary)
-                .frame(width: 96, alignment: .leading)
+        LabeledContent(label) {
             Text(displayValue)
-                .font(.system(.callout, design: .monospaced))
+                .font(.system(.body, design: .monospaced))
                 .textSelection(.enabled)
                 .lineLimit(1)
                 .truncationMode(.middle)
-            Spacer(minLength: 4)
             if isSecret {
                 Button {
                     revealed.toggle()
@@ -646,7 +639,6 @@ private struct CopyableRow: View {
             .buttonStyle(.borderless)
             .help("Copy \(label.lowercased())")
         }
-        .font(.callout)
     }
 
     private var displayValue: String {
@@ -666,116 +658,79 @@ private struct OverviewTabContent: View {
     private var details: DDEVProjectDetails? { viewModel.selectedProjectDetails }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
+        Form {
             environmentSection
             urlsSection
             servicesSection
             databaseCredentialsSection
         }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 20)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
     }
 
     private var environmentSection: some View {
-        InspectorSection("Environment") {
-            VStack(alignment: .leading, spacing: 8) {
-                metaRow("PHP version", trailing: {
-                    HStack(spacing: 6) {
-                        Text(project.phpVersion ?? "Unknown")
-                            .font(.system(.body, design: .monospaced))
-                        Menu {
-                            ForEach(viewModel.supportedPHPVersions, id: \.self) { version in
-                                Button("PHP \(version)") {
-                                    Task { await viewModel.setPHPVersionForSelectedProject(version) }
-                                }
-                                .disabled(project.phpVersion == version)
-                            }
-                        } label: {
-                            Text("Change")
+        Section("Environment") {
+            LabeledContent("PHP version") {
+                Text(project.phpVersion ?? "Unknown")
+                    .font(.system(.body, design: .monospaced))
+                Menu("Change") {
+                    ForEach(viewModel.supportedPHPVersions, id: \.self) { version in
+                        Button("PHP \(version)") {
+                            Task { await viewModel.setPHPVersionForSelectedProject(version) }
                         }
-                        .menuStyle(.borderlessButton)
-                        .fixedSize()
-                        .disabled(viewModel.isSelectedProjectBusy)
+                        .disabled(project.phpVersion == version)
                     }
-                })
-
-                // Bind to the *live* Xdebug state (ddev xdebug status), not describe's config value.
-                // Only present for a running project (the only time the live state is meaningful).
-                if let xdebugEnabled = viewModel.selectedProjectXdebugEnabled {
-                    metaRow("Xdebug", trailing: {
-                        Toggle("Xdebug", isOn: Binding(
-                            get: { xdebugEnabled },
-                            set: { newValue in Task { await viewModel.setXdebugForSelectedProject(newValue) } }
-                        ))
-                        .labelsHidden()
-                        .toggleStyle(.switch)
-                        .controlSize(.small)
-                        .disabled(viewModel.isSelectedProjectBusy)
-                    })
                 }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .disabled(viewModel.isSelectedProjectBusy)
+            }
 
-                // A17 — live XHGui/XHProf profiling toggle, same shape as Xdebug. XHGui is DDEV's
-                // XHProf UI; live state comes from `ddev xhgui status`. (No `ddev blackfire` command
-                // exists in this DDEV, so Blackfire is intentionally not surfaced.)
-                if let xhguiEnabled = viewModel.selectedProjectXHGuiEnabled {
-                    metaRow("XHProf (XHGui)", trailing: {
-                        Toggle("XHProf", isOn: Binding(
-                            get: { xhguiEnabled },
-                            set: { newValue in Task { await viewModel.setXHGuiForSelectedProject(newValue) } }
-                        ))
-                        .labelsHidden()
-                        .toggleStyle(.switch)
-                        .controlSize(.small)
-                        .disabled(viewModel.isSelectedProjectBusy)
-                    })
+            // Bind to the *live* Xdebug state (ddev xdebug status), not describe's config value.
+            // Only present for a running project (the only time the live state is meaningful).
+            if let xdebugEnabled = viewModel.selectedProjectXdebugEnabled {
+                Toggle("Xdebug", isOn: Binding(
+                    get: { xdebugEnabled },
+                    set: { newValue in Task { await viewModel.setXdebugForSelectedProject(newValue) } }
+                ))
+                .disabled(viewModel.isSelectedProjectBusy)
+            }
+
+            // A17 — live XHGui/XHProf profiling toggle, same shape as Xdebug. XHGui is DDEV's
+            // XHProf UI; live state comes from `ddev xhgui status`. (No `ddev blackfire` command
+            // exists in this DDEV, so Blackfire is intentionally not surfaced.)
+            if let xhguiEnabled = viewModel.selectedProjectXHGuiEnabled {
+                Toggle("XHProf (XHGui)", isOn: Binding(
+                    get: { xhguiEnabled },
+                    set: { newValue in Task { await viewModel.setXHGuiForSelectedProject(newValue) } }
+                ))
+                .disabled(viewModel.isSelectedProjectBusy)
+            }
+
+            LabeledContent("Project type", value: project.projectType.displayName)
+
+            if !project.docroot.isEmpty {
+                LabeledContent("Docroot") {
+                    Text(project.docroot)
+                        .font(.system(.body, design: .monospaced))
                 }
+            }
 
-                metaRow("Project type", trailing: {
-                    Text(project.projectType.displayName)
-                        .foregroundStyle(.secondary)
-                })
+            if let mutagen = project.mutagenStatus, project.mutagenEnabled {
+                LabeledContent("Mutagen", value: mutagen)
+            }
 
-                if !project.docroot.isEmpty {
-                    metaRow("Docroot", trailing: {
-                        Text(project.docroot)
-                            .font(.system(.body, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                    })
+            LabeledContent("Configuration") {
+                // B8 — open the raw .ddev/ files in the editor instead of building fragile
+                // GUI forms for advanced config.
+                Button(".ddev/") {
+                    workspaceOpener.openFolder(project.appRoot + "/.ddev", editor: viewModel.effectiveDefaultEditor)
                 }
-
-                if let mutagen = project.mutagenStatus, project.mutagenEnabled {
-                    metaRow("Mutagen", trailing: {
-                        Text(mutagen)
-                            .foregroundStyle(.secondary)
-                    })
+                Button("config.yaml") {
+                    workspaceOpener.openFile(project.appRoot + "/.ddev/config.yaml", editor: viewModel.effectiveDefaultEditor)
                 }
-
-                HStack(spacing: 8) {
-                    // B8 — open the raw .ddev/ files in the editor instead of building fragile
-                    // GUI forms for advanced config.
-                    Button {
-                        workspaceOpener.openFolder(project.appRoot + "/.ddev", editor: viewModel.effectiveDefaultEditor)
-                    } label: {
-                        Label(".ddev/", systemImage: "folder")
-                    }
-                    Button {
-                        workspaceOpener.openFile(project.appRoot + "/.ddev/config.yaml", editor: viewModel.effectiveDefaultEditor)
-                    } label: {
-                        Label("config.yaml", systemImage: "doc.text")
-                    }
-
-                    Spacer()
-
-                    Button {
-                        showConfigEditor = true
-                    } label: {
-                        Label("Edit Config", systemImage: "slider.horizontal.3")
-                    }
+                Button("Edit…") { showConfigEditor = true }
                     .disabled(viewModel.isSelectedProjectBusy)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
             }
         }
     }
@@ -787,7 +742,7 @@ private struct OverviewTabContent: View {
         let links = projectLaunchLinks(project, details)
 
         if !links.isEmpty || project.xhguiStatus == .disabled {
-            InspectorSection("Open") {
+            Section("Open") {
                 FlowHStack(spacing: 8) {
                     ForEach(links) { link in
                         Button {
@@ -819,17 +774,15 @@ private struct OverviewTabContent: View {
     @ViewBuilder
     private var servicesSection: some View {
         if let details, !details.services.isEmpty {
-            InspectorSection("Services") {
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(details.services) { service in
-                        ServiceRow(service: service, workspaceOpener: workspaceOpener)
-                    }
-                    if let router = details.routerStatus {
-                        ServiceHealthRow(label: "Router", status: router)
-                    }
-                    if let ssh = details.sshAgentStatus {
-                        ServiceHealthRow(label: "SSH agent", status: ssh)
-                    }
+            Section("Services") {
+                ForEach(details.services) { service in
+                    ServiceRow(service: service, workspaceOpener: workspaceOpener)
+                }
+                if let router = details.routerStatus {
+                    ServiceHealthRow(label: "Router", status: router)
+                }
+                if let ssh = details.sshAgentStatus {
+                    ServiceHealthRow(label: "SSH agent", status: ssh)
                 }
             }
         }
@@ -840,35 +793,22 @@ private struct OverviewTabContent: View {
     @ViewBuilder
     private var databaseCredentialsSection: some View {
         if project.status == .running, let db = details?.databaseInfo {
-            InspectorSection("Database Credentials") {
-                VStack(alignment: .leading, spacing: 6) {
-                    CopyableRow(label: "Database", value: db.name)
-                    CopyableRow(label: "Username", value: db.username)
-                    CopyableRow(label: "Password", value: db.password, isSecret: true)
-                    if let hostPort = details?.databaseHostPort {
-                        CopyableRow(label: "Host", value: "127.0.0.1")
-                        CopyableRow(label: "Port", value: hostPort)
-                    } else {
-                        Label(
-                            "Database port is not published to the host. Use the Database button to open a client.",
-                            systemImage: "info.circle"
-                        )
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    }
+            Section("Database Credentials") {
+                CopyableRow(label: "Database", value: db.name)
+                CopyableRow(label: "Username", value: db.username)
+                CopyableRow(label: "Password", value: db.password, isSecret: true)
+                if let hostPort = details?.databaseHostPort {
+                    CopyableRow(label: "Host", value: "127.0.0.1")
+                    CopyableRow(label: "Port", value: hostPort)
+                } else {
+                    Label(
+                        "Database port is not published to the host. Use the Database button to open a client.",
+                        systemImage: "info.circle"
+                    )
+                    .foregroundStyle(.secondary)
                 }
             }
         }
-    }
-
-    private func metaRow<Trailing: View>(_ label: String, @ViewBuilder trailing: () -> Trailing) -> some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text(label)
-                .foregroundStyle(.secondary)
-            Spacer()
-            trailing()
-        }
-        .font(.callout)
     }
 }
 
@@ -937,156 +877,6 @@ private struct ServiceHealthRow: View {
 
 // MARK: - Manage tab
 
-/// A10 — tool passthrough: run `ddev composer/npm/drush/wp` with free-text arguments. The available
-/// tools are derived from the project type. Output flows into the Logs-tab command output.
-private struct ToolRunnerView: View {
-    let project: DDEVProject
-    var viewModel: ProjectDashboardViewModel
-
-    private var tools: [DDEVTool] { DDEVTool.tools(for: project.projectType) }
-
-    var body: some View {
-        InspectorSection("Tools") {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Run a tool inside the web container with your own arguments (ddev <tool> …). Output appears under the Logs tab.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                ForEach(tools) { tool in
-                    ToolRow(tool: tool, project: project, viewModel: viewModel)
-                }
-
-                if project.status != .running {
-                    Text("Start the project to run tools.")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                }
-            }
-        }
-    }
-}
-
-private struct ToolRow: View {
-    let tool: DDEVTool
-    let project: DDEVProject
-    var viewModel: ProjectDashboardViewModel
-
-    @State private var args = ""
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Text(tool.displayName)
-                .font(.callout.weight(.medium))
-                .frame(width: 84, alignment: .leading)
-
-            TextField(tool.placeholder, text: $args)
-                .textFieldStyle(.roundedBorder)
-                .font(.system(.body, design: .monospaced))
-                .onSubmit(run)
-
-            Button("Run", action: run)
-                .disabled(!canRun)
-        }
-    }
-
-    private var canRun: Bool {
-        project.status == .running
-            && !viewModel.isSelectedProjectBusy
-            && !args.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    private func run() {
-        guard canRun else { return }
-        let toRun = args
-        Task { await viewModel.runToolForSelectedProject(tool, argumentString: toRun) }
-    }
-}
-
-/// A9 — run an arbitrary one-shot command inside a service container (`ddev exec`). Output flows
-/// into the normal command-output channel (Logs tab). The command is run via `bash -c`, so pipes
-/// and shell features work.
-private struct ExecConsoleView: View {
-    let project: DDEVProject
-    var viewModel: ProjectDashboardViewModel
-
-    @State private var command = ""
-    @State private var service: DDEVExecService = .web
-
-    var body: some View {
-        InspectorSection("Run Command") {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Run a one-shot shell command inside a container (ddev exec). Output appears under the Logs tab.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                HStack(spacing: 8) {
-                    Picker("Service", selection: $service) {
-                        ForEach(DDEVExecService.allCases) { service in
-                            Text(service.displayName).tag(service)
-                        }
-                    }
-                    .labelsHidden()
-                    .fixedSize()
-
-                    TextField("e.g. composer install", text: $command)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(.body, design: .monospaced))
-                        .onSubmit(run)
-
-                    Button("Run", action: run)
-                        .buttonStyle(.borderedProminent)
-                        .disabled(!canRun)
-                }
-
-                if project.status != .running {
-                    Text("Start the project to run commands in its containers.")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                }
-            }
-        }
-    }
-
-    private var canRun: Bool {
-        project.status == .running
-            && !viewModel.isSelectedProjectBusy
-            && !command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    private func run() {
-        guard canRun else { return }
-        let toRun = command
-        Task { await viewModel.runExecForSelectedProject(command: toRun, service: service) }
-    }
-}
-
-/// A13 — surfaces user-defined custom commands (`.ddev/commands/…`) discovered at runtime as
-/// buttons. Hidden entirely when the project defines none.
-private struct CustomCommandsView: View {
-    let project: DDEVProject
-    var viewModel: ProjectDashboardViewModel
-
-    var body: some View {
-        if !viewModel.customCommands.isEmpty {
-            InspectorSection("Custom Commands") {
-                FlowHStack(spacing: 8) {
-                    ForEach(viewModel.customCommands) { command in
-                        Button {
-                            Task { await viewModel.runCustomCommandForSelectedProject(command) }
-                        } label: {
-                            Label(command.name, systemImage: "terminal")
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .help(command.description ?? "ddev \(command.name) (\(command.scope.rawValue))")
-                    }
-                }
-                .disabled(viewModel.isSelectedProjectBusy)
-            }
-        }
-    }
-}
-
 private struct WordPressMultisiteView: View {
     let project: DDEVProject
     var viewModel: ProjectDashboardViewModel
@@ -1100,77 +890,33 @@ private struct WordPressMultisiteView: View {
     @State private var seededProjectID: DDEVProject.ID?
     @State private var pendingOptions: WordPressMultisiteOptions?
 
+    @State private var isExpanded = false
+
     var body: some View {
         if project.isWordPress {
-            InspectorSection("WordPress Multisite") {
-                VStack(alignment: .leading, spacing: 10) {
-                    Label("Converts this install into a WordPress network and updates DDEV routing for the entered domains.",
-                          systemImage: "network")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    multisiteRow("Mode") {
-                        Picker("Mode", selection: $mode) {
-                            ForEach(WordPressMultisiteMode.allCases) { mode in
-                                Text(mode.displayName).tag(mode)
-                            }
+            Section("Advanced") {
+                DisclosureGroup("Convert to WordPress Multisite", isExpanded: $isExpanded) {
+                    Picker("Mode", selection: $mode) {
+                        ForEach(WordPressMultisiteMode.allCases) { mode in
+                            Text(mode.displayName).tag(mode)
                         }
-                        .pickerStyle(.segmented)
-                        .labelsHidden()
-                        .frame(maxWidth: 280)
                     }
+                    .pickerStyle(.segmented)
 
-                    multisiteRow("Primary URL") {
-                        TextField("https://\(project.name).ddev.site", text: $primaryURLText)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(.body, design: .monospaced))
-                    }
+                    TextField("Primary URL", text: $primaryURLText, prompt: Text("https://\(project.name).ddev.site"))
+                    TextField("Network title", text: $networkTitle, prompt: Text("\(project.name) Network"))
+                    TextField("Base path", text: $basePath, prompt: Text("/"))
+                    TextField("DDEV hostnames", text: $additionalHostnamesText, prompt: Text(defaultAdditionalHostname))
+                    TextField("DDEV FQDNs", text: $additionalFQDNsText, prompt: Text("example.test, shop.example.test"))
 
-                    multisiteRow("Network title") {
-                        TextField("\(project.name) Network", text: $networkTitle)
-                            .textFieldStyle(.roundedBorder)
-                    }
-
-                    multisiteRow("Base path") {
-                        TextField("/", text: $basePath)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(.body, design: .monospaced))
-                            .frame(maxWidth: 160)
-                    }
-
-                    multisiteRow("DDEV hostnames") {
-                        TextField(defaultAdditionalHostname, text: $additionalHostnamesText)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(.body, design: .monospaced))
-                    }
-
-                    multisiteRow("DDEV FQDNs") {
-                        TextField("example.test, shop.example.test", text: $additionalFQDNsText)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(.body, design: .monospaced))
-                    }
-
-                    HStack {
-                        if project.status != .running {
-                            Text("Start the project before converting WordPress.")
-                                .font(.caption2)
-                                .foregroundStyle(.tertiary)
-                        } else if !hasValidPrimaryURL {
+                    LabeledContent {
+                        Button("Convert…") { pendingOptions = multisiteOptions }
+                            .disabled(!canConfigure)
+                    } label: {
+                        Text("Turns this install into a network and updates DDEV routing for the domains above.")
+                        if project.status == .running, !hasValidPrimaryURL {
                             Text("Enter a valid primary URL.")
-                                .font(.caption2)
-                                .foregroundStyle(.orange)
                         }
-
-                        Spacer()
-
-                        Button {
-                            pendingOptions = multisiteOptions
-                        } label: {
-                            Label("Configure Multisite", systemImage: "network")
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
-                        .disabled(!canConfigure)
                     }
                 }
             }
@@ -1196,16 +942,6 @@ private struct WordPressMultisiteView: View {
                 Text("Runs `ddev wp core multisite-convert` for \(options.primaryURL), creates network tables, and updates wp-config.php. Back up files and the database first.")
             }
         }
-    }
-
-    private func multisiteRow<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Text(title)
-                .foregroundStyle(.secondary)
-                .frame(width: 112, alignment: .leading)
-            content()
-        }
-        .font(.callout)
     }
 
     private var canConfigure: Bool {
@@ -1283,101 +1019,84 @@ private struct ShareView: View {
     private let workspaceOpener = MacWorkspaceOpener()
 
     var body: some View {
-        InspectorSection("Share") {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Expose this project on a temporary public URL (ddev share). Anyone with the link can reach your local site — stop sharing when you're done.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                content
-
-                if project.status != .running {
-                    Text("Start the project to share it.")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
+        Section("Sharing") {
+            switch viewModel.shareState {
+            case .idle, .stopped, .failed:
+                LabeledContent {
+                    Button("Start Sharing") { viewModel.startSharing() }
+                        .disabled(project.status != .running)
+                } label: {
+                    Text("Public URL")
+                    Text("A temporary link (ddev share). Anyone with it can reach your local site.")
                 }
-            }
-        }
-    }
 
-    @ViewBuilder
-    private var content: some View {
-        switch viewModel.shareState {
-        case .idle, .stopped, .failed:
-            Button {
-                viewModel.startSharing()
-            } label: {
-                Label("Start Sharing", systemImage: "antenna.radiowaves.left.and.right")
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.small)
-            .disabled(project.status != .running)
+                if case .failed(let message) = viewModel.shareState {
+                    Label(message, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                }
 
-            if case .failed(let message) = viewModel.shareState {
-                Label(message, systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-            }
+            case .starting:
+                LabeledContent {
+                    Button("Stop", role: .destructive) { viewModel.stopSharing() }
+                } label: {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text("Starting tunnel…")
+                    }
+                }
 
-        case .starting:
-            HStack(spacing: 8) {
-                ProgressView().controlSize(.small)
-                Text("Starting tunnel…").foregroundStyle(.secondary)
-                Spacer()
-                Button("Stop", role: .destructive) { viewModel.stopSharing() }
-                    .controlSize(.small)
-            }
-
-        case .running(let url):
-            HStack(spacing: 8) {
-                Image(systemName: "antenna.radiowaves.left.and.right")
-                    .foregroundStyle(.green)
-                if let url {
-                    Text(url)
-                        .font(.system(.callout, design: .monospaced))
+            case .running(let url):
+                LabeledContent {
+                    if let url {
+                        Button {
+                            if let parsed = URL(string: url) { workspaceOpener.openURL(parsed) }
+                        } label: {
+                            Label("Open", systemImage: "safari").labelStyle(.iconOnly)
+                        }
+                        .help("Open the public URL")
+                        Button {
+                            Pasteboard.copy(url)
+                        } label: {
+                            Label("Copy", systemImage: "doc.on.doc").labelStyle(.iconOnly)
+                        }
+                        .help("Copy the public URL")
+                    }
+                    Button("Stop Sharing", role: .destructive) { viewModel.stopSharing() }
+                } label: {
+                    Text(url ?? "Tunnel running…")
                         .textSelection(.enabled)
                         .lineLimit(1)
                         .truncationMode(.middle)
-                    Button {
-                        if let parsed = URL(string: url) { workspaceOpener.openURL(parsed) }
-                    } label: { Image(systemName: "safari") }
-                        .buttonStyle(.borderless)
-                        .help("Open the public URL")
-                    Button { Pasteboard.copy(url) } label: { Image(systemName: "doc.on.doc") }
-                        .buttonStyle(.borderless)
-                        .help("Copy the public URL")
-                } else {
-                    Text("Tunnel running…").foregroundStyle(.secondary)
+                    Text("Anyone with this link can reach your local site.")
                 }
-                Spacer()
-                Button("Stop Sharing", role: .destructive) { viewModel.stopSharing() }
-                    .controlSize(.small)
             }
         }
     }
 }
 
+/// The Manage tab: occasional, per-project housekeeping as one grouped form, ordered by how often
+/// each part is reached for — data first, then commands, with one-off conversions last.
 private struct ManageTabContent: View {
     let project: DDEVProject
     var viewModel: ProjectDashboardViewModel
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                FrameworkCommandLauncherView(project: project, viewModel: viewModel)
-                WordPressMultisiteView(project: project, viewModel: viewModel)
-                CustomCommandsView(project: project, viewModel: viewModel)
-                ToolRunnerView(project: project, viewModel: viewModel)
-                ExecConsoleView(project: project, viewModel: viewModel)
-                DatabaseOperationsView(project: project, viewModel: viewModel)
-                ShareView(project: project, viewModel: viewModel)
-                SnapshotManagerView(project: project, viewModel: viewModel)
-                AddonManagerView(project: project, viewModel: viewModel)
+        Form {
+            if project.status != .running {
+                Section {
+                    Label("Start the project to run commands, share it or change its database.", systemImage: "info.circle")
+                        .foregroundStyle(.secondary)
+                }
             }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 20)
-            .frame(maxWidth: .infinity, alignment: .leading)
+
+            DatabaseOperationsView(project: project, viewModel: viewModel)
+            SnapshotManagerView(project: project, viewModel: viewModel)
+            ProjectCommandsView(project: project, viewModel: viewModel)
+            ShareView(project: project, viewModel: viewModel)
+            AddonManagerView(project: project, viewModel: viewModel)
+            WordPressMultisiteView(project: project, viewModel: viewModel)
         }
+        .formStyle(.grouped)
         .scrollContentBackground(.hidden)
     }
 }

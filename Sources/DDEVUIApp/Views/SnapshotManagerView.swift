@@ -9,80 +9,70 @@ struct SnapshotManagerView: View {
     @State private var pendingConfirmation: SnapshotConfirmation?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("Snapshots")
-                    .sectionHeaderStyle()
-                Spacer()
-                Button {
-                    Task { await viewModel.loadSnapshotsForSelectedProject() }
-                } label: {
-                    Label("Refresh", systemImage: "arrow.clockwise")
-                }
-                .labelStyle(.iconOnly)
-                .help("Refresh snapshots")
-                .disabled(viewModel.isSelectedProjectBusy)
-            }
-
+        Section {
             HStack(spacing: 8) {
-                TextField("Snapshot name", text: $snapshotName)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(maxWidth: 260)
+                TextField("New snapshot", text: $snapshotName, prompt: Text("Snapshot name"))
 
-                Button {
+                Button("Create") {
                     Task {
                         await viewModel.createSnapshotForSelectedProject(name: snapshotName)
                         updateSuggestedSnapshotName(force: true)
                     }
-                } label: {
-                    Label("Create", systemImage: "plus")
                 }
-                .disabled(viewModel.isSelectedProjectBusy || snapshotName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-
-                Button {
-                    pendingConfirmation = .restoreLatest
-                } label: {
-                    Label("Restore Latest", systemImage: "clock.arrow.circlepath")
-                }
-                .disabled(viewModel.isSelectedProjectBusy)
-
-                Button(role: .destructive) {
-                    pendingConfirmation = .cleanupAll
-                } label: {
-                    Label("Clean Up All", systemImage: "trash")
-                }
-                .disabled(viewModel.isSelectedProjectBusy || viewModel.snapshots.isEmpty)
-
-                Spacer(minLength: 0)
+                .disabled(snapshotName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
-            .buttonStyle(.bordered)
-            .controlSize(.regular)
-            .labelStyle(.titleAndIcon)
 
             if let snapshotErrorMessage = viewModel.snapshotErrorMessage {
-                HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.red)
-                    Text(snapshotErrorMessage)
-                        .foregroundStyle(.red)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .padding(10)
-                .background(RoundedRectangle(cornerRadius: 8).fill(.red.opacity(0.08)))
+                Label(snapshotErrorMessage, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+                    .textSelection(.enabled)
             }
 
             if viewModel.snapshots.isEmpty {
-                ContentUnavailableView(
-                    "No Snapshots",
-                    systemImage: "camera.metering.none",
-                    description: Text("Create a named snapshot or refresh the list.")
-                )
-                .frame(maxWidth: .infinity, minHeight: 120)
+                Text("No snapshots yet.")
+                    .foregroundStyle(.secondary)
             } else {
-                snapshotList
+                ForEach(viewModel.snapshots) { snapshot in
+                    LabeledContent {
+                        Button("Restore") { pendingConfirmation = .restore(snapshot) }
+
+                        Button(role: .destructive) {
+                            pendingConfirmation = .cleanup(snapshot)
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                        .labelStyle(.iconOnly)
+                        .help("Delete this snapshot")
+                    } label: {
+                        Text(snapshot.name)
+                        if let databaseSuffix = snapshot.databaseSuffix {
+                            Text(databaseSuffix)
+                        }
+                    }
+                }
+            }
+        } header: {
+            HStack {
+                Text("Snapshots")
+                Spacer()
+                Menu {
+                    Button("Refresh") {
+                        Task { await viewModel.loadSnapshotsForSelectedProject() }
+                    }
+                    Button("Restore Latest…") { pendingConfirmation = .restoreLatest }
+                    Divider()
+                    Button("Clean Up All…", role: .destructive) { pendingConfirmation = .cleanupAll }
+                        .disabled(viewModel.snapshots.isEmpty)
+                } label: {
+                    Label("Snapshot actions", systemImage: "ellipsis.circle")
+                        .labelStyle(.iconOnly)
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
             }
         }
+        .disabled(viewModel.isSelectedProjectBusy)
         .task(id: project.id) {
             updateSuggestedSnapshotName()
             await viewModel.loadSnapshotsForSelectedProject()
@@ -111,42 +101,6 @@ struct SnapshotManagerView: View {
         } message: { confirmation in
             Text(confirmation.message(for: project))
         }
-    }
-
-    private var snapshotList: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(viewModel.snapshots) { snapshot in
-                HStack(spacing: 10) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(snapshot.name)
-                            .font(.callout.weight(.medium))
-                        if let databaseSuffix = snapshot.databaseSuffix {
-                            Text(databaseSuffix)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-
-                    Spacer(minLength: 0)
-
-                    Button {
-                        pendingConfirmation = .restore(snapshot)
-                    } label: {
-                        Label("Restore", systemImage: "arrow.counterclockwise")
-                    }
-
-                    Button(role: .destructive) {
-                        pendingConfirmation = .cleanup(snapshot)
-                    } label: {
-                        Label("Delete", systemImage: "trash")
-                    }
-                }
-                .padding(.vertical, 6)
-            }
-        }
-        .buttonStyle(.bordered)
-        .controlSize(.small)
-        .disabled(viewModel.isSelectedProjectBusy)
     }
 
     private var confirmationBinding: Binding<Bool> {

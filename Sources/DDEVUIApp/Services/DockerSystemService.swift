@@ -179,11 +179,15 @@ public final class DockerSystemService: Sendable {
 
     /// Removes volumes one at a time, reporting each outcome. Never throws — a volume that
     /// became in-use mid-run must not abort the remaining removals.
+    ///
+    /// `-f` makes an already-absent volume a success rather than a "no such volume" error — the
+    /// outcome the caller wants either way. It does not force an in-use volume out: Docker still
+    /// refuses that with "volume is in use".
     public func removeVolumes(_ names: [String]) async -> [VolumeRemovalResult] {
         var results: [VolumeRemovalResult] = []
         for name in names {
             do {
-                _ = try await runDocker(["volume", "rm", name], timeout: Self.quickTimeout)
+                _ = try await runDocker(["volume", "rm", "-f", name], timeout: Self.quickTimeout)
                 results.append(VolumeRemovalResult(name: name, succeeded: true, message: nil))
             } catch {
                 results.append(VolumeRemovalResult(
