@@ -406,6 +406,7 @@ struct DockerDiskView: View {
         case .running: "running"
         case .stopped: "stopped"
         case .orphaned: "orphaned — no such DDEV project"
+        case .unavailable: "project folder not on disk"
         }
     }
 

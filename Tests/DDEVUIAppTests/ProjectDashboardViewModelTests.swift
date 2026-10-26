@@ -31,7 +31,14 @@ final class ProjectDashboardViewModelTests: XCTestCase {
             projects: [.sampleWordPress, .sampleLaravel],
             phpVersions: ["aqua-pura": "8.4", "agilebugs": "8.2"]
         )
-        let viewModel = ProjectDashboardViewModel(ddevService: service, statusPollInterval: .milliseconds(20))
+        // Stubbed so a real off-screen WebKit capture of the running project's URL cannot hog
+        // the main actor and starve the 20ms poll loop.
+        let viewModel = ProjectDashboardViewModel(
+            ddevService: service,
+            thumbnailer: StubWebsiteThumbnailer(),
+            thumbnailStore: InMemoryThumbnailStore(),
+            statusPollInterval: .milliseconds(20)
+        )
 
         await viewModel.refresh()
         XCTAssertEqual(service.commands, ["list", "describe:aqua-pura", "describe:agilebugs"])
@@ -70,6 +77,59 @@ final class ProjectDashboardViewModelTests: XCTestCase {
 
         viewModel.stopStatusPolling()
         XCTAssertFalse(viewModel.isStatusPollingActive)
+    }
+
+    func testPollHoldsAndFlagsUnavailableFoldersWithoutDroppingProjects() async throws {
+        // The service refuses `ddev list` while a registered folder is off-line. The poll must
+        // keep the projects it already has (nothing vanishes), surface which folders are
+        // missing, and clear the flag once a later list succeeds.
+        let missing = [DDEVProjectRegistryEntry(
+            name: "igniyte", appRoot: "/Volumes/Work/devmove/projects/x/data", folderExists: false
+        )]
+        let service = FakeDDEVService(projects: [.sampleWordPress])
+        let viewModel = ProjectDashboardViewModel(
+            ddevService: service,
+            thumbnailer: StubWebsiteThumbnailer(),
+            thumbnailStore: InMemoryThumbnailStore(),
+            statusPollInterval: .seconds(60)
+        )
+        await viewModel.refresh()
+        XCTAssertEqual(viewModel.projects.map(\.name), ["aqua-pura"])
+        XCTAssertTrue(viewModel.unavailableProjectFolders.isEmpty)
+
+        service.setListError(DDEVCommandPreconditionError.projectFoldersUnavailable(missing))
+        await viewModel.refresh()
+
+        XCTAssertEqual(viewModel.projects.map(\.name), ["aqua-pura"], "a held poll keeps the last good list")
+        XCTAssertEqual(viewModel.unavailableProjectFolders, missing)
+        XCTAssertNotNil(viewModel.globalErrorMessage)
+
+        service.setListError(nil)
+        await viewModel.refresh()
+
+        XCTAssertTrue(viewModel.unavailableProjectFolders.isEmpty, "cleared once the folders are back")
+        XCTAssertNil(viewModel.globalErrorMessage)
+    }
+
+    func testBackgroundPollSurfacesUnavailableFoldersSilently() async throws {
+        let missing = [DDEVProjectRegistryEntry(name: "igniyte", appRoot: "/Volumes/Work/x", folderExists: false)]
+        let service = FakeDDEVService(
+            projects: [.sampleWordPress],
+            listError: DDEVCommandPreconditionError.projectFoldersUnavailable(missing)
+        )
+        let viewModel = ProjectDashboardViewModel(
+            ddevService: service,
+            thumbnailer: StubWebsiteThumbnailer(),
+            thumbnailStore: InMemoryThumbnailStore(),
+            statusPollInterval: .milliseconds(20)
+        )
+
+        viewModel.startStatusPolling()
+        try await Task.sleep(for: .milliseconds(120))
+        viewModel.stopStatusPolling()
+
+        XCTAssertEqual(viewModel.unavailableProjectFolders, missing)
+        XCTAssertNil(viewModel.globalErrorMessage, "the background poll never raises the error banner")
     }
 
     func testParseShareURLExtractsForwardingURL() {
@@ -1970,7 +2030,7 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
     private let dbMatchResult: Result<CommandResult, Error>?
     private var xdebugLiveEnabled: Bool
     private var xhguiLiveEnabled: Bool
-    private let listError: Error?
+    private var listError: Error?
     private let importError: Error?
     private let snapshotListOutput: String
     private let snapshotListError: Error?
@@ -2045,10 +2105,15 @@ private final class FakeDDEVService: DDEVServicing, @unchecked Sendable {
 
     func listProjects() async throws -> [DDEVProject] {
         record("list")
-        if let listError {
+        if let listError = lock.withLock({ listError }) {
             throw listError
         }
         return lock.withLock { loadedProjects }
+    }
+
+    /// Test seam: make the next `listProjects()` throw (or stop throwing when `nil`).
+    func setListError(_ error: Error?) {
+        lock.withLock { listError = error }
     }
 
     /// Test seam: change the list returned by the next `listProjects()` (simulates a project

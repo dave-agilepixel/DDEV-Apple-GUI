@@ -190,12 +190,14 @@ final class DockerDiskViewModelTests: XCTestCase {
         // A fake, never `nil` and never the real `DDEVCommandService` the view model now
         // defaults to — these tests must not spawn `ddev` subprocesses.
         ddevService: DDEVServicing = FakeDDEVService(),
-        scheduler: CommandScheduler? = nil
+        scheduler: CommandScheduler? = nil,
+        registry: DDEVProjectRegistryReading = InMemoryDDEVProjectRegistry(entries: [])
     ) -> DockerDiskViewModel {
         DockerDiskViewModel(
             dockerService: docker,
             ddevService: ddevService,
             scheduler: scheduler,
+            registry: registry,
             warnThreshold: 0.85,
             criticalThreshold: 0.93
         )
@@ -341,6 +343,29 @@ final class DockerDiskViewModelTests: XCTestCase {
         XCTAssertTrue(docker.prunedBuildCache)
         XCTAssertTrue(docker.prunedImages)
         XCTAssertTrue(docker.removedVolumes.isEmpty, "an untrustworthy (empty) project list must never yield a volume removal")
+    }
+
+    func testRegisteredProjectWithMissingFolderIsNotOfferedAsOrphaned() async {
+        // DDEV's registry still lists `igniyte`, but its folder lives on a drive that is not
+        // mounted, so `ddev list` (and therefore `projects`) cannot report it. Its database is
+        // not orphaned and must be neither planned for removal nor labelled orphaned.
+        let docker = FakeDockerSystemService()
+        docker.volumesResult = .success([
+            DockerVolume(name: "igniyte-mariadb", sizeBytes: 300_000, links: 0),
+            DockerVolume(name: "westlife-mariadb", sizeBytes: 100_000, links: 0)
+        ])
+        let registry = InMemoryDDEVProjectRegistry(entries: [
+            DDEVProjectRegistryEntry(name: "aqua-pura", appRoot: "/tmp/aqua-pura", folderExists: true),
+            DDEVProjectRegistryEntry(name: "igniyte", appRoot: "/Volumes/Work/devmove/projects/x/data", folderExists: false)
+        ])
+        let viewModel = makeViewModel(docker: docker, registry: registry)
+
+        await viewModel.refreshFullInventory(projects: [makeProject(named: "aqua-pura")])
+
+        XCTAssertEqual(viewModel.plan.orphanedDatabaseItems.map(\.label), ["westlife-mariadb"],
+                       "only the genuinely unregistered database is offered")
+        let igniyte = viewModel.inventory.first { $0.volume.name == "igniyte-mariadb" }
+        XCTAssertEqual(igniyte?.state, .unavailable)
     }
 
     func testErrorMessageIsSetWhenInventoryFails() async {

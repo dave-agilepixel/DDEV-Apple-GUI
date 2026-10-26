@@ -166,6 +166,50 @@ final class ReclaimPlannerTests: XCTestCase {
         XCTAssertTrue(plan.isEmpty, "a registered project's database must never be bulk-eligible")
     }
 
+    // MARK: - Unavailable project folders
+
+    func testDatabaseForUnavailableProjectIsNeverOrphaned() {
+        // The project is still in DDEV's registry; only its folder is off-line (an unmounted
+        // drive). That is not a deleted project, so its database must not be offered.
+        let classified = ReclaimPlanner.classify(
+            volumes: [volume("igniyte-mariadb"), volume("igniyte_project_mutagen")],
+            projects: [project("aqua-pura", status: .running)],
+            unavailableProjectNames: ["igniyte"]
+        )
+        XCTAssertEqual(classified.map(\.state), [.unavailable, .unavailable])
+        XCTAssertEqual(classified.map(\.projectName), ["igniyte", "igniyte"])
+    }
+
+    func testPlanSkipsVolumesOfUnavailableProjects() {
+        let plan = ReclaimPlanner.plan(
+            volumes: [volume("igniyte-mariadb", gigabytes: 0.3), volume("igniyte_project_mutagen")],
+            projects: [project("aqua-pura", status: .running)],
+            usage: emptyUsage(),
+            unavailableProjectNames: ["igniyte"]
+        )
+        XCTAssertTrue(plan.isEmpty, "an absent folder is not a deleted project")
+        XCTAssertFalse(plan.hasOrphanedDatabase)
+    }
+
+    func testUnavailableNameDoesNotOverrideAListedProject() {
+        // If `ddev list` does report the project, its live status wins over the registry flag.
+        let classified = ReclaimPlanner.classify(
+            volumes: [volume("aqua-pura-mariadb")],
+            projects: [project("aqua-pura", status: .stopped)],
+            unavailableProjectNames: ["aqua-pura"]
+        )
+        XCTAssertEqual(classified.first?.state, .stopped)
+    }
+
+    func testInUseVolumeOfUnavailableProjectIsRunning() {
+        let classified = ReclaimPlanner.classify(
+            volumes: [volume("igniyte-mariadb", links: 1)],
+            projects: [project("aqua-pura", status: .running)],
+            unavailableProjectNames: ["igniyte"]
+        )
+        XCTAssertEqual(classified.first?.state, .running)
+    }
+
     func testOrphanedProjectDatabaseIsOffered() {
         let plan = ReclaimPlanner.plan(
             volumes: [volume("westlife-mariadb", gigabytes: 0.141)],

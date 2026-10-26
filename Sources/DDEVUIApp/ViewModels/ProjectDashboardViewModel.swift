@@ -207,6 +207,10 @@ public final class ProjectDashboardViewModel {
     /// diagnostics, and new-project creation (which has no project id yet).
     public var isRunningGlobalCommand = false
     public var globalErrorMessage: String?
+    /// Registered projects whose folder is not on disk (an unmounted drive). While non-empty the
+    /// status poll is held — `ddev list` would unregister them — and the last good project list
+    /// is kept. Cleared by the first successful list once the folders return.
+    public private(set) var unavailableProjectFolders: [DDEVProjectRegistryEntry] = []
     public var snapshots: [DDEVSnapshot] = []
     public var snapshotErrorMessage: String?
     public var projectLogsResult: CommandResult?
@@ -452,7 +456,15 @@ public final class ProjectDashboardViewModel {
         do {
             try await refreshProjectsFromDDEV()
         } catch {
+            noteUnavailableFolders(in: error)
             globalErrorMessage = error.presentableMessage
+        }
+    }
+
+    /// Records (or clears) the held-poll state carried by a `listProjects()` failure.
+    private func noteUnavailableFolders(in error: Error) {
+        if case let DDEVCommandPreconditionError.projectFoldersUnavailable(entries) = error {
+            unavailableProjectFolders = entries
         }
     }
 
@@ -1674,6 +1686,7 @@ public final class ProjectDashboardViewModel {
         defer { isRefreshInFlight = false }
 
         let loadedProjects = try await ddevService.listProjects()
+        unavailableProjectFolders = []
         // An empty `ddev list` is ambiguous: ddev exits 0 with an empty list both when the
         // user genuinely has zero projects AND when the daemon/registry isn't ready yet
         // (common right after launch or an app update). Reconciling against an empty list
@@ -1698,7 +1711,9 @@ public final class ProjectDashboardViewModel {
         do {
             try await refreshProjectsFromDDEV(describing: scope)
         } catch {
-            return
+            // Silent by design, except that a held poll (missing project folders) is worth
+            // showing: the list is deliberately not being refreshed and the user should know why.
+            noteUnavailableFolders(in: error)
         }
     }
 

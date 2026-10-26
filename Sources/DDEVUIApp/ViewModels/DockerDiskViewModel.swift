@@ -55,6 +55,9 @@ public final class DockerDiskViewModel {
     /// can exercise the un-scheduled path; every production site injects the *same* instance the
     /// `ProjectDashboardViewModel` uses — a second instance would serialise nothing.
     @ObservationIgnored private let scheduler: CommandScheduler?
+    /// DDEV's own registry, consulted so a project whose folder is off-line (unmounted drive)
+    /// is never mistaken for a deleted one — see `ReclaimPlanner.classify`.
+    @ObservationIgnored private let registry: DDEVProjectRegistryReading
     @ObservationIgnored private let warnThreshold: Double
     @ObservationIgnored private let criticalThreshold: Double
 
@@ -62,12 +65,14 @@ public final class DockerDiskViewModel {
         dockerService: DockerSystemServicing = DockerSystemService(),
         ddevService: DDEVServicing = DDEVCommandService(),
         scheduler: CommandScheduler? = nil,
+        registry: DDEVProjectRegistryReading = FileDDEVProjectRegistry(),
         warnThreshold: Double = 0.85,
         criticalThreshold: Double = 0.93
     ) {
         self.dockerService = dockerService
         self.ddevService = ddevService
         self.scheduler = scheduler
+        self.registry = registry
 
         // Preferences impose no range or ordering validation upstream, so a stray 0, a
         // negative number, or something above 1.0 must not reach `alertLevel` unclamped.
@@ -134,8 +139,13 @@ public final class DockerDiskViewModel {
             let (loadedUsage, loadedVolumes) = try await (usageTask, volumesTask)
 
             usage = loadedUsage
-            inventory = ReclaimPlanner.classify(volumes: loadedVolumes, projects: projects)
-            plan = ReclaimPlanner.plan(volumes: loadedVolumes, projects: projects, usage: loadedUsage)
+            let unavailable = Set(registry.unavailableEntries().map(\.name))
+            inventory = ReclaimPlanner.classify(
+                volumes: loadedVolumes, projects: projects, unavailableProjectNames: unavailable
+            )
+            plan = ReclaimPlanner.plan(
+                volumes: loadedVolumes, projects: projects, usage: loadedUsage, unavailableProjectNames: unavailable
+            )
             await refreshHeadroom()
         } catch {
             errorMessage = error.presentableMessage

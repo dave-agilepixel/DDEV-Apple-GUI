@@ -10,6 +10,10 @@ struct ProjectListView: View {
                 searchBar
                 Divider()
             }
+            if !viewModel.unavailableProjectFolders.isEmpty {
+                unavailableFoldersBanner
+                Divider()
+            }
             contentBody
             if viewModel.filteredProjects.count > 1 {
                 Divider()
@@ -49,6 +53,23 @@ struct ProjectListView: View {
         .help(viewModel.isMultiSelecting
               ? "Start selected non-running projects, or stop selected running and paused projects"
               : "Start non-running projects, or stop running and paused projects in the current view")
+    }
+
+    /// Shown while the status poll is held because registered project folders are off-line —
+    /// typically an unmounted drive. Refreshing would make DDEV unregister those projects.
+    private var unavailableFoldersBanner: some View {
+        let count = viewModel.unavailableProjectFolders.count
+        let noun = count == 1 ? "project folder is" : "project folders are"
+        return Label(
+            "\(count) \(noun) not on disk — status updates paused until the drive is mounted.",
+            systemImage: "externaldrive.badge.exclamationmark"
+        )
+        .font(.callout)
+        .foregroundStyle(.orange)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .help(viewModel.unavailableProjectFolders.map(\.appRoot).joined(separator: "\n"))
     }
 
     private var searchBar: some View {

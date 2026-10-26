@@ -4,18 +4,29 @@ public final class DDEVCommandService: Sendable {
     private let commandRunner: CommandRunning
     private let ddevExecutable: String
     private let fileExists: @Sendable (String) -> Bool
+    private let registry: DDEVProjectRegistryReading
 
     public init(
         commandRunner: CommandRunning = ProcessCommandRunner(),
         ddevExecutable: String = DDEVExecutableResolver().resolve(),
-        fileExists: @escaping @Sendable (String) -> Bool = { FileManager.default.isReadableFile(atPath: $0) }
+        fileExists: @escaping @Sendable (String) -> Bool = { FileManager.default.isReadableFile(atPath: $0) },
+        registry: DDEVProjectRegistryReading = FileDDEVProjectRegistry()
     ) {
         self.commandRunner = commandRunner
         self.ddevExecutable = ddevExecutable
         self.fileExists = fileExists
+        self.registry = registry
     }
 
+    /// Lists projects, but only when every registered project folder is on disk. `ddev list`
+    /// permanently unregisters any project whose folder it cannot find, and an unmounted drive
+    /// is indistinguishable from a deleted folder to it — so the poll is held, not run, until
+    /// the folders are back. See `DDEVProjectRegistryReading`.
     public func listProjects() async throws -> [DDEVProject] {
+        let unavailable = registry.unavailableEntries()
+        guard unavailable.isEmpty else {
+            throw DDEVCommandPreconditionError.projectFoldersUnavailable(unavailable)
+        }
         let result = try await runDDEV(["list", "-j"])
         return try DDEVProject.decodeListPayload(Data(result.stdout.utf8))
     }
@@ -489,11 +500,19 @@ public enum DDEVDatabaseTool: String, CaseIterable, Codable, Identifiable, Senda
 
 public enum DDEVCommandPreconditionError: LocalizedError, Equatable {
     case fileNotReadable(path: String)
+    /// `ddev list` was not run because these registered projects' folders are missing. Running
+    /// it would make DDEV drop them from its registry for good.
+    case projectFoldersUnavailable([DDEVProjectRegistryEntry])
 
     public var errorDescription: String? {
         switch self {
         case .fileNotReadable(let path):
             return "File not found or not readable: \(path)"
+        case .projectFoldersUnavailable(let entries):
+            let noun = entries.count == 1 ? "folder is" : "folders are"
+            let example = entries.first.map { " (e.g. \($0.appRoot))" } ?? ""
+            return "Not refreshing: \(entries.count) registered project \(noun) not on disk\(example). "
+                + "Mount the drive and refresh — running ddev list now would remove them from DDEV's registry."
         }
     }
 }
