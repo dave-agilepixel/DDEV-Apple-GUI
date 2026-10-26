@@ -205,7 +205,7 @@ struct DockerDiskView: View {
                                 Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
                             }
                             Text(item.label)
-                            Text(item.isDatabase ? "Database — orphaned, permanently deleted" : item.detail)
+                            Text(item.isDatabase ? "No DDEV project — reclaiming deletes it permanently" : item.detail)
                                 .foregroundStyle(item.isDatabase ? .orange : .secondary)
                                 .font(.caption)
                             Spacer()
@@ -406,6 +406,7 @@ struct DockerDiskView: View {
         case .running: "running"
         case .stopped: "stopped"
         case .orphaned: "orphaned — no such DDEV project"
+        case .unavailable: "project folder not on disk"
         }
     }
 

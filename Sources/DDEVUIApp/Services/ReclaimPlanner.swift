@@ -35,8 +35,17 @@ public enum ReclaimPlanner {
     /// entry point is also used to render an "all volumes" list with a delete button on every
     /// orphaned row, so it must refuse to attribute orphan status on its own, independent of
     /// the `plan` guard.
-    public static func classify(volumes: [DockerVolume], projects: [DDEVProject]) -> [ClassifiedVolume] {
-        classify(volumes: volumes, projectsByName: index(projects))
+    ///
+    /// `unavailableProjectNames` are projects DDEV's registry still lists but whose folder is
+    /// not on disk (see `DDEVProjectRegistryReading`). `ddev list` cannot report them, so
+    /// without this they would be indistinguishable from deleted projects and their databases
+    /// would be offered as orphaned. They classify `.unavailable` instead.
+    public static func classify(
+        volumes: [DockerVolume],
+        projects: [DDEVProject],
+        unavailableProjectNames: Set<String> = []
+    ) -> [ClassifiedVolume] {
+        classify(volumes: volumes, projectsByName: index(projects), unavailableProjectNames: unavailableProjectNames)
     }
 
     /// Indexes projects by name. `ddev list -j` offers no uniqueness guarantee, so duplicate
@@ -47,7 +56,8 @@ public enum ReclaimPlanner {
 
     private static func classify(
         volumes: [DockerVolume],
-        projectsByName: [String: DDEVProject]
+        projectsByName: [String: DDEVProject],
+        unavailableProjectNames: Set<String>
     ) -> [ClassifiedVolume] {
         volumes.map { volume in
             let (kind, projectName): (VolumeKind, String?) = {
@@ -83,7 +93,10 @@ public enum ReclaimPlanner {
                 // `ProjectState` treats it as non-deletable without a project to act against.
                 guard !projectsByName.isEmpty else { return .stopped }
                 guard let projectName, let project = projectsByName[projectName] else {
-                    return projectName == nil ? .stopped : .orphaned
+                    guard let projectName else { return .stopped }
+                    // Still registered, folder merely absent: not an orphan. Checked only after
+                    // the listed-project lookup so a live status always wins over the flag.
+                    return unavailableProjectNames.contains(projectName) ? .unavailable : .orphaned
                 }
                 // Fail narrow: only an explicitly stopped project yields `.stopped`. `.paused`
                 // and `.unknown` (what a failed status parse produces) are treated as running,
@@ -99,7 +112,8 @@ public enum ReclaimPlanner {
     public static func plan(
         volumes: [DockerVolume],
         projects: [DDEVProject],
-        usage: DockerUsage
+        usage: DockerUsage,
+        unavailableProjectNames: Set<String> = []
     ) -> ReclaimPlan {
         var items: [ReclaimItem] = []
         let projectsByName = index(projects)
@@ -130,7 +144,9 @@ public enum ReclaimPlanner {
         // narrow and offer only the usage-derived items, never a volume.
         guard !projects.isEmpty else { return ReclaimPlan(items: items) }
 
-        for classified in classify(volumes: volumes, projectsByName: projectsByName) {
+        for classified in classify(
+            volumes: volumes, projectsByName: projectsByName, unavailableProjectNames: unavailableProjectNames
+        ) {
             // An in-use volume can never be removed, whatever it holds.
             guard classified.state != .running else { continue }
 
@@ -169,8 +185,9 @@ public enum ReclaimPlanner {
                 ))
 
             default:
-                // Registered projects' databases and unrecognised volumes are never
-                // bulk-eligible. They are removable only by explicit per-item selection.
+                // Registered projects' databases, unrecognised volumes and `.unavailable`
+                // projects (folder off-line, see `classify`) are never bulk-eligible. They are
+                // removable only by explicit per-item selection.
                 continue
             }
         }

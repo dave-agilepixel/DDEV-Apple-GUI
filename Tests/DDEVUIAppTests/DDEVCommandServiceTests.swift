@@ -4,13 +4,54 @@ import XCTest
 final class DDEVCommandServiceTests: XCTestCase {
     func testListProjectsRunsDDEVListJSON() async throws {
         let runner = RecordingCommandRunner(result: .success(CommandResult.success(stdout: #"{"raw":[]}"#)))
-        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "/opt/homebrew/bin/ddev")
+        let service = DDEVCommandService(
+            commandRunner: runner,
+            ddevExecutable: "/opt/homebrew/bin/ddev",
+            registry: InMemoryDDEVProjectRegistry(entries: [])
+        )
 
         _ = try await service.listProjects()
 
         XCTAssertEqual(runner.commands, [
             CommandSpec(executable: "/opt/homebrew/bin/ddev", arguments: ["list", "-j"], workingDirectory: nil)
         ])
+    }
+
+    func testListProjectsIsHeldWhileARegisteredProjectFolderIsMissing() async {
+        // `ddev list` permanently drops any registry entry whose folder is absent (an unmounted
+        // drive looks exactly like a deleted project to DDEV), so the service must refuse to
+        // run it at all until every registered folder is back on disk.
+        let runner = RecordingCommandRunner(result: .success(CommandResult.success(stdout: #"{"raw":[]}"#)))
+        let registry = InMemoryDDEVProjectRegistry(entries: [
+            DDEVProjectRegistryEntry(name: "anthropy", appRoot: "/Users/dave/Development/agilepixel/anthropy", folderExists: true),
+            DDEVProjectRegistryEntry(name: "igniyte", appRoot: "/Volumes/Work/devmove/projects/abc/data", folderExists: false)
+        ])
+        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev", registry: registry)
+
+        do {
+            _ = try await service.listProjects()
+            XCTFail("Expected listProjects to refuse while a project folder is missing")
+        } catch let error as DDEVCommandPreconditionError {
+            guard case let .projectFoldersUnavailable(entries) = error else {
+                return XCTFail("Unexpected precondition error: \(error)")
+            }
+            XCTAssertEqual(entries.map(\.name), ["igniyte"])
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+        XCTAssertTrue(runner.commands.isEmpty, "ddev must not be invoked while a registered folder is missing")
+    }
+
+    func testListProjectsRunsWhenEveryRegisteredFolderIsPresent() async throws {
+        let runner = RecordingCommandRunner(result: .success(CommandResult.success(stdout: #"{"raw":[]}"#)))
+        let registry = InMemoryDDEVProjectRegistry(entries: [
+            DDEVProjectRegistryEntry(name: "anthropy", appRoot: "/Users/dave/Development/agilepixel/anthropy", folderExists: true)
+        ])
+        let service = DDEVCommandService(commandRunner: runner, ddevExecutable: "ddev", registry: registry)
+
+        _ = try await service.listProjects()
+
+        XCTAssertEqual(runner.commands.map(\.arguments), [["list", "-j"]])
     }
 
     func testDescribeProjectRunsDDEVDescribeJSON() async throws {

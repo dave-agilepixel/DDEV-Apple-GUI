@@ -14,6 +14,9 @@ public enum ProjectState: Equatable, Sendable {
     case stopped
     /// No DDEV project of this name is registered — a leftover from a deleted project.
     case orphaned
+    /// DDEV's registry still lists the project, but its folder is not on disk right now (an
+    /// unmounted drive). Not orphaned, and never removable until the folder returns.
+    case unavailable
 }
 
 public struct ClassifiedVolume: Equatable, Sendable, Identifiable {
