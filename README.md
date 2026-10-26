@@ -37,6 +37,28 @@ Open `DDEVUI.xcodeproj` in Xcode and hit Run, or build the SwiftPM target:
 swift build -c release
 ```
 
+## Releasing
+
+`scripts/notarise.sh` archives a Release build, exports it signed with the
+Agile Pixel Ltd Developer ID certificate, zips it, submits it to Apple's
+notary service, staples the ticket and runs a Gatekeeper assessment. Output
+lands in `build/notarise/`. Pass `--package-only` to stop before submission.
+
+It needs a `notarytool` keychain profile called `agilepixel-notary`, created
+once, interactively, and never stored in the repo. Preferred form, using an
+App Store Connect API key (App Store Connect → Users and Access →
+Integrations → App Store Connect API, role Developer or above):
+
+```bash
+xcrun notarytool store-credentials "agilepixel-notary" --key /path/to/AuthKey_XXXXXXXXXX.p8 --key-id XXXXXXXXXX --issuer <issuer UUID>
+```
+
+Alternative, using an Apple ID and an app-specific password (prompted for):
+
+```bash
+xcrun notarytool store-credentials "agilepixel-notary" --apple-id <email> --team-id M24Q4KZ737
+```
+
 ## Feedback
 
 Feedback is welcome — open an issue, tell me what's broken, tell me what would make it nicer. **I don't promise to implement anything.** This is a learning project I work on when I feel like it, so PRs and suggestions may sit untouched for a long time, or forever. No hard feelings either way.
