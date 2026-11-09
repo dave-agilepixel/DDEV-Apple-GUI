@@ -265,11 +265,15 @@ private struct ProjectRow: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-                Text(project.shortRoot)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                if viewModel.isBusy(project) {
+                    ProjectRowActivityLine(state: viewModel.state(for: project.id))
+                } else {
+                    Text(project.shortRoot)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
             }
 
             actionControls
@@ -399,6 +403,33 @@ private struct ProjectRowStatusBadge: View {
         case .unknown:
             "DDEV did not report a known status"
         }
+    }
+}
+
+/// Replaces the row's path line while a command runs: the current step (or "Queued") and a
+/// ticking elapsed time, so a slow start visibly moves even when the donut doesn't.
+private struct ProjectRowActivityLine: View {
+    let state: ProjectCommandState
+
+    var body: some View {
+        HStack(spacing: 4) {
+            if state.activity == .queued {
+                Text("Queued")
+            } else {
+                Text("\(state.startStage ?? "Working")…")
+                if let since = state.runningSince {
+                    Text("·").foregroundStyle(.tertiary)
+                    TimelineView(.periodic(from: since, by: 1)) { context in
+                        Text(Duration.seconds(max(0, context.date.timeIntervalSince(since)))
+                            .formatted(.time(pattern: .minuteSecond)))
+                            .monospacedDigit()
+                    }
+                }
+            }
+        }
+        .font(.caption2)
+        .foregroundStyle(.tint)
+        .lineLimit(1)
     }
 }
 

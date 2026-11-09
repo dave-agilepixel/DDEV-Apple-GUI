@@ -540,6 +540,7 @@ private struct AddProjectSheet: View {
     @State private var projectType: DDEVProjectType = .wordpress
     @State private var docroot = ""
     @State private var showAdvancedProjectTypes = false
+    @State private var isWorking = false
 
     init(folder: URL, viewModel: ProjectDashboardViewModel) {
         self.folder = folder
@@ -590,13 +591,19 @@ private struct AddProjectSheet: View {
                 }
             }
             .formStyle(.grouped)
+            .disabled(isWorking)
             .frame(maxHeight: showAdvancedProjectTypes ? 270 : 220)
 
             HStack {
+                if isWorking {
+                    SheetBusyLabel("Configuring and starting…")
+                }
                 Spacer()
                 Button("Cancel") { dismiss() }
                     .keyboardShortcut(.cancelAction)
+                    .disabled(isWorking)
                 Button {
+                    isWorking = true
                     Task {
                         await viewModel.configureProject(
                             folder: folder.path,
@@ -610,10 +617,12 @@ private struct AddProjectSheet: View {
                     Label("Configure", systemImage: "checkmark")
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(isWorking)
                 .keyboardShortcut(.defaultAction)
                 .disabled(projectName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
+        .interactiveDismissDisabled(isWorking)
         .padding(24)
         .frame(width: 520)
     }

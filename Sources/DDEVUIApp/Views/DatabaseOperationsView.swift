@@ -96,6 +96,7 @@ private struct ImportFilesSheet: View {
     let draft: ImportFilesDraft
     var viewModel: ProjectDashboardViewModel
     @Environment(\.dismiss) private var dismiss
+    @State private var isWorking = false
 
     @State private var target = ""
     @State private var extractPath = ""
@@ -136,6 +137,7 @@ private struct ImportFilesSheet: View {
                 }
             }
             .formStyle(.grouped)
+            .disabled(isWorking)
             .frame(maxHeight: 140)
 
             Label("This replaces the contents of the project's upload directory.", systemImage: "exclamationmark.triangle.fill")
@@ -143,15 +145,20 @@ private struct ImportFilesSheet: View {
                 .font(.callout)
 
             HStack {
+                if isWorking {
+                    SheetBusyLabel("Importing files…")
+                }
                 Spacer()
                 Button("Cancel") { dismiss() }
                     .keyboardShortcut(.cancelAction)
+                    .disabled(isWorking)
                 Button {
                     let options = DDEVImportFilesOptions(
                         source: draft.source,
                         target: target,
                         extractPath: extractPath
                     )
+                    isWorking = true
                     Task {
                         await viewModel.importFiles(options)
                         dismiss()
@@ -160,8 +167,10 @@ private struct ImportFilesSheet: View {
                     Label("Import Files", systemImage: "square.and.arrow.down")
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(isWorking)
             }
         }
+        .interactiveDismissDisabled(isWorking)
         .padding(24)
         .frame(width: 560)
     }
@@ -172,6 +181,7 @@ private struct DatabaseImportSheet: View {
     let draft: DatabaseImportDraft
     var viewModel: ProjectDashboardViewModel
     @Environment(\.dismiss) private var dismiss
+    @State private var isWorking = false
 
     @State private var database = "db"
     @State private var extractPath = ""
@@ -215,6 +225,7 @@ private struct DatabaseImportSheet: View {
                 }
             }
             .formStyle(.grouped)
+            .disabled(isWorking)
             .frame(maxHeight: 180)
 
             if dropExistingDatabase {
@@ -229,9 +240,13 @@ private struct DatabaseImportSheet: View {
             }
 
             HStack {
+                if isWorking {
+                    SheetBusyLabel("Importing database…")
+                }
                 Spacer()
                 Button("Cancel") { dismiss() }
                     .keyboardShortcut(.cancelAction)
+                    .disabled(isWorking)
                 Button(role: dropExistingDatabase ? .destructive : nil) {
                     let options = DDEVDatabaseImportOptions(
                         filePath: draft.filePath,
@@ -239,6 +254,7 @@ private struct DatabaseImportSheet: View {
                         extractPath: extractPath,
                         dropExistingDatabase: dropExistingDatabase
                     )
+                    isWorking = true
                     Task {
                         await viewModel.importDatabase(options)
                         dismiss()
@@ -247,10 +263,12 @@ private struct DatabaseImportSheet: View {
                     Label("Import", systemImage: "square.and.arrow.down")
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(isWorking)
                 .tint(dropExistingDatabase ? .red : nil)
                 .disabled(!canImport)
             }
         }
+        .interactiveDismissDisabled(isWorking)
         .padding(24)
         .frame(width: 560)
     }
@@ -269,6 +287,7 @@ private struct DatabaseExportSheet: View {
     let draft: DatabaseExportDraft
     var viewModel: ProjectDashboardViewModel
     @Environment(\.dismiss) private var dismiss
+    @State private var isWorking = false
 
     @State private var database = "db"
     @State private var outputPath = ""
@@ -309,18 +328,24 @@ private struct DatabaseExportSheet: View {
                 }
             }
             .formStyle(.grouped)
+            .disabled(isWorking)
             .frame(maxHeight: 190)
 
             HStack {
+                if isWorking {
+                    SheetBusyLabel("Exporting database…")
+                }
                 Spacer()
                 Button("Cancel") { dismiss() }
                     .keyboardShortcut(.cancelAction)
+                    .disabled(isWorking)
                 Button {
                     let options = DDEVDatabaseExportOptions(
                         outputPath: outputPath,
                         database: database,
                         compression: compression
                     )
+                    isWorking = true
                     Task {
                         await viewModel.exportDatabase(options)
                         dismiss()
@@ -329,9 +354,11 @@ private struct DatabaseExportSheet: View {
                     Label("Export", systemImage: "square.and.arrow.up")
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(isWorking)
                 .disabled(outputPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
+        .interactiveDismissDisabled(isWorking)
         .padding(24)
         .frame(width: 620)
     }
@@ -357,6 +384,23 @@ private extension DDEVDatabaseExportCompression {
         case .none: ".sql"
         case .bzip2: ".sql.bz2"
         case .xz: ".sql.xz"
+        }
+    }
+}
+
+/// Spinner and message shown in a sheet's button row while its command runs, so the user can see
+/// the click registered; the sheet closes itself when the command finishes.
+struct SheetBusyLabel: View {
+    let message: String
+
+    init(_ message: String) { self.message = message }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ProgressView().controlSize(.small)
+            Text(message)
+                .font(.callout)
+                .foregroundStyle(.secondary)
         }
     }
 }

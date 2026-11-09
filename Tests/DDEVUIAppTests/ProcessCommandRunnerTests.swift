@@ -84,6 +84,16 @@ final class ProcessCommandRunnerTests: XCTestCase {
         XCTAssertEqual(collector.snapshot(), ["a", "b", "c"])
     }
 
+    func testRunEmitsUnterminatedWaitLineEarly() async throws {
+        let runner = ProcessCommandRunner()
+        let collector = LineCollector()
+        _ = try await runner.run(
+            CommandSpec(executable: "sh", arguments: ["-c", "printf 'Syncing...'; sleep 0.3; printf ' done\\n'"]),
+            onOutputLine: { collector.append($0) }
+        )
+        XCTAssertEqual(collector.snapshot(), ["Syncing...", "Syncing... done"])
+    }
+
     func testRunWithoutHandlerStillReturnsBufferedOutput() async throws {
         let runner = ProcessCommandRunner()
         let result = try await runner.run(CommandSpec(executable: "echo", arguments: ["hello"]))

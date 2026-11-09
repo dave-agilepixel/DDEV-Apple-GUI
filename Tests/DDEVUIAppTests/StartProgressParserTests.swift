@@ -41,4 +41,24 @@ final class StartProgressParserTests: XCTestCase {
         XCTAssertEqual(emitted, emitted.sorted())
         XCTAssertTrue(emitted.allSatisfy { $0 < 1.0 })
     }
+
+    func testStageLabelsTrackCapturedRealOutput() throws {
+        let url = try XCTUnwrap(Bundle.module.url(forResource: "ddev-start-output", withExtension: "txt"))
+        let text = try String(contentsOf: url, encoding: .utf8)
+        var parser = StartProgressParser()
+        var stages: [String] = []
+        for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
+            if parser.consume(String(line)) != nil, let stage = parser.stage { stages.append(stage) }
+        }
+        XCTAssertEqual(stages, ["Starting", "Building images", "Creating containers", "Starting containers",
+                                "Syncing files", "Waiting for containers", "Starting router",
+                                "Waiting for router", "Finishing"])
+    }
+
+    func testUnterminatedWaitLineNamesTheStepInProgress() {
+        var parser = StartProgressParser()
+        _ = parser.consume("Container ddev-myproject-web  Started")
+        XCTAssertNotNil(parser.consume("Starting Mutagen sync process..."))
+        XCTAssertEqual(parser.stage, "Syncing files")
+    }
 }

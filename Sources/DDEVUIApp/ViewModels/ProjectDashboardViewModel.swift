@@ -1439,6 +1439,7 @@ public final class ProjectDashboardViewModel {
             for await line in stream {
                 if let fraction = parser.consume(line) {
                     commandStates[id, default: .init()].startProgress = fraction
+                    commandStates[id, default: .init()].startStage = parser.stage
                 }
             }
         }
@@ -1448,6 +1449,7 @@ public final class ProjectDashboardViewModel {
         await consumer.value
 
         commandStates[id, default: .init()].startProgress = nil  // clear the donut
+        commandStates[id, default: .init()].startStage = nil
         await scheduler.release()
         setActivity(.idle, for: id)
 
@@ -1488,6 +1490,7 @@ public final class ProjectDashboardViewModel {
 
     private func setActivity(_ activity: ProjectCommandState.Activity, for id: DDEVProject.ID) {
         commandStates[id, default: .init()].activity = activity
+        commandStates[id, default: .init()].runningSince = activity == .running ? Date() : nil
     }
 
     private func applyRefresh(_ scope: RefreshScope, for project: DDEVProject) async {
