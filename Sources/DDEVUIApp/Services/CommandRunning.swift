@@ -25,7 +25,9 @@ public struct CommandSpec: Equatable, Sendable {
 public protocol CommandRunning: Sendable {
     func run(_ spec: CommandSpec) async throws -> CommandResult
     /// Streaming variant: invokes `onOutputLine` once per completed output line (stdout+stderr
-    /// interleaved as produced) while the child runs. The buffered `CommandResult` is unchanged.
+    /// interleaved as produced) while the child runs. A line still waiting for its newline that
+    /// ends in "..." (DDEV's in-progress step marker) is also emitted once, early, then again in
+    /// full when it completes. The buffered `CommandResult` is unchanged.
     func run(_ spec: CommandSpec, onOutputLine: (@Sendable (String) -> Void)?) async throws -> CommandResult
 }
 
@@ -197,6 +199,7 @@ public final class ProcessCommandRunner: CommandRunning, @unchecked Sendable {
         private let lock = NSLock()
         private let onLine: (@Sendable (String) -> Void)?
         private var pending = Data()
+        private var emittedPendingWait = false
 
         init(onLine: (@Sendable (String) -> Void)?) { self.onLine = onLine }
 
@@ -213,6 +216,11 @@ public final class ProcessCommandRunner: CommandRunning, @unchecked Sendable {
                     // firstIndex / slicing arithmetic stays valid regardless of how
                     // Data retains its original index range after a removeSubrange.
                     pending = Data(pending[pending.index(after: nl)...])
+                    emittedPendingWait = false
+                }
+                if !emittedPendingWait, pending.count >= 3, pending.suffix(3).allSatisfy({ $0 == 0x2E }) {
+                    emittedPendingWait = true
+                    lines.append(String(decoding: pending, as: UTF8.self))
                 }
                 return lines
             }

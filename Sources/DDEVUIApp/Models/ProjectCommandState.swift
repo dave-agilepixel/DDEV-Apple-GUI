@@ -33,6 +33,10 @@ public struct ProjectCommandState: Equatable, Sendable {
     public var outputExpansionRequest = 0
     /// Determinate progress (0…1) for an in-flight start/restart, or `nil` for indeterminate.
     public var startProgress: Double?
+    /// Label for the start/restart step in progress, e.g. "Syncing files", or `nil` if unknown.
+    public var startStage: String?
+    /// When the in-flight mutation left the queue and began running; drives the elapsed timer.
+    public var runningSince: Date?
 
     public init() {}
 
